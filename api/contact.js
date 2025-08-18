@@ -181,7 +181,7 @@ const ALLOWED_ORIGINS = [
   'https://www.blog.honeyhimself.com',
 ];
 
-const SECRET_TOKEN = process.env.CONTACT_FORM_TOKEN;
+const SECRET_TOKEN = process.env.CONTACT_FORM_TOKEN || 'development-token';
 
 
 

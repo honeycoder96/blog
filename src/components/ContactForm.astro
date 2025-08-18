@@ -6,7 +6,7 @@ interface Props {
 const { class: className = "" } = Astro.props;
 
 // Get the contact form token from environment variables
-const contactToken = import.meta.env.PUBLIC_CONTACT_FORM_TOKEN;
+const contactToken = import.meta.env.PUBLIC_CONTACT_FORM_TOKEN || 'development-token';
 ---
 
 <div class={`contact-form ${className}`}>
