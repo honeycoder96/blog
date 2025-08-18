@@ -181,7 +181,7 @@ const ALLOWED_ORIGINS = [
   'https://www.blog.honeyhimself.com',
 ];
 
-const SECRET_TOKEN = process.env.CONTACT_FORM_TOKEN || 'development-token';
+
 
 
 
@@ -201,12 +201,7 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: "Unauthorized origin" });
   }
 
-  // Security: Secret token check
-  const providedToken = req.headers['x-contact-token'] || req.body.token;
-  if (!SECRET_TOKEN || providedToken !== SECRET_TOKEN) {
-    console.warn('Blocked request with invalid token');
-    return res.status(403).json({ error: "Invalid token" });
-  }
+
 
   try {
     const { email, name, message } = req.body;
