@@ -1,5 +1,6 @@
 ---
 import Layout from '../layouts/Base.astro';
+import ContactForm from '../components/ContactForm.astro';
 ---
 
 <Layout
@@ -38,18 +39,9 @@ import Layout from '../layouts/Base.astro';
 		<li>Built with tailwindcss</li>
 		<li>Pin posts and projects</li>
 	</ul>
-	<p class="mt-4">
-		Clone or fork my 
-		<a
-			class="cody-link inline-block"
-			href="https://github.com/kirontoo/astro-theme-cody"
-			target="_blank"
-			rel="noopener noreferrer"
-			aria-label="github repository"
-		>
-			repo
-		</a>
-		if you like me!
-	</p>
+
+	<hr class="my-8" />
+	
+	<ContactForm />
 </Layout>
 
