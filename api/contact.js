@@ -2,7 +2,7 @@ import { Resend } from 'resend';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// Helper function to format date
+// Helper function to format date - Updated for Vercel deployment
 function formatDate(date) {
 	return new Intl.DateTimeFormat('en-US', {
 		year: 'numeric',
