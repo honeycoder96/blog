@@ -46,7 +46,7 @@ export const socialLinks: Array<SocialLink> = [
   {
     icon: "mdi:email",
     friendlyName: "email",
-    link: "mailto:honey.singhroi@gmail.com",
+    link: "mailto:contact@honeyhimself.com",
   },
   {
     icon: "mdi:rss",
@@ -61,17 +61,17 @@ export const NAV_LINKS: Array<{ title: string, path: string }> = [
     path: "/",
   },
   {
-    title: "About",
-    path: "/about",
-  },
-  {
     title: "Blog",
     path: "/blog",
   },
   {
-    title: "Projects",
-    path: '/projects'
+    title: "About",
+    path: "/about",
   },
+  // {
+  //   title: "Projects",
+  //   path: '/projects'
+  // },
   // {
   //   title: "Archive",
   //   path: '/archive'

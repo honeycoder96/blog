@@ -4,6 +4,9 @@ interface Props {
 }
 
 const { class: className = "" } = Astro.props;
+
+// Get the contact form token from environment variables
+const contactToken = import.meta.env.PUBLIC_CONTACT_FORM_TOKEN;
 ---
 
 <div class={`contact-form ${className}`}>
@@ -146,13 +149,13 @@ const { class: className = "" } = Astro.props;
 			try {
 				const formData = new FormData(form);
 				const data = {
-					subject: formData.get('name'),
+					name: formData.get('name'),
 					email: formData.get('email'),
 					message: formData.get('message')
 				};
 
 				// Validate form data
-				if (!data.subject || !data.email || !data.message) {
+				if (!data.name || !data.email || !data.message) {
 					throw new Error('Please fill in all required fields.');
 				}
 
@@ -165,6 +168,7 @@ const { class: className = "" } = Astro.props;
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json',
+						'X-Contact-Token': '${contactToken}', // Using environment variable
 					},
 					body: JSON.stringify(data)
 				});
@@ -178,7 +182,8 @@ const { class: className = "" } = Astro.props;
 					successMessage.classList.remove('hidden');
 					form.reset();
 				} else {
-					throw new Error('Failed to send message');
+					const errorData = await response.json();
+					throw new Error(errorData.message || 'Failed to send message');
 				}
 			} catch (error) {
 				console.error('Error sending message:', error);
