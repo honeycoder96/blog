@@ -1,11 +1,4 @@
-interface EmailData {
-	name: string;
-	email: string;
-	message: string;
-	submittedAt: string;
-}
-
-export function generateContactFormEmail(data: EmailData): string {
+export function generateContactFormEmail(data) {
 	const { name, email, message, submittedAt } = data;
 	
 	return `
@@ -94,7 +87,7 @@ export function generateContactFormEmail(data: EmailData): string {
 }
 
 // Template for auto-reply to the user
-export function generateAutoReplyEmail(userName: string): string {
+export function generateAutoReplyEmail(userName) {
 	return `
 <!DOCTYPE html>
 <html lang="en">
@@ -164,7 +157,7 @@ export function generateAutoReplyEmail(userName: string): string {
 }
 
 // Helper function to format date
-export function formatDate(date: Date): string {
+export function formatDate(date) {
 	return new Intl.DateTimeFormat('en-US', {
 		year: 'numeric',
 		month: 'long',
