@@ -34,11 +34,14 @@ export function sortMDByDate(
 
 
 export function sortMDByPinned(posts: Array<CollectionEntry<"blog">>) {
-	return posts.sort((a, b) => {
-		const aOrder = a.data.order ?? 100;
-		const bOrder = b.data.order ?? 100;
-		return aOrder - bOrder;
-	});
+	// Exclude posts with order > 5, then sort by order (lowest first)
+	return posts
+		.filter(post => post.data.order)
+		.sort((a, b) => {
+			const aOrder = a.data.order ?? 100;
+			const bOrder = b.data.order ?? 100;
+			return aOrder - bOrder;
+		});
 }
 
 export function getPostsByTag(
