@@ -5,8 +5,7 @@ interface Props {
 
 const { class: className = "" } = Astro.props;
 
-// Get the contact form token from environment variables
-const contactToken = import.meta.env.PUBLIC_CONTACT_FORM_TOKEN;
+
 ---
 
 <div class={`contact-form ${className}`}>
@@ -28,7 +27,7 @@ const contactToken = import.meta.env.PUBLIC_CONTACT_FORM_TOKEN;
 		</div>
 	</div>
 	
-	<form id="contact-form" class="space-y-4" data-token="${contactToken}">
+	<form id="contact-form" class="space-y-4">
 		<div class="form-group">
 			<label for="name" class="block text-sm font-medium mb-2">
 				Name*
@@ -132,9 +131,6 @@ const contactToken = import.meta.env.PUBLIC_CONTACT_FORM_TOKEN;
 
 		if (!form) return;
 
-		// Get the token from the form's data attribute
-		const token = form.getAttribute('data-token') || '';
-
 		form.addEventListener('submit', async function(e) {
 			e.preventDefault();
 			
@@ -171,7 +167,6 @@ const contactToken = import.meta.env.PUBLIC_CONTACT_FORM_TOKEN;
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json',
-						'X-Contact-Token': token, // Using token from data attribute
 					},
 					body: JSON.stringify(data)
 				});
