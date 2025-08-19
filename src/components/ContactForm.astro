@@ -159,7 +159,7 @@ const { class: className = "" } = Astro.props;
 				}
 
 				// TODO: Replace with your Vercel serverless endpoint
-				const response = await fetch('/api/contact', {
+				const response = await fetch('https://api.honeyhimself.com/v1/contact', {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json',
