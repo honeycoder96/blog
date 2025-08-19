@@ -1,0 +1,46 @@
+---
+import Layout from '../layouts/Base.astro';
+import ContactForm from '../components/ContactForm.astro';
+---
+
+<Layout
+	title="Contact Me"
+	description="Get in touch with me for any questions or suggestions"
+	image="/blog-placeholder-about.jpg"
+>
+	<h1 class="title">Contact</h1>
+	<p>
+		Hi there! I'm Honey Sharma, a software engineer passionate about sharing knowledge and exploring the latest in technology.
+	</p>
+	
+	<p>
+		I write about various technologies, programming concepts, and share insights from my journey in software development. 
+		Whether you're a fellow developer, tech enthusiast, or just curious about the world of programming, I'm glad you're here!
+	</p>
+
+	<h2 class="title mt-4">Let's Connect!</h2>
+	<p>
+		I love hearing from readers and fellow developers. Whether you have:
+	</p>
+	<ul class="list-inside list-disc mb-4">
+		<li>Questions about any of my blog posts</li>
+		<li>Suggestions for topics you'd like me to cover</li>
+		<li>Corrections or improvements to my content</li>
+		<li>Just want to say hello and share your thoughts</li>
+		<li>Collaboration opportunities or tech discussions</li>
+	</ul>
+	
+	<p>
+		Feel free to reach out! I'm always open to feedback, suggestions, and meaningful conversations about technology. 
+		Your input helps me create better content and learn new things along the way.
+	</p>
+
+	<p class="mb-6">
+		You can contact me via the form below or directly at 
+		<a href="mailto:contact@honeyhimself.com" class="cody-link">contact@honeyhimself.com</a>.
+	</p>
+
+	<hr class="my-8" />
+	
+	<ContactForm />
+</Layout>
