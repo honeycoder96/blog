@@ -91,11 +91,6 @@ function generateContactFormEmail(data) {
             <p style="margin: 0 0 15px 0; color: #666; font-size: 14px;">
                 This message was sent from your website's contact form
             </p>
-            <div style="display: flex; justify-content: center; gap: 20px; margin-top: 20px;">
-                <a href="#" style="color: #667eea; text-decoration: none; font-size: 14px;">Privacy Policy</a>
-                <span style="color: #ccc;">|</span>
-                <a href="#" style="color: #667eea; text-decoration: none; font-size: 14px;">Unsubscribe</a>
-            </div>
         </div>
     </div>
 </body>
@@ -152,7 +147,7 @@ function generateAutoReplyEmail(userName) {
 
             <!-- Call to Action -->
             <div style="text-align: center; margin: 40px 0;">
-                <a href="#" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 15px 30px; border-radius: 8px; font-weight: 600;">
+                <a href="https://honeyhimself.com" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 15px 30px; border-radius: 8px; font-weight: 600;">
                     🌐 Visit Our Website
                 </a>
             </div>
@@ -161,10 +156,10 @@ function generateAutoReplyEmail(userName) {
         <!-- Footer -->
         <div style="background-color: #f8f9fa; padding: 30px; text-align: center; border-top: 1px solid #e1e5e9;">
             <p style="margin: 0 0 15px 0; color: #666; font-size: 14px;">
-                This is an automated response. Please do not reply to this email.
+                This is an automated response but for any further query you can reply to this email.
             </p>
             <p style="margin: 0; color: #999; font-size: 12px;">
-                © 2024 Your Website. All rights reserved.
+                © 2025 honeyhimself.com. All rights reserved.
             </p>
         </div>
     </div>
