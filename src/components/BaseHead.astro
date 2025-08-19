@@ -37,10 +37,25 @@ const siteTitle = `${title} ${titleSeparator} ${siteConfig.title}`;
 <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
 <meta name="generator" content={Astro.generator} />
 
-<!-- Font preloads -->
+<!-- Preconnects: speed up DNS + TLS -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+
+<!-- Preload the font stylesheet -->
+<link rel="preload" as="style"
+      href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap">
+
+<!-- Non-blocking load -->
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap"
+      media="print"
+      onload="this.media='all'">
+
+<!-- Fallback for no-JS -->
+<noscript>
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap">
+</noscript>
 
 <!-- Canonical URL -->
 <link rel="canonical" href={canonicalURL} />
