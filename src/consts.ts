@@ -19,11 +19,11 @@ type SocialLink = {
 
 export const siteConfig: Config = {
   title: "CodeHive",
-  description: "",
+  description: "A tech blog by Honey Sharma covering software development, programming tutorials, and insights into the latest technologies. Learn about web development, coding best practices, and emerging tech trends.",
   lang: "en-GB",
   profile: {
     author: "Honey Sharma",
-    description: ""
+    description: "Software Engineer and Tech Blogger passionate about sharing knowledge and exploring the latest in technology."
   }
 }
 

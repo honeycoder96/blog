@@ -7,8 +7,16 @@ import tailwind from "@astrojs/tailwind";
 
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://astro-theme-cody.netlify.app',
-  integrations: [mdx(), sitemap(), tailwind()],
+  site: 'https://blog.honeyhimself.com',
+  integrations: [
+    mdx(), 
+    sitemap({
+      changefreq: 'daily',
+      priority: 0.7,
+      lastmod: new Date(),
+    }), 
+    tailwind()
+  ],
   markdown: {
     remarkPlugins: [remarkReadingTime],
     syntaxHighlight: 'shiki',
