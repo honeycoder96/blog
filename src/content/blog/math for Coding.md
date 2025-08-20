@@ -1,5 +1,5 @@
 ---
-title: '🚀 6-Week Roadmap to Math for Coding & Problem Solving'
+title: '🧮 6-Week Roadmap to Math for Coding & Problem Solving'
 description: 'Whether it’s GCD/LCM, modular arithmetic, prime numbers, or probability — math concepts show up everywhere. And the best part? You don’t need to be a “math genius” to use them. You just need the right toolkit and some practice.'
 pubDate: 'Jul 01 2025'
 heroImage: 
@@ -7,7 +7,7 @@ heroImage:
   alt: 'Roadmap hero image'
 order: 1
 tags: ["roadmap", "maths"]
-series: "Maths Roadmap"
+series: "Maths Roadmap for CP"
 hide: false # hide from the /blog but not from /archieve
 ---
 

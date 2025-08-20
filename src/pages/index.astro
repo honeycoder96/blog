@@ -59,14 +59,14 @@ const tech: Array<{ title: string; desc: string; href: string }> = [
 	</section>
 
 	<section class="mt-8 sm:mt-16">
-		<h2 class="title">Posts</h2>
+		<h2 class="title">Series</h2>
 		<ul class="space-y-4 sm:space-y-2">
 			{allPostsByPinned.map(p => <PostPreview post={p}/>)}
 		</ul>
 	</section>
 
 	<section class="mt-16">
-			<h2 class="title">Technologies</h2>
+			<h2 class="title">Top posts</h2>
 			<ul class="space-y-4 sm:space-y-2">
 				{
 					tech.map(({ href, title, desc }) => (
