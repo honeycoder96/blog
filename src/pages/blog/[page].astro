@@ -12,7 +12,14 @@ export const getStaticPaths = (async ({ paginate }) => {
 	const allPostsByDate = sortMDByDate(allPosts);
 	const allPostsByPinned = sortMDByPinned(allPostsByDate);
 	const tags = getUniqueTags(allPosts);
-	return paginate(allPostsByPinned, { props: { tags }, pageSize: 10 });
+    
+    // Generate all pages
+    const pages = paginate(allPostsByPinned, { props: { tags }, pageSize: 10 });
+    
+    // Filter out the first page (handled by index.astro)
+    // First page usually has params.page = undefined.
+    // We want only params.page defined (e.g. "2").
+    return pages.filter(page => page.params.page !== undefined);
 }) satisfies GetStaticPaths;
 
 interface Props {

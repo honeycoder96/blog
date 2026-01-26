@@ -86,21 +86,21 @@ Here’s what we’ll cover week by week:
 
 | Week 1 🏗️ Data Modeling | Week 2 ⚡ Indexing | Week 3 📊 Aggregation |
 |---|---|---|
-| [Day 1: Embedding vs Referencing](#) | [Day 1: Intro to Indexes](#) | [Day 1: Aggregation Basics](#) |
-| [Day 2: One-to-Many](#) | [Day 2: Compound Indexes](#) | [Day 2: Grouping & Counting](#) |
-| [Day 3: Many-to-Many](#) | [Day 3: Multikey Indexes](#) | [Day 3: Lookups & Joins](#) |
-| [Day 4: Patterns](#) | [Day 4: Explain Plans](#) | [Day 4: Array Ops](#) |
-| [Day 5: Trade-offs](#) | [Day 5: Best Practices](#) | [Day 5: Real Analytics](#) |
+| [Day 1: Embedding vs Referencing](/blog/mongodb/week-1-day-1-embedding-vs-referencing) | [Day 1: Intro to Indexes](/blog/mongodb/week-2-day-1-intro-to-indexes) | [Day 1: Aggregation Basics](/blog/mongodb/week-3-day-1-aggregation-basics) |
+| [Day 2: Relationships (1:1, 1:N)](/blog/mongodb/week-1-day-2-one-to-one-one-to-many) | [Day 2: Compound Indexes](/blog/mongodb/week-2-day-2-compound-and-multikey-indexes) | [Day 2: Grouping & Counting](/blog/mongodb/week-3-day-2-grouping-and-counting) |
+| [Day 3: Schema Patterns](/blog/mongodb/week-1-day-3-schema-design-patterns) | [Day 3: Best Practices](/blog/mongodb/week-2-day-3-indexing-best-practices) | [Day 3: Lookups & Joins](/blog/mongodb/week-3-day-3-lookups-and-joins) |
+| [Day 4: Trade-offs](/blog/mongodb/week-1-day-4-normalization-vs-denormalization) | [Day 4: Explain Plans](/blog/mongodb/week-2-day-4-explain-plans-monitoring) | [Day 4: Array Ops](/blog/mongodb/week-3-day-4-array-transformations) |
+| [Day 5: Mini Project](/blog/mongodb/week-1-day-5-mini-project-blog-schema) | [Day 5: Mini Project](/blog/mongodb/week-2-day-5-mini-project-product-catalog) | [Day 5: Analytics Dashboard](/blog/mongodb/week-3-day-5-mini-project-analytics-dashboard) |
 
 ---
 
 | Week 4 🔐 Transactions & Ops | Week 5 🛡️ Security | Week 6 🚀 Scaling |
 |---|---|---|
-| [Day 1: Transactions](#) | [Day 1: Schema Validation](#) | [Day 1: Replication](#) |
-| [Day 2: Bulk Writes](#) | [Day 2: Roles & Auth](#) | [Day 2: Sharding Concepts](#) |
-| [Day 3: Change Streams](#) | [Day 3: Deployments](#) | [Day 3: Sharding in Practice](#) |
-| [Day 4: TTL Indexes](#) | [Day 4: Backups](#) | [Day 4: Monitoring](#) |
-| [Day 5: Mini Project](#) | [Day 5: Mini Project](#) | [Day 5: Mini Project](#) |
+| [Day 1: Transactions](/blog/mongodb/week-4-day-1-acid-transactions) | [Day 1: Schema Validation](/blog/mongodb/week-5-day-1-schema-validation) | [Day 1: Replication](/blog/mongodb/week-6-day-1-replication-failover) |
+| [Day 2: Bulk Writes](/blog/mongodb/week-4-day-2-bulk-writes-operations) | [Day 2: Roles & Auth](/blog/mongodb/week-5-day-2-role-based-access-control) | [Day 2: Sharding Concepts](/blog/mongodb/week-6-day-2-sharding-concepts) |
+| [Day 3: Change Streams](/blog/mongodb/week-4-day-3-change-streams) | [Day 3: Deployments](/blog/mongodb/week-5-day-3-deployment-staging-production) | [Day 3: Sharding in Practice](/blog/mongodb/week-6-day-3-sharding-in-practice) |
+| [Day 4: TTL Indexes](/blog/mongodb/week-4-day-4-ttl-indexes-lifecycle) | [Day 4: Backups](/blog/mongodb/week-5-day-4-backups-replica-sets) | [Day 4: Monitoring](/blog/mongodb/week-6-day-4-monitoring-optimization) |
+| [Day 5: Mini Project](/blog/mongodb/week-4-day-5-mini-project-banking-api) | [Day 5: Mini Project](/blog/mongodb/week-5-day-5-mini-project-secure-notes-app) | [Day 5: Mini Project](/blog/mongodb/week-6-day-5-mini-project-distributed-chat) |
 
 ---
 
@@ -138,4 +138,4 @@ By the end of 6 weeks, you’ll:
 
 ---
 
-**Ready? Let’s dive in → [Week 1, Day 1: Embedding vs Referencing](#)**
+**Ready? Let’s dive in → [Start Day 1: Embedding Vs Referencing](/blog/mongodb/week-1-day-1-embedding-vs-referencing)**

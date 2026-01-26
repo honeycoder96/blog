@@ -5,7 +5,7 @@ pubDate: 'Aug 10 2025'
 heroImage: 
   src: '/postgre.jpg'
   alt: 'Postgres roadmap hero image'
-order: 3
+order: 4
 tags: ["roadmap", "postgresql", "database"]
 series: "Postgres Roadmap"
 hide: false

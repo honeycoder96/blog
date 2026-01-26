@@ -1,11 +1,11 @@
 ---
 title: '🛠️ 8-Week Beginner-Friendly System Design Roadmap'
 description: 'From client-server basics to caching, load balancing, and databases — this roadmap is a step-by-step beginner-friendly guide to learning system design concepts with projects.'
-pubDate: 'Aug 15 2025'
+pubDate: 'Sep 15 2025'
 heroImage: 
   src: '/systemdesign.jpg'
   alt: 'System Design roadmap hero image'
-order: 4
+order: 3
 tags: ["roadmap", "system-design", "architecture"]
 series: "System Design Roadmap"
 hide: false
@@ -100,31 +100,31 @@ Here’s the week-by-week breakdown:
 
 | Week 1 🌱 Foundations | Week 2 ⚡ Scalability | Week 3 🗄️ Databases |
 |---|---|---|
-| [Day 1: What is System Design?](#) | [Day 1: Vertical vs Horizontal](#) | [Day 1: Relational vs NoSQL](#) |
-| [Day 2: Client-Server Model](#) | [Day 2: Load Balancers](#) | [Day 2: CAP Theorem](#) |
-| [Day 3: HTTP & REST](#) | [Day 3: Reverse Proxies](#) | [Day 3: Replication](#) |
-| [Day 4: DNS & IP](#) | [Day 4: CDNs](#) | [Day 4: Partitioning](#) |
-| [Day 5: Mini Project](#) | [Day 5: Mini Project](#) | [Day 5: Mini Project](#) |
+| [Day 1: What is System Design?](/blog/system-design/week1/week-1-day-1-what-is-system-design) | [Day 1: Vertical vs Horizontal](/blog/system-design/week2/week-2-day-1-vertical-vs-horizontal-scaling) | [Day 1: Relational vs NoSQL](/blog/system-design/week3/week-3-day-1-relational-vs-nosql) |
+| [Day 2: Client-Server Model](/blog/system-design/week1/week-1-day-2-the-client-server-model) | [Day 2: Load Balancers](/blog/system-design/week2/week-2-day-2-load-balancers) | [Day 2: CAP Theorem](/blog/system-design/week3/week-3-day-2-the-cap-theorem) |
+| [Day 3: HTTP & REST](/blog/system-design/week1/week-1-day-3-http-rest) | [Day 3: Reverse Proxies](/blog/system-design/week2/week-2-day-3-reverse-proxies) | [Day 3: Replication](/blog/system-design/week3/week-3-day-3-database-replication) |
+| [Day 4: DNS & IP](/blog/system-design/week1/week-1-day-4-dns-ip) | [Day 4: CDNs](/blog/system-design/week2/week-2-day-4-cdns) | [Day 4: Partitioning](/blog/system-design/week3/week-3-day-4-database-partitioning-sharding) |
+| [Day 5: Mini Project](/blog/system-design/week1/week-1-day-5-mini-project) | [Day 5: Mini Project](/blog/system-design/week2/week-2-day-5-mini-project) | [Day 5: Mini Project](/blog/system-design/week3/week-3-day-5-mini-project) |
 
 ---
 
 | Week 4 🔒 Consistency | Week 5 📬 Messaging | Week 6 🧩 Microservices |
 |---|---|---|
-| [Day 1: Consistency Models](#) | [Day 1: Message Queues](#) | [Day 1: Monolith vs Microservices](#) |
-| [Day 2: Consensus Protocols](#) | [Day 2: Pub/Sub](#) | [Day 2: Communication](#) |
-| [Day 3: Quorums](#) | [Day 3: Background Jobs](#) | [Day 3: API Gateways](#) |
-| [Day 4: Availability](#) | [Day 4: Event-Driven](#) | [Day 4: Service Discovery](#) |
-| [Day 5: Mini Project](#) | [Day 5: Mini Project](#) | [Day 5: Mini Project](#) |
+| [Day 1: Consistency Models](/blog/system-design/week4/week-4-day-1-consistency-models) | [Day 1: Message Queues](/blog/system-design/week5/week-5-day-1-message-queues) | [Day 1: Monolith vs Microservices](/blog/system-design/week6/week-6-day-1-monolith-vs-microservices) |
+| [Day 2: Consensus Protocols](/blog/system-design/week4/week-4-day-2-consensus-protocols) | [Day 2: Pub/Sub](/blog/system-design/week5/week-5-day-2-pub-sub) | [Day 2: Communication](/blog/system-design/week6/week-6-day-2-service-communication) |
+| [Day 3: Quorums](/blog/system-design/week4/week-4-day-3-quorums) | [Day 3: Background Jobs](/blog/system-design/week5/week-5-day-3-background-jobs) | [Day 3: API Gateways](/blog/system-design/week6/week-6-day-3-api-gateway) |
+| [Day 4: Availability](/blog/system-design/week4/week-4-day-4-availability-reliability) | [Day 4: Event-Driven](/blog/system-design/week5/week-5-day-4-event-driven-architecture) | [Day 4: Service Discovery](/blog/system-design/week6/week-6-day-4-service-discovery) |
+| [Day 5: Mini Project](/blog/system-design/week4/week-4-day-5-mini-project) | [Day 5: Mini Project](/blog/system-design/week5/week-5-day-5-mini-project) | [Day 5: Mini Project](/blog/system-design/week6/week-6-day-5-mini-project) |
 
 ---
 
 | Week 7 🛡️ Security & Monitoring | Week 8 🚀 Bringing It Together |
 |---|---|
-| [Day 1: Auth & AuthZ](#) | [Day 1: Design Process](#) |
-| [Day 2: Rate Limiting](#) | [Day 2: Case Study: Twitter](#) |
-| [Day 3: Logging](#) | [Day 3: Case Study: YouTube](#) |
-| [Day 4: Monitoring](#) | [Day 4: Interview Walkthrough](#) |
-| [Day 5: Mini Project](#) | [Day 5: Mini Project](#) |
+| [Day 1: Auth & AuthZ](/blog/system-design/week7/week-7-day-1-authentication-authorization) | [Day 1: Design Process](/blog/system-design/week8/week-8-day-1-the-design-process) |
+| [Day 2: Rate Limiting](/blog/system-design/week7/week-7-day-2-rate-limiting-throttling) | [Day 2: Case Study: Twitter](/blog/system-design/week8/week-8-day-2-case-study) |
+| [Day 3: Logging](/blog/system-design/week7/week-7-day-3-logging-monitoring) | [Day 3: Case Study: YouTube](/blog/system-design/week8/week-8-day-3-case-study) |
+| [Day 4: Monitoring](/blog/system-design/week7/week-7-day-4-alerts-health-checks) | [Day 4: Interview Walkthrough](/blog/system-design/week8/week-8-day-4-interview-walkthrough) |
+| [Day 5: Mini Project](/blog/system-design/week7/week-7-day-5-mini-project) | [Day 5: Mini Project](/blog/system-design/week8/week-8-day-5-mini-project) |
 
 ---
 
@@ -164,4 +164,4 @@ By the end of 8 weeks, you’ll:
 
 ---
 
-**Ready? Let’s dive in → [Week 1, Day 1: What is System Design?](#)**
+**Ready? Let’s dive in → [Start Day 1: What Is System Design](/blog/system-design/week1/week-1-day-1-what-is-system-design)**
