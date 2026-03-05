@@ -1,0 +1,62 @@
+---
+import PageLayout from './PageLayout.astro';
+import { ReadingProgress } from '../components/react/blog/ReadingProgress';
+import { TableOfContents } from '../components/react/blog/TableOfContents';
+import CategoryBadge from '../components/astro/CategoryBadge.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+  date: string;
+  category: string;
+  author: string;
+  readingTime?: number;
+  headings: { depth: number; slug: string; text: string }[];
+}
+
+const { title, description, date, category, author, readingTime, headings } = Astro.props;
+---
+
+<PageLayout title={`${title} — Honey Sharma`} description={description}>
+  <ReadingProgress client:load />
+
+  <div class="max-w-7xl mx-auto px-8 lg:px-24 py-16 w-full">
+    <!-- Article header -->
+    <header class="max-w-3xl mb-16">
+      <div class="flex items-center gap-4 mb-6">
+        <CategoryBadge category={category} />
+        {readingTime && (
+          <span class="text-neutral-600 font-mono text-xs">{readingTime} min read</span>
+        )}
+      </div>
+      <h1 class="text-4xl md:text-6xl font-display font-bold tracking-tight text-white leading-tight mb-6">
+        {title}
+      </h1>
+      {description && (
+        <p class="text-xl text-neutral-400 leading-relaxed mb-8">{description}</p>
+      )}
+      <div class="flex items-center gap-6 text-sm font-mono text-neutral-600 uppercase tracking-widest">
+        <span>{author}</span>
+        <span class="w-px h-4 bg-neutral-800"></span>
+        <time>{date}</time>
+      </div>
+    </header>
+
+    <!-- Content + TOC layout -->
+    <div class="flex gap-20 relative">
+      <!-- Main content -->
+      <article class="flex-1 min-w-0 prose-invert max-w-3xl">
+        <slot />
+      </article>
+
+      <!-- Sticky TOC sidebar -->
+      {headings.filter(h => h.depth <= 2).length > 0 && (
+        <aside class="hidden xl:block w-64 shrink-0">
+          <div class="sticky top-32">
+            <TableOfContents headings={headings} client:idle />
+          </div>
+        </aside>
+      )}
+    </div>
+  </div>
+</PageLayout>

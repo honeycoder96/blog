@@ -1,0 +1,22 @@
+---
+interface Props {
+  category: string;
+  class?: string;
+}
+
+const { category, class: className = '' } = Astro.props;
+
+const colorMap: Record<string, string> = {
+  Architecture: 'border-blue-800 text-blue-400',
+  'Deep Dive': 'border-purple-800 text-purple-400',
+  Engineering: 'border-green-800 text-green-400',
+};
+
+const colors = colorMap[category] ?? 'border-neutral-700 text-neutral-400';
+---
+
+<span
+  class={`px-3 py-1 rounded-full border text-xs font-mono uppercase tracking-wider ${colors} ${className}`}
+>
+  {category}
+</span>

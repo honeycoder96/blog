@@ -1,0 +1,104 @@
+---
+title: "Design Systems That Actually Scale"
+date: "Aug 2025"
+pubDate: 2025-08-18
+category: Engineering
+author: Honey Sharma
+summary: Technical decisions that distinguish design systems used by 5 engineers from those used by 50. Token architecture, component API design, and the organizational structures that make or break adoption.
+featured: false
+readingTime: 11
+tags: [design-systems, tokens, components, engineering]
+relatedPosts: [micro-frontends-post-mortem, art-of-micro-interactions]
+---
+
+Most design systems start the same way: a shared components folder that a couple of engineers agree to use. Some of them grow into something essential. Most become a maintenance burden that gets quietly abandoned.
+
+The difference isn't design quality. It's engineering decisions made in the first six months.
+
+## Token Architecture Is Your Foundation
+
+Design tokens are the atoms of your system. If you get the token layer wrong, every component built on top of it will be wrong too.
+
+The mistake most systems make: flat token files with semantic names that don't compose.
+
+```css
+/* Don't do this */
+--button-primary-background: #0070f3;
+--button-primary-text: #ffffff;
+--button-secondary-background: #f0f0f0;
+/* 300 more tokens that are impossible to theme */
+```
+
+The composable approach uses three layers:
+
+```css
+/* Layer 1: Primitive tokens — raw values */
+--color-blue-500: #0070f3;
+--color-blue-600: #0060df;
+--color-neutral-50: #fafafa;
+
+/* Layer 2: Semantic tokens — intent-based aliases */
+--color-interactive-default: var(--color-blue-500);
+--color-interactive-hover: var(--color-blue-600);
+--color-surface-primary: var(--color-neutral-50);
+
+/* Layer 3: Component tokens — local overrides */
+--button-background: var(--color-interactive-default);
+```
+
+This architecture means theming only requires overriding layer 2. Component tokens inherit from semantic tokens, so they theme automatically.
+
+## Component API Design
+
+A component's API is a contract. Breaking it costs trust.
+
+The rules we enforce:
+
+**Composition over configuration**: Instead of `<Button icon="download" loading={true} rounded="full">`, prefer composable primitives that users assemble.
+
+**Consistent prop naming**: If `size` accepts `sm | md | lg` on Button, it should accept the same on Input, Badge, and every other component with size variants.
+
+**Escape hatches**: Every component needs a way to override styles for legitimate edge cases. Without escape hatches, users copy-paste your component and maintain their own fork. With them, they stay in the system.
+
+```tsx
+// The as prop is the most powerful escape hatch
+<Button as="a" href="/dashboard">Go to dashboard</Button>
+
+// className merging for style overrides
+<Card className="border-blue-500" /> // Merges with base styles
+```
+
+## Documentation Is a Feature
+
+The components are only part of the design system. The other part — often neglected — is the usage guidance.
+
+What documentation needs to answer:
+
+- When do I use this component vs. that other similar component?
+- What are the accessibility implications of this variant?
+- How does this component behave on mobile?
+- What are the performance characteristics?
+
+The documentation that engineers actually read: live, interactive examples with code. Static screenshots are ignored.
+
+## Governance: Who Can Change What?
+
+The design system becomes a bottleneck when every change requires approval from a central team. It becomes chaos when anyone can merge breaking changes.
+
+The model that works: **open contribution, centralized review**.
+
+Anyone can submit a PR. A small rotation of engineers review for:
+- API consistency with existing components
+- Accessibility compliance
+- Token usage (no hardcoded values)
+- Cross-browser testing
+
+The review bottleneck is acceptable because the bar is clear. Engineers know what "approved" looks like before they start.
+
+## The Adoption Flywheel
+
+Design systems either hit critical mass or die. The tipping point: when it's faster to use the system than to build your own component.
+
+You hit this point by: solving real problems (not theoretical ones), making the installation and setup trivial, and ensuring performance is never worse than hand-written alternatives.
+
+The systems that fail: those that prioritize completeness over usability. Ship 10 excellent, well-documented components instead of 50 mediocre ones. Engineers adopt what they trust.

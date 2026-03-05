@@ -1,8 +1,0 @@
-User-agent: *
-Allow: /
-
-# Sitemap
-Sitemap: https://honeyhimself.com/sitemap-index.xml
-
-# Crawl-delay
-Crawl-delay: 1 

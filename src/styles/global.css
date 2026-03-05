@@ -1,190 +1,153 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-@layer base {
-  :root {
-    color-scheme: light;
-    /* https://tailwindcss.com/docs/customizing-colors#using-css-variables */
-    --theme-bg: #efefef;
-    --theme-text: #222222;
-    --theme-accent: #b91c1c;
-    --theme-accent-2: #bcc0cd;
-    --theme-surface: #e6e6e6;
-    --theme-quote: #b91c1c;
-    --theme-highlight: #b91c1c;
+@theme {
+  --font-sans: "Inter", sans-serif;
+  --font-display: "Clash Display", sans-serif;
+  --color-background: #0a0a0a;
+}
+
+body {
+  background-color: #0a0a0a;
+  color: #fafafa;
+  font-family: "Inter", sans-serif;
+  overflow-x: hidden;
+}
+
+::selection {
+  background-color: white;
+  color: black;
+}
+
+/* Prose styles for blog content */
+.prose-invert {
+  color: #d4d4d4;
+}
+
+.prose-invert h1,
+.prose-invert h2,
+.prose-invert h3,
+.prose-invert h4 {
+  color: #fafafa;
+  font-family: "Clash Display", sans-serif;
+  font-weight: 700;
+}
+
+.prose-invert h1 { font-size: 2.5rem; margin-bottom: 1rem; margin-top: 2rem; }
+.prose-invert h2 { font-size: 1.875rem; margin-bottom: 0.875rem; margin-top: 2.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid #262626; }
+.prose-invert h3 { font-size: 1.5rem; margin-bottom: 0.75rem; margin-top: 2rem; }
+
+.prose-invert p {
+  line-height: 1.8;
+  margin-bottom: 1.5rem;
+  color: #a3a3a3;
+}
+
+.prose-invert a {
+  color: #fafafa;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.prose-invert code {
+  background: #171717;
+  border: 1px solid #262626;
+  border-radius: 4px;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.875em;
+  color: #e5e5e5;
+}
+
+.prose-invert pre {
+  background: #111111 !important;
+  border: 1px solid #262626;
+  border-radius: 12px;
+  padding: 1.5rem;
+  overflow-x: auto;
+  margin: 2rem 0;
+}
+
+.prose-invert pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 0.875rem;
+}
+
+.prose-invert blockquote {
+  border-left: 3px solid #404040;
+  padding-left: 1.5rem;
+  color: #737373;
+  font-style: italic;
+  margin: 2rem 0;
+}
+
+.prose-invert ul, .prose-invert ol {
+  margin: 1.5rem 0;
+  padding-left: 2rem;
+  color: #a3a3a3;
+}
+
+.prose-invert li {
+  margin-bottom: 0.5rem;
+  line-height: 1.7;
+}
+
+.prose-invert hr {
+  border-color: #262626;
+  margin: 3rem 0;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #0a0a0a; }
+::-webkit-scrollbar-thumb { background: #262626; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #404040; }
+
+/* AnimatedTitle CSS keyframes — runs immediately, no JS IntersectionObserver needed */
+@keyframes titleWordIn {
+  from {
+    opacity: 0;
+    transform: translateY(110%);
   }
-
-  :root.dark {
-    color-scheme: dark;
-    --theme-bg: #1d1d1d;
-    --theme-text: #ededed;
-    --theme-accent: #93e1d4;
-    --theme-accent-2: #545454;
-    --theme-surface: #2f2f2f;
-    --theme-quote: #93e1d4;
-    --theme-highlight: #93e1d4;
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
+}
 
-  html {
-    @apply scroll-smooth;
+.animated-title-word {
+  display: inline-block;
+  opacity: 0;
+  animation: titleWordIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animated-title-word {
+    opacity: 1;
+    animation: none;
   }
+}
 
-  html body {
-    @apply mx-auto flex min-h-screen max-w-6xl flex-col px-4 pt-4 md:pt-8 font-mono text-sm font-normal antialiased bg-bgColor text-textColor;
+/* Simple fade-in for hero text elements */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
   }
-
-  /*
-  * CSS for markdown and MDX blog posts
-  */
-
-  .prose-cody blockquote {
-    @apply text-quote border-l-0;
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
+}
 
-  .prose-cody a {
-    @apply no-underline;
-  }
+.hero-fade-in {
+  opacity: 0;
+  animation: fadeInUp 0.6s ease forwards;
+}
 
-  .prose-cody strong {
-    font-weight: 700;
-  }
-
-  .prose-cody :where(code):not(:where([class~=not-prose],[class~=not-prose] *)) {
-    @apply bg-accent !text-surface px-1 py-0;
-  }
-
-  .prose :where(code):not(:where([class~="not-prose"],[class~="not-prose"] *))::before{
-    content: none !important;
-  }
-
-  .prose :where(code):not(:where([class~="not-prose"],[class~="not-prose"] *))::after{
-    content: none !important;
-  }
-
-  .prose-cody hr {
-    border-top-style: dashed;
-    border-top-width: 0.5px;
-    @apply border-accent my-4;
-  }
-  .prose-cody thead {
-    @apply border-b-0;
-  }
-
-  .prose-cody thead th {
-    @apply font-bold border-b border-dashed border-accent;
-  }
-
-  .prose-cody tbody tr {
-    @apply border-b-0;
-  }
-
-  .prose-cody tfoot {
-    @apply font-bold border-t border-dashed border-accent;
-  }
-
-  .prose-cody sup {
-    @apply ms-0.5;
-  }
-
-  .prose-cody sup > a {
-    @apply bg-none;
-  }
-
-  .prose-cody sup > a:hover {
-    @apply text-accent no-underline bg-none;
-  }
-
-  .prose-cody sup > a:before {
-    content: "[";
-    @apply text-accent;
-  }
-
-  .prose-cody sup > a:after {
-    content: "]";
-    @apply text-accent;
-  }
-
-  .prose-cody mark {
-    @apply bg-accent;
-  }
-
-  .prose-cody li::marker {
-    @apply text-accent;
-  }
-
-  .prose-cody table {
-    display: block;
-    overflow-x: auto;
-    white-space: nowrap;
-  }
-
-  /*
-  * ===== END =====
-  */
-
-  .tag {
-    @apply bg-accent px-1 py-0 text-bgColor font-semibold text-sm;
-  }
-
-  .tag:before {
-    content: "#";
-    @apply -mr-2;
-  }
-
-  .cody-link {
-    @apply bg-[size:100%_6px] bg-bottom bg-repeat-x w-fit;
-    background-image: linear-gradient(
-      transparent,
-      transparent 5px,
-      var(--theme-text) 5px,
-      var(--theme-text)
-    );
-  }
-
-  .cody-link:hover {
-    background-image: linear-gradient(
-      transparent,
-      transparent 4px,
-      var(--theme-accent) 4px,
-      var(--theme-accent)
-    );
-  }
-
-  .cody-bg {
-    @apply p-4 bg-surface;
-  }
-
-  .cody-copy-code {
-    @apply absolute top-2 right-2 bg-accent text-bgColor p-0.5 border border-accent hover:bg-bgColor hover:text-accent transition-all duration-200 text-sm;
-  }
-
-  .title:before {
-    content: "#";
-    @apply mr-2 text-accent-2;
-  }
-
-  .title {
-    @apply text-lg font-bold mb-4;
-  }
-
-  hr {
-    @apply border-accent border-dashed my-6;
-  }
-
-  ::selection {
-    @apply bg-highlight text-bgColor;
-  }
-
-  ::-moz-selection {
-    @apply bg-highlight text-bgColor;
-  }
-
-  .fade-in {
-    @apply transition-opacity duration-700 ease-in opacity-100 duration-700;
-  }
-  
-  .fade-out {
-    @apply transition-opacity duration-700 ease-in opacity-0 duration-700;
+@media (prefers-reduced-motion: reduce) {
+  .hero-fade-in {
+    opacity: 1;
+    animation: none;
   }
 }

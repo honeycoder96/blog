@@ -1,0 +1,78 @@
+---
+title: "WebRTC in 2026: What Changed and What Didn't"
+date: "Jan 2026"
+pubDate: 2026-01-15
+category: Architecture
+author: Honey Sharma
+summary: A deep look at WebRTC's evolution — QUIC transport, insertable streams, and why peer-to-peer video still fails in conference rooms with 20+ participants.
+featured: true
+readingTime: 12
+tags: [webrtc, networking, video, quic]
+relatedPosts: [micro-frontends-post-mortem, astro-vs-nextjs]
+---
+
+WebRTC turned 15 this year, and it's still the most underappreciated protocol stack on the web. We've built three production video products on top of it, and every time I think I understand it, the network reminds me I don't.
+
+## The QUIC Revolution (That Mostly Didn't Happen)
+
+When QUIC became the default UDP transport for WebRTC in 2024, everyone predicted it would solve the "last mile" problem. The 0-RTT handshakes would eliminate setup latency. Congestion control would be smarter. Multi-path would Just Work™.
+
+The reality: QUIC helped significantly for initial connection setup — we saw 40-60ms improvement in P2P connection time. But in enterprise environments with deep-packet inspection firewalls, QUIC gets blocked at a higher rate than DTLS/SRTP. We ended up shipping a fallback that detects QUIC failure within 200ms and drops to the classic stack.
+
+## Insertable Streams: The Killer Feature Nobody Talks About
+
+If you're building any kind of video conferencing product and you're not using Insertable Streams, you're leaving a massive amount of capability on the table.
+
+```typescript
+const sender = peerConnection.addTrack(videoTrack, stream);
+const { readable, writable } = sender.createEncodedStreams();
+
+readable
+  .pipeThrough(new TransformStream({
+    transform(encodedFrame, controller) {
+      // Encrypt, watermark, analyze — anything goes
+      const metadata = encodedFrame.getMetadata();
+      addInvisibleWatermark(encodedFrame, userId);
+      controller.enqueue(encodedFrame);
+    }
+  }))
+  .pipeTo(writable);
+```
+
+We used this to implement per-frame metadata injection for compliance recording — something that would have required a full media server proxy six months ago.
+
+## The N>20 Participant Problem
+
+Here's the uncomfortable truth: WebRTC's mesh topology breaks at around 8-12 simultaneous participants for HD video. Everyone knows this. The "solutions" are:
+
+1. **SFU architecture** — a Selective Forwarding Unit receives all streams and forwards only relevant ones
+2. **MCU architecture** — old school, transcodes everything into a composite
+3. **Cascade SFUs** — SFUs that talk to each other for massive scale
+
+We went full SFU with mediasoup. The hidden cost: you now need to manage server-side routing state that mirrors your client-side signaling state. When they diverge, you get silent video freezes that are nearly impossible to debug in production.
+
+## Congestion Control in 2026
+
+Google's GCC (Google Congestion Control) has been the default for years. The new kid: SCReAM (Self-Clocked Rate Adaptation for Multimedia). We benchmarked both under simulated packet loss scenarios.
+
+```
+Loss Rate | GCC Bitrate Drop | SCReAM Bitrate Drop
+---------|------------------|--------------------
+1%       | 400kbps → 280kbps| 400kbps → 320kbps
+5%       | 400kbps → 120kbps| 400kbps → 200kbps
+10%      | 400kbps → 60kbps | 400kbps → 140kbps
+```
+
+SCReAM handles bursty loss significantly better. The tradeoff: it's more aggressive about reclaiming bandwidth, which can cause issues on shared networks.
+
+## What Still Doesn't Work
+
+**NAT traversal reliability**: ICE/TURN still fails in ~3-5% of enterprise networks. No amount of protocol improvements fixes misconfigured proxies.
+
+**Audio-video sync drift**: In long sessions (3+ hours), we see av_sync_offset drift by up to 400ms on certain Android devices. The fix is embarrassingly manual: periodic resync triggers.
+
+**Debugging in production**: The WebRTC internals page (`chrome://webrtc-internals`) is still the best tool we have. In 2026. It exports to a JSON blob you paste into a separate analyzer tool. It's 2026.
+
+## The Takeaway
+
+WebRTC is more capable than ever. The tooling is still 2019 vintage. If you're building on it, budget twice as long for the debugging phase as you think you need, and make sure someone on your team has read the RFC. Not summarized it — actually read it.

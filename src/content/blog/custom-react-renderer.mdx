@@ -1,0 +1,122 @@
+---
+title: "Building a Custom React Renderer from Scratch"
+date: "Dec 2025"
+pubDate: 2025-12-08
+category: Deep Dive
+author: Honey Sharma
+summary: How React-reconciler works, why you'd ever want to build your own renderer, and a working implementation that renders to a terminal canvas.
+featured: true
+readingTime: 18
+tags: [react, renderer, reconciler, internals]
+relatedPosts: [react-server-components, art-of-micro-interactions]
+---
+
+Most React developers have a mental model that looks like this: React → DOM. That's the happy path. But React's actual architecture is a two-layer system: the reconciler (which manages component trees and diffs) and the renderer (which applies those diffs to some host environment). The DOM is just one possible target.
+
+## Why Build a Custom Renderer?
+
+The honest answer: you probably don't need to. But the process of building one reveals things about React's internals that no amount of reading documentation will give you.
+
+Practical reasons you might:
+- **Ink** — renders React to the terminal (and it's actually great)
+- **React Three Fiber** — renders React to Three.js scene graph
+- **React PDF** — generates PDFs from JSX
+- **Testing** — full control over the host environment
+
+## The react-reconciler Package
+
+React exposes its reconciliation algorithm through a package: `react-reconciler`. You implement a "host config" object that tells the reconciler how to interact with your target environment.
+
+```typescript
+import ReactReconciler from 'react-reconciler';
+
+const hostConfig = {
+  // Create an instance of a host element
+  createInstance(type, props, rootContainer, hostContext, internalHandle) {
+    return createElement(type, props);
+  },
+  
+  // Create text nodes
+  createTextInstance(text, rootContainer, hostContext, internalHandle) {
+    return createTextNode(text);
+  },
+  
+  // Append a child to a parent
+  appendChildToContainer(container, child) {
+    container.appendChild(child);
+  },
+  
+  // Called after all children are mounted
+  finalizeInitialChildren(instance, type, props, rootContainer, hostContext) {
+    return false; // return true to trigger commitMount
+  },
+  
+  // Required but can be empty for simple renderers
+  prepareUpdate() { return null; },
+  commitUpdate() {},
+  
+  // Scheduler (use React's default)
+  scheduleTimeout: setTimeout,
+  cancelTimeout: clearTimeout,
+  noTimeout: -1,
+  
+  // Feature flags
+  supportsMutation: true,
+  supportsHydration: false,
+  isPrimaryRenderer: true,
+};
+
+const reconciler = ReactReconciler(hostConfig);
+```
+
+## Building the Terminal Renderer
+
+Our target: render React components to a terminal using ANSI escape codes. Each "DOM node" is a rectangular box with position, size, and content.
+
+```typescript
+interface TerminalBox {
+  type: 'box' | 'text';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  content?: string;
+  color?: string;
+  children: TerminalBox[];
+}
+```
+
+The key insight: the reconciler doesn't care what your nodes are. It just calls your functions with the right arguments. Your job is to map React's mental model onto your target's mental model.
+
+## The Update Lifecycle
+
+Here's the part that trips people up. React's commit phase has three sub-phases:
+
+1. **Before Mutation** — `getSnapshotBeforeUpdate` equivalent
+2. **Mutation** — where DOM changes actually happen
+3. **Layout** — `componentDidMount` / `useLayoutEffect`
+
+Each phase calls different host config methods. The reconciler guarantees that children are committed before parents in the mutation phase.
+
+```typescript
+// These fire in order:
+prepareForCommit(container)
+// ... mutation phase ...
+commitMount(instance, type, newProps, ...)  // if finalizeInitialChildren returned true
+// ... layout phase ...
+resetAfterCommit(container)
+```
+
+## Concurrent Mode Complications
+
+Everything above works fine for legacy mode. Concurrent mode adds: time slicing, Suspense coordination, and the ability to abandon and restart work. Your host config needs to handle these correctly.
+
+The critical flag: `supportsMicrotasks`. If you set this to `true`, the reconciler will use microtasks for scheduling — which means your updates can be interrupted between microtask checkpoints.
+
+## What I Learned
+
+Building a custom renderer demystifies React's "magic" completely. The reconciler is a sophisticated tree diffing algorithm with a well-defined interface. Everything else — hooks, concurrent features, Suspense — builds on top of that interface.
+
+The fiber architecture becomes obvious when you're on this side: each fiber is a unit of work that can be paused, abandoned, or restarted. The "double buffering" (work-in-progress tree vs. current tree) is why React can show consistent UI while working in the background.
+
+If you want to go deeper: read the react-reconciler source and trace a single `setState` call through the entire pipeline. It's dense, but it's one of the most educational things you can do as a React developer.

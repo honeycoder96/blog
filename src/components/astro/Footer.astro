@@ -1,0 +1,34 @@
+---
+const year = new Date().getFullYear();
+const links = [
+  { label: 'Github', href: 'https://github.com/honeycoder96' },
+  { label: 'LinkedIn', href: 'https://www.linkedin.com/in/honeycoder96/' },
+  { label: 'Email', href: 'mailto:contact@honeyhimself.com' }
+];
+---
+
+<footer class="border-t border-neutral-900 px-8 lg:px-24 py-12 mt-auto">
+  <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
+    <div>
+      <a href="/" class="font-display font-bold text-xl tracking-tight text-white">
+        blog.honeyhimself
+      </a>
+      <p class="text-neutral-600 text-sm mt-1 font-mono">
+        &copy; {year} — Writing about the craft
+      </p>
+    </div>
+
+    <div class="flex gap-8">
+      {links.map(link => (
+        <a
+          href={link.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="group relative overflow-hidden inline-flex h-5 font-mono text-sm tracking-widest uppercase text-neutral-500 hover:text-white transition-colors"
+        >
+          {link.label}
+        </a>
+      ))}
+    </div>
+  </div>
+</footer>

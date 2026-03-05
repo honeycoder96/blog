@@ -1,0 +1,42 @@
+---
+import '../styles/global.css';
+import { CustomCursor } from '../components/react/ui/CustomCursor';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = 'A blog about web engineering, architecture, and the craft of building software.' } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <title>{title}</title>
+
+    <!-- Clash Display (Fontshare) -->
+    <link rel="preconnect" href="https://api.fontshare.com" />
+    <link
+      href="https://api.fontshare.com/v2/css?f[]=clash-display@300,400,500,600,700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Inter (Google Fonts) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="bg-neutral-950 text-neutral-50 font-sans selection:bg-white selection:text-black overflow-x-hidden">
+    <CustomCursor client:load />
+    <slot />
+  </body>
+</html>

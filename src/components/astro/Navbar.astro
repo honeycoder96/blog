@@ -1,0 +1,92 @@
+---
+const navLinks = [
+  { href: '/blog', label: 'Writing', external: false },
+  { href: 'https://honeyhimself.com/', label: 'About', external: true },
+  { href: '/contact', label: 'Contact', external: false },
+];
+
+const currentPath = Astro.url.pathname;
+---
+
+<nav class="fixed top-0 left-0 right-0 z-50 px-8 lg:px-24 py-5 flex items-center justify-between backdrop-blur-sm bg-neutral-950/80 border-b border-neutral-900/50">
+  <a href="/" class="font-display font-bold text-lg tracking-tight text-white hover:text-neutral-300 transition-colors">
+    blog<span class="text-neutral-500">.honeyhimself</span>
+  </a>
+
+  <div class="hidden md:flex items-center gap-8">
+    {navLinks.map(link => (
+      <a
+        href={link.href}
+        target={link.external ? '_blank' : undefined}
+        rel={link.external ? 'noopener noreferrer' : undefined}
+        class={`font-mono text-xs tracking-widest uppercase transition-colors hover:text-white ${
+          !link.external && (currentPath === link.href || (link.href !== '/' && currentPath.startsWith(link.href)))
+            ? 'text-white'
+            : 'text-neutral-500'
+        }`}
+      >
+        {link.label}
+      </a>
+    ))}
+
+    <!-- Posts pill CTA -->
+    <a
+      href="/blog"
+      class="flex items-center gap-2 px-4 py-1.5 rounded-full border border-neutral-700 text-neutral-300 hover:border-neutral-400 hover:text-white transition-colors font-mono text-xs uppercase tracking-widest"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+      </svg>
+      Posts
+    </a>
+  </div>
+
+  <!-- Mobile menu button -->
+  <button
+    id="mobile-menu-btn"
+    class="md:hidden flex flex-col gap-1.5 p-2"
+    aria-label="Toggle menu"
+  >
+    <span class="w-5 h-px bg-white transition-all"></span>
+    <span class="w-5 h-px bg-white transition-all"></span>
+    <span class="w-5 h-px bg-white transition-all"></span>
+  </button>
+</nav>
+
+<!-- Mobile menu -->
+<div
+  id="mobile-menu"
+  class="fixed inset-0 z-40 bg-neutral-950 flex flex-col items-center justify-center gap-8 translate-x-full transition-transform duration-300 md:hidden"
+>
+  {navLinks.map(link => (
+    <a
+      href={link.href}
+      target={link.external ? '_blank' : undefined}
+      rel={link.external ? 'noopener noreferrer' : undefined}
+      class="font-display text-3xl font-bold text-white"
+    >
+      {link.label}
+    </a>
+  ))}
+</div>
+
+<script>
+  const btn = document.getElementById('mobile-menu-btn');
+  const menu = document.getElementById('mobile-menu');
+  let open = false;
+
+  btn?.addEventListener('click', () => {
+    open = !open;
+    menu?.classList.toggle('translate-x-full', !open);
+    menu?.classList.toggle('translate-x-0', open);
+  });
+
+  // Close on link click
+  menu?.querySelectorAll('a').forEach(a => {
+    a.addEventListener('click', () => {
+      open = false;
+      menu.classList.add('translate-x-full');
+      menu.classList.remove('translate-x-0');
+    });
+  });
+</script>

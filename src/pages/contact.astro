@@ -1,46 +1,68 @@
 ---
-import Layout from '../layouts/Base.astro';
-import ContactForm from '../components/ContactForm.astro';
+import PageLayout from '../layouts/PageLayout.astro';
+import { AnimatedTitle } from '../components/react/ui/AnimatedTitle';
+import { ContactForm } from '../components/react/sections/ContactForm';
 ---
 
-<Layout
-	title="Contact Me"
-	description="Get in touch with me for any questions or suggestions"
-	image="/blog-placeholder-about.jpg"
+<PageLayout
+  title="Contact — Honey Sharma"
+  description="Get in touch to collaborate or say hello."
 >
-	<h1 class="title">Contact</h1>
-	<p>
-		Hi there! I'm Honey Sharma, a software engineer passionate about sharing knowledge and exploring the latest in technology.
-	</p>
-	
-	<p>
-		I write about various technologies, programming concepts, and share insights from my journey in software development. 
-		Whether you're a fellow developer, tech enthusiast, or just curious about the world of programming, I'm glad you're here!
-	</p>
+  <div class="max-w-7xl mx-auto px-8 lg:px-24 py-16 flex-1">
+    <div class="mb-16">
+      <AnimatedTitle
+        text="Let's Collaborate"
+        className="text-5xl md:text-7xl font-display font-bold tracking-tighter text-white mb-6"
+        client:visible
+      />
+    </div>
 
-	<h2 class="title mt-4">Let's Connect!</h2>
-	<p>
-		I love hearing from readers and fellow developers. Whether you have:
-	</p>
-	<ul class="list-inside list-disc mb-4">
-		<li>Questions about any of my blog posts</li>
-		<li>Suggestions for topics you'd like me to cover</li>
-		<li>Corrections or improvements to my content</li>
-		<li>Just want to say hello and share your thoughts</li>
-		<li>Collaboration opportunities or tech discussions</li>
-	</ul>
-	
-	<p>
-		Feel free to reach out! I'm always open to feedback, suggestions, and meaningful conversations about technology. 
-		Your input helps me create better content and learn new things along the way.
-	</p>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-20">
+      <!-- Info -->
+      <div class="flex flex-col justify-between">
+        <div>
+          <p class="text-xl text-neutral-400 leading-relaxed max-w-md">
+            Open to collaborating on projects where thoughtful design meets strong engineering.
+            If you're building something interesting, let's talk.
+          </p>
 
-	<p class="mb-6">
-		You can contact me via the form below or directly at 
-		<a href="mailto:contact@honeyhimself.com" class="cody-link">contact@honeyhimself.com</a>.
-	</p>
+          <div class="mt-12 space-y-3">
+            <a
+              href="mailto:hello@alexdev.blog"
+              class="flex items-center gap-3 text-neutral-500 hover:text-white transition-colors font-mono text-sm"
+            >
+              <span class="w-12 text-neutral-700">Email</span>
+              hello@alexdev.blog
+            </a>
+            <a
+              href="https://github.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="flex items-center gap-3 text-neutral-500 hover:text-white transition-colors font-mono text-sm"
+            >
+              <span class="w-12 text-neutral-700">GitHub</span>
+              @alexdev
+            </a>
+            <a
+              href="https://twitter.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="flex items-center gap-3 text-neutral-500 hover:text-white transition-colors font-mono text-sm"
+            >
+              <span class="w-12 text-neutral-700">Twitter</span>
+              @alexdev
+            </a>
+          </div>
+        </div>
 
-	<hr class="my-8" />
-	
-	<ContactForm />
-</Layout>
+        <div class="flex flex-col gap-1 font-mono text-sm mt-12 text-neutral-700 tracking-widest uppercase">
+          <span>Timezone: UTC+5:30</span>
+          <span>Response time: 6-12h</span>
+        </div>
+      </div>
+
+      <!-- Form: client:load — user may interact immediately -->
+      <ContactForm client:load />
+    </div>
+  </div>
+</PageLayout>

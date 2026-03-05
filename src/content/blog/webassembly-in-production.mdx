@@ -1,0 +1,121 @@
+---
+title: "WebAssembly in Production: Lessons from the Trenches"
+date: "Jun 2025"
+pubDate: 2025-06-30
+category: Architecture
+author: Honey Sharma
+summary: We shipped a video processing pipeline using WASM. The performance was real. So were the debugging nightmares, memory management surprises, and the JIT-killing patterns that cost us two weeks.
+featured: false
+readingTime: 13
+tags: [webassembly, wasm, performance, rust, video]
+relatedPosts: [webrtc-2026, react-server-components]
+---
+
+We had a problem: real-time video effect processing in the browser. Frame rate requirements were 30fps minimum, effects pipeline included color grading, noise reduction, and background segmentation. JavaScript couldn't get there. WebAssembly could.
+
+This is what we learned after six months of production WASM.
+
+## Why WASM Was the Right Call
+
+The browser's main thread has to do too many things: parse/execute JS, layout, paint, handle events. Video processing is CPU-intensive, predictable, and fundamentally loop-based — an ideal candidate for offloading.
+
+WASM gives you near-native performance because it compiles ahead of time to a compact binary format with a well-defined memory model. The JIT uncertainty that makes JavaScript performance unpredictable doesn't exist in the same way.
+
+Our numbers before WASM: 12fps with CPU usage pinning at 90-100%.
+After: 29-31fps at 40-60% CPU. On the same hardware.
+
+## The Rust-to-WASM Pipeline
+
+We wrote the processing code in Rust and compiled with wasm-pack:
+
+```rust
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+pub struct VideoProcessor {
+    width: u32,
+    height: u32,
+    lut: Vec<u8>, // Color lookup table
+}
+
+#[wasm_bindgen]
+impl VideoProcessor {
+    #[wasm_bindgen(constructor)]
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            lut: build_lut(),
+        }
+    }
+    
+    pub fn process_frame(&mut self, frame_data: &mut [u8]) {
+        // SIMD operations on raw pixel data
+        apply_color_grading(frame_data, &self.lut);
+        apply_noise_reduction(frame_data, self.width, self.height);
+    }
+}
+```
+
+The JavaScript side:
+
+```typescript
+import init, { VideoProcessor } from './wasm/video_processor';
+
+const wasm = await init();
+const processor = new VideoProcessor(width, height);
+
+// Every frame:
+const imageData = ctx.getImageData(0, 0, width, height);
+processor.process_frame(imageData.data);
+ctx.putImageData(imageData, 0, 0);
+```
+
+## The Memory Boundary Problem
+
+Here's what bit us: every call to `processor.process_frame` copies the frame data across the JS/WASM boundary. For a 1080p frame (about 8MB of pixel data), that's a significant memcpy on every frame.
+
+The solution: shared memory buffers. Instead of passing data to Rust, we give Rust a pointer into a shared `SharedArrayBuffer`:
+
+```typescript
+const buffer = new SharedArrayBuffer(width * height * 4);
+const frameView = new Uint8Array(buffer);
+processor.set_frame_buffer(frameView);
+
+// Each frame: write to shared buffer, call process, read from shared buffer
+// No memcpy — the data lives in WASM memory throughout
+```
+
+This is where WebWorkers become essential. `SharedArrayBuffer` requires cross-origin isolation headers (`COOP` and `COEP`), and the heavy processing should never block the main thread anyway.
+
+## Debugging in WASM: The Part Nobody Talks About
+
+Source maps for WASM exist but are incomplete. When your Rust code panics in production, you get a stack trace in WASM bytecode addresses. Not helpful.
+
+What helps:
+1. Extensive logging at the Rust level using `web-sys::console::log_1`
+2. Aggressive boundary validation before passing data into WASM
+3. A debug build with full source maps for local development
+
+The hardest bug we hit: a memory leak from not calling `free()` on WASM-allocated objects. Rust drops automatically within Rust scope, but objects crossing the WASM/JS boundary are managed by the JS GC. If you create a WASM struct from JS and don't explicitly call `.free()`, it leaks.
+
+```typescript
+// ALWAYS free WASM objects when done
+const processor = new VideoProcessor(width, height);
+// ... use processor ...
+processor.free(); // Critical — or you leak every allocation
+```
+
+## SIMD: The Multiplier
+
+WASM SIMD allows operating on 128-bit vectors — processing 4 float values or 16 bytes simultaneously. For image processing, this is transformative.
+
+Our noise reduction went from 12ms/frame to 3ms/frame with SIMD. The browser support question (Safari SIMD support was spotty until mid-2025) is now resolved.
+
+## Production Recommendations
+
+1. **Profile first**: WASM adds complexity. Prove JavaScript can't meet your requirements before reaching for it.
+2. **Use WebWorkers**: WASM should run off-main-thread. Always.
+3. **Manage memory explicitly**: Track every allocation that crosses the JS boundary.
+4. **Build monitoring in**: WASM errors are hard to surface. Custom error reporting from the WASM side is worth building.
+5. **Test in Safari**: The WASM implementation differences between V8, SpiderMonkey, and JavaScriptCore are real.
