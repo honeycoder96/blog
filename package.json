@@ -1,7 +1,11 @@
 {
-  "name": "astroblog",
+  "name": "bloghoneyhimself",
   "type": "module",
   "version": "0.0.1",
+  "packageManager": "npm@10.8.2",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
