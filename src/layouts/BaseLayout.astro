@@ -11,7 +11,7 @@ const { title, description = 'A blog about web engineering, architecture, and th
 ---
 
 <!doctype html>
-<html lang="en" class="scroll-smooth">
+<html lang="en" class="scroll-smooth" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -19,6 +19,14 @@ const { title, description = 'A blog about web engineering, architecture, and th
     <meta name="generator" content={Astro.generator} />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <title>{title}</title>
+
+    <!-- Flash prevention: set theme before paint -->
+    <script is:inline>
+      (function() {
+        var theme = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
 
     <!-- Clash Display (Fontshare) -->
     <link rel="preconnect" href="https://api.fontshare.com" />
@@ -35,7 +43,7 @@ const { title, description = 'A blog about web engineering, architecture, and th
       rel="stylesheet"
     />
   </head>
-  <body class="bg-neutral-950 text-neutral-50 font-sans selection:bg-white selection:text-black overflow-x-hidden">
+  <body class="bg-surface text-fg font-sans overflow-x-hidden">
     <CustomCursor client:load />
     <slot />
   </body>

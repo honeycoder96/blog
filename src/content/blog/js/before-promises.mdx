@@ -1,0 +1,388 @@
+---
+title: "The World Before Promises"
+date: "Mar 2026"
+pubDate: 2026-03-13
+category: JavaScript
+author: Honey Sharma
+summary: Before you can truly understand Promises, you need to understand the environment they were built for. This post covers the JavaScript event loop, call stack, task queues, and what blocking the thread actually looks like in practice.
+featured: false
+readingTime: 12
+tags: [javascript, promises, event-loop, js-interview]
+relatedPosts: []
+prevPost: js/promises-in-depth
+nextPost: custom-react-renderer
+---
+import Note from '../../../components/astro/Note.astro'
+
+---
+
+JavaScript feels like it can do many things at once. You click a button, a network request fires, an animation keeps running, a timer ticks down — all seemingly in parallel. But JavaScript has exactly one thread. One call stack. One thing executing at any given moment.
+
+So how does none of it freeze?
+
+That's the question this post answers. Before we touch a single line of Promise code, we need a rock-solid mental model of the runtime environment JavaScript operates in. Every behaviour you'll see in the rest of this series — why `.then()` callbacks run when they do, why certain code executes in a surprising order, how the event loop interacts with async operations — traces back to what we cover here.
+
+## The Single Thread — What It Actually Means
+
+When we say JavaScript is single-threaded, we mean there is exactly one sequence of instructions executing at any point in time. There is no parallelism within the JS engine itself.
+
+Compare this to a language like Java or Go, where you can spawn multiple threads that run simultaneously, each with its own stack, each potentially touching shared memory. JavaScript has none of that. One thread, one stack, one thing at a time.
+
+This is a deliberate design decision. The browser's DOM is not thread-safe — designing JavaScript to manipulate it from multiple threads simultaneously would require complex locking mechanisms and make it far harder to write correct code. A single thread sidesteps all of that.
+
+But it also means something important: **if JavaScript is busy, it is completely busy**. Nothing else can run while it is.
+
+
+## The Call Stack
+
+Every time JavaScript calls a function, it pushes a **stack frame** onto the call stack. That frame holds the function's local variables and tracks where execution should return to when the function finishes. When the function returns, its frame is popped off.
+
+Let's trace through a concrete example:
+
+```js
+function multiply(a, b) {
+  return a * b;
+}
+
+function square(n) {
+  return multiply(n, n);
+}
+
+function printSquare(n) {
+  const result = square(n);
+  console.log(result);
+}
+
+printSquare(4);
+```
+
+Here is the call stack at each step:
+
+```
+Step 1: [printSquare(4)]           ← called from global scope
+Step 2: [printSquare(4), square(4)]  ← printSquare calls square
+Step 3: [printSquare(4), square(4), multiply(4, 4)]  ← square calls multiply
+Step 4: [printSquare(4), square(4)]  ← multiply returns 16, frame popped
+Step 5: [printSquare(4)]           ← square returns 16, frame popped
+Step 6: [printSquare(4), console.log(16)]  ← console.log called
+Step 7: []                         ← everything done, stack empty
+```
+
+The stack grows as functions are called and shrinks as they return. When the stack is empty, JavaScript has nothing to do.
+
+<Note variant="info">
+The call stack has a maximum size. If you have a function that calls itself infinitely (or deep enough), you'll hit a "Maximum call stack size exceeded" error — commonly known as a stack overflow. The name of the website is not a coincidence.
+</Note>
+
+### Try It — Call Stack Trace
+
+Run the code below and use the browser's debugger to step through it. Put a `debugger` statement inside `multiply` and open DevTools — you'll see the call stack panel on the right update live as you step through each frame.
+
+```js
+// SANDPACK DEMO 1 — Call Stack Trace
+// Tip: open the browser console and step through with debugger
+
+function multiply(a, b) {
+  debugger; // open DevTools to see the call stack here
+  return a * b;
+}
+
+function square(n) {
+  return multiply(n, n);
+}
+
+function printSquare(n) {
+  const result = square(n);
+  console.log(result);
+}
+
+printSquare(4);
+printSquare(5);
+printSquare(6);
+```
+
+## Blocking the Thread
+
+Because there is only one thread, any code that takes a long time to run will hold up *everything* else. No other JavaScript can execute, no UI updates can be painted, no click handlers can fire — the entire page is frozen until that code finishes.
+
+This is called **blocking the thread**, and it is one of the most important problems JavaScript's async model is designed to solve.
+
+Here is a concrete example:
+
+```js
+// SANDPACK DEMO 2 — Blocking the Thread
+// Click "Start Heavy Work" and notice the UI freezes completely
+// The button becomes unresponsive, the counter stops updating
+
+let count = 0;
+
+// Update the counter display every 100ms
+setInterval(() => {
+  count++;
+  document.getElementById('counter').textContent = count;
+}, 100);
+
+function doHeavyWork() {
+  const start = Date.now();
+  // Synchronously block for ~3 seconds
+  while (Date.now() - start < 3000) {
+    // Just spinning. Doing nothing useful.
+    // But JS is completely occupied.
+  }
+  console.log('Heavy work done');
+}
+
+document.getElementById('btn').addEventListener('click', doHeavyWork);
+
+// HTML needed:
+// <p>Counter: <span id="counter">0</span></p>
+// <button id="btn">Start Heavy Work</button>
+```
+
+Click the button and watch the counter freeze mid-tick. The `while` loop monopolises the thread. The interval timer fires, but its callback is queued and cannot run until the stack is clear — which doesn't happen until the loop finishes.
+
+This is why you should never do heavy computation synchronously on the main thread.
+
+<Note variant="warning">
+Real-world blocking culprits include: synchronously parsing a large JSON payload, running a naive recursive algorithm on a big dataset, or importing and immediately executing a large synchronous library. All of these hold the thread in exactly the same way as the while loop above.
+</Note>
+
+
+## The Environment — Where the Real Async Work Happens
+
+Here's the thing most tutorials gloss over: **JavaScript itself has no concept of timers, network requests, or file I/O.**
+
+There is no timer mechanism built into the V8 engine. There is no `setTimeout` in the ECMAScript specification. When you call `setTimeout`, `fetch`, `XMLHttpRequest`, `fs.readFile`, or `addEventListener` — you are not calling JavaScript. You are calling APIs provided by the **environment** JavaScript is running in.
+
+In a browser, that environment is the browser itself — it exposes Web APIs. In Node.js, that environment is the Node.js runtime — it exposes C++-backed APIs for file system, networking, and so on.
+
+The architecture looks like this:
+
+```
+┌─────────────────────────────────────────────┐
+│              Browser / Node.js              │
+│                                             │
+│   ┌──────────────┐    ┌──────────────────┐  │
+│   │  JS Engine   │    │  Environment     │  │
+│   │  (V8, etc.)  │    │  APIs            │  │
+│   │              │    │                  │  │
+│   │  - Call Stack│    │  - setTimeout    │  │
+│   │  - Heap      │    │  - fetch / XHR   │  │
+│   │              │    │  - fs.readFile   │  │
+│   │              │    │  - DOM events    │  │
+│   └──────┬───────┘    └────────┬─────────┘  │
+│          │                     │            │
+│          └──────────┬──────────┘            │
+│                     │                       │
+│            ┌────────▼────────┐              │
+│            │   Task Queues   │              │
+│            └─────────────────┘              │
+└─────────────────────────────────────────────┘
+```
+
+When you call `setTimeout(fn, 1000)`, JavaScript hands the timer off to the environment and continues executing. The environment tracks the timer independently, outside the JS thread. When 1000ms elapses, the environment places `fn` into a queue. JavaScript picks it up from that queue when the stack is free.
+
+This is the fundamental mechanism that makes async JavaScript possible. JavaScript hands work to the environment, stays free to do other things, and the environment delivers results back via queues.
+
+<Note variant="tip">
+This is why `setTimeout(fn, 0)` doesn't run `fn` immediately. The 0ms timer still has to go through the environment and the task queue. It runs *as soon as possible* after the current synchronous code finishes — not *right now*.
+</Note>
+
+
+## The Event Loop
+
+So we have a call stack and we have task queues. What connects them?
+
+**The event loop.**
+
+The event loop is a continuously running process that does exactly one thing:
+
+> If the call stack is empty, take the next task from the task queue and push it onto the stack.
+
+That's it. That's the whole algorithm at its core.
+
+```
+while (true) {
+  if (callStack.isEmpty() && taskQueue.hasTask()) {
+    const task = taskQueue.dequeue();
+    callStack.push(task);
+  }
+}
+```
+
+This is not actual JavaScript — it's a conceptual model. But this is genuinely what is happening. The event loop sits there, watching. The moment the stack empties, it grabs the next waiting task and runs it.
+
+Let's trace through `setTimeout` step by step:
+
+```js
+console.log('A');
+
+setTimeout(function onTimeout() {
+  console.log('B');
+}, 0);
+
+console.log('C');
+```
+
+Here is exactly what happens:
+
+```
+1. Call stack:    [console.log('A')]
+   → prints 'A', pops
+
+2. Call stack:    [setTimeout(..., 0)]
+   → JS hands the timer to the environment, pops immediately
+   → environment registers: "after 0ms, queue onTimeout"
+
+3. Call stack:    [console.log('C')]
+   → prints 'C', pops
+
+4. Call stack:    [] ← empty
+   Environment:  timer elapsed (0ms) → queues onTimeout
+   Task queue:   [onTimeout]
+
+5. Event loop:   stack is empty, task queue has onTimeout
+   → pushes onTimeout onto the stack
+
+6. Call stack:   [onTimeout → console.log('B')]
+   → prints 'B', pops
+```
+
+Output: `A`, `C`, `B`.
+
+Even though the timer is 0ms, `B` always prints last — because it has to go through the task queue.
+
+
+## The Microtask Queue
+
+There are actually two queues, not one — and the second one has higher priority.
+
+The **microtask queue** holds callbacks that need to run *after the current task*, but *before* the event loop picks up the next task from the regular queue. This means the microtask queue is completely drained before the event loop moves on to anything else.
+
+What goes into the microtask queue?
+
+- `Promise` reaction callbacks (`.then()`, `.catch()`, `.finally()`)
+- `queueMicrotask(fn)` calls
+- `MutationObserver` callbacks
+
+We haven't covered Promise internals yet — that's Part II — but we can already see the queue in action:
+
+```js
+console.log('1');
+
+setTimeout(() => console.log('2'), 0);
+
+Promise.resolve().then(() => console.log('3'));
+
+console.log('4');
+```
+
+<details>
+<summary>Think about it first — what's the output?</summary>
+
+**Output: `1`, `4`, `3`, `2`**
+
+Here's why, step by step:
+
+1. `console.log('1')` — runs synchronously, prints `1`
+2. `setTimeout(...)` — handed to the environment, callback queued in the **macrotask queue** after 0ms
+3. `Promise.resolve().then(...)` — Promise is already resolved, callback queued in the **microtask queue**
+4. `console.log('4')` — runs synchronously, prints `4`
+5. Stack is now empty. Before picking the next macrotask, the event loop drains the microtask queue — prints `3`
+6. Microtask queue empty. Event loop picks the setTimeout callback from the macrotask queue — prints `2`
+
+The key rule: **microtasks always run before the next macrotask.**
+
+</details>
+
+<Note variant="info">
+The regular task queue is also called the **macrotask queue** to distinguish it from the microtask queue. setTimeout, setInterval, I/O callbacks, and UI events all produce macrotasks.
+</Note>
+
+This priority difference between macro and microtasks is one of the most commonly misunderstood things about JavaScript execution order. It's also one of the most common interview questions. We'll revisit it throughout the series — it directly explains how and when Promise callbacks execute.
+
+---
+
+## Putting It All Together — Full Execution Trace
+
+Let's trace through a more complete example that combines synchronous code, a timer, and a resolved Promise callback:
+
+```js
+// SANDPACK DEMO 3 — Full Event Loop Trace
+// Run this and predict the output before looking at the trace below
+
+console.log('script start');       // (1)
+
+setTimeout(function macroTask() {
+  console.log('setTimeout');       // (5)
+}, 0);
+
+Promise.resolve()
+  .then(function microTask1() {
+    console.log('promise 1');      // (3)
+  })
+  .then(function microTask2() {
+    console.log('promise 2');      // (4)
+  });
+
+console.log('script end');         // (2)
+```
+
+Step-by-step trace:
+
+```
+Synchronous phase:
+  → 'script start'            (call stack)
+  → setTimeout queued         (macrotask queue)
+  → .then(microTask1) queued  (microtask queue — Promise already resolved)
+  → 'script end'              (call stack)
+
+Stack is now empty. Check microtask queue first:
+  → microTask1 runs → 'promise 1'
+  → microTask1 returning triggers microTask2 → queued in microtask queue
+  → microTask2 runs → 'promise 2'
+  → microtask queue empty
+
+Now event loop picks next macrotask:
+  → macroTask runs → 'setTimeout'
+```
+
+**Output:** `script start` → `script end` → `promise 1` → `promise 2` → `setTimeout`
+
+Notice how `promise 2` runs before `setTimeout` even though it was queued *after* `setTimeout`. The entire microtask queue — including microtasks generated *by* microtasks — drains before a single macrotask is picked up.
+
+<Note variant="tip">
+Want to see this visually? Paste the code above into [JS Visualizer 9000](https://www.jsv9000.app/) — it animates the call stack, microtask queue, and macrotask queue in real time as the code executes. It's the best visual tool for internalising the event loop.
+</Note>
+
+
+## The Rules — A Quick Reference
+
+Before we move on, here are the core rules this post establishes. Everything in the rest of the series builds on these.
+
+| Rule | What it means |
+|------|---------------|
+| One thread | Only one piece of JS runs at a time — always |
+| Call stack | Functions push frames on entry, pop on return |
+| Environment APIs | Timers, network, I/O live outside the JS engine |
+| Macrotask queue | setTimeout, setInterval, I/O, UI events — one per event loop turn |
+| Microtask queue | Promise callbacks, queueMicrotask — all drain before next macrotask |
+| Event loop | Moves tasks from queues to the stack when the stack is empty |
+
+
+## Why This Matters
+
+We now know the shape of the world JavaScript operates in. The JS engine is lean — it executes code on a single thread and has no built-in mechanism for waiting. The environment provides the async capabilities: timers, network, file I/O. When those async operations complete, their callbacks are placed in queues. The event loop shuttles those callbacks onto the stack when it's free.
+
+This works. JavaScript has powered complex UIs and servers for decades on this model. But as applications got more complex, coordinating all those async callbacks became painful. You needed to sequence async operations, handle errors, coordinate multiple parallel requests, know when a group of operations all finished.
+
+The first answer the community reached for was callbacks — passing a function that should run "when this is done". It solved the scheduling problem but introduced a whole new set of problems.
+
+That's exactly what we look at in the next post.
+
+## Further Reading
+
+- [In The Loop](https://www.youtube.com/watch?v=cCOL7MC4Pl0) — Jake Archibald's JSConf Asia talk. The canonical visual explanation of the event loop. Watch it if you haven't.
+- [JS Visualizer 9000](https://www.jsv9000.app/) — paste any snippet and watch the call stack and queues animate in real time
+- [What the heck is the event loop anyway?](https://www.youtube.com/watch?v=8aGhZQkoFbQ) — Philip Roberts' JSConf EU talk, the other classic on this topic
+- [HTML spec: Processing model](https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model) — the actual event loop spec if you want to go deep

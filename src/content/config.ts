@@ -6,13 +6,15 @@ const blogCollection = defineCollection({
     title: z.string(),
     date: z.string(),
     pubDate: z.coerce.date(),
-    category: z.enum(['Architecture', 'Deep Dive', 'Engineering']),
+    category: z.enum(['Architecture', 'Deep Dive', 'Engineering', 'JavaScript']),
     author: z.string().default('Honey Sharma'),
     summary: z.string(),
     featured: z.boolean().default(false),
     readingTime: z.number().optional(),
     tags: z.array(z.string()).default([]),
     relatedPosts: z.array(z.string()).default([]),
+    prevPost: z.string().optional(),
+    nextPost: z.string().optional(),
   }),
 });
 

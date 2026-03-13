@@ -1,0 +1,151 @@
+---
+title: "Promises in Depth - Series"
+date: "Mar 2026"
+pubDate: 2026-03-13
+category: JavaScript
+author: Honey Sharma
+summary: A complete guide to JavaScript Promises — from why they exist to building a spec-compliant polyfill from scratch. 30 posts covering everything a JavaScript developer needs to truly understand async.
+featured: false
+readingTime: 10
+tags: [javascript, promises, js-interview]
+nextPost: js/before-promises
+---
+
+JavaScript runs on a single thread. Yet somehow, it fetches data, reads files, waits on timers, and handles user input — all without freezing. The mechanism that makes this possible is async programming, and at the centre of modern async JavaScript sits the **Promise**.
+
+But most developers learn Promises the same way — a quick tutorial, a few `.then()` calls, switch to `async/await`, and move on. That works until it doesn't. Until you hit a silent swallow, a broken chain, a `forEach` that refuses to wait, or an error that disappears into the void.
+
+This series exists to close that gap.
+
+Over 30 posts, we go from the very ground up — what the JavaScript event loop actually does, why callbacks fell short, and exactly what problem Promises were designed to solve — all the way to reading the Promises/A+ specification and implementing a fully compliant `Promise` from scratch in vanilla JavaScript. And for those gearing up for interviews, the final part is dedicated entirely to that.
+
+Whether you are preparing for interviews, debugging async code in production, or just want to actually understand what happens when you write `new Promise()`, this series is for you.
+
+---
+
+## How This Series Is Structured
+
+The 30 posts are grouped into 8 parts. Each part builds on the previous one, but most posts are self-contained enough to jump into directly if you already know the surrounding context.
+
+---
+
+## Part I — The Problem Space
+
+Before writing a single line of Promise code, it's worth understanding what world Promises were born into, and why that world needed them.
+
+| # | Post | Description |
+|---|------|-------------|
+| 01 | [The World Before Promises](#) | The JavaScript event loop, the call stack, and what it means to be single-threaded |
+| 02 | [Callbacks — The Original Async Pattern](#) | How callbacks work, callback hell, and the inversion of control problem |
+| 03 | [What Promises Set Out to Solve](#) | The mental model of a future value, and the history from jQuery Deferreds to the spec |
+
+---
+
+## Part II — Core Mechanics
+
+The beating heart of the series. This is where you learn exactly how a Promise works, not just how to use one.
+
+| # | Post | Description |
+|---|------|-------------|
+| 04 | [Anatomy of a Promise](#) | The three states, one-way state transitions, the executor, and what resolve/reject actually do |
+| 05 | [Consuming Promises with `.then()`](#) | The `.then()` signature, return values, why it always returns a new promise, and microtask scheduling |
+| 06 | [Error Handling and Cleanup — `.catch()` and `.finally()`](#) | How rejections propagate, recovering mid-chain, unhandled rejections, and `.finally()` gotchas |
+| 07 | [Promise Chaining In Depth](#) | Sequential async pipelines, thenable flattening, common chaining mistakes, and flat vs nested chains |
+
+---
+
+## Part III — The Promise API
+
+Every static method on the `Promise` constructor deserves its own focused treatment. Each combinator has distinct semantics that are worth understanding deeply.
+
+| # | Post | Description |
+|---|------|-------------|
+| 08 | [`Promise.resolve()` and `Promise.reject()`](#) | Pre-settled promises, wrapping thenables, and the identity shortcut |
+| 09 | [`Promise.all()`](#) | Parallelising independent operations, fail-fast behaviour, and ordering guarantees |
+| 10 | [`Promise.allSettled()`](#) | Running promises regardless of individual failures and building resilient multi-fetch patterns |
+| 11 | [`Promise.race()`](#) | First-settled-wins semantics, timeout wrappers, and why losing promises aren't cancelled |
+| 12 | [`Promise.any()`](#) | First-fulfilled-wins, `AggregateError`, and how to choose between `any`, `race`, and `all` |
+
+---
+
+## Part IV — Promises and async/await
+
+`async/await` is not a different system — it's Promises with nicer syntax. This post makes that concrete, and covers the traps that the syntax sugar can hide.
+
+| # | Post | Description |
+|---|------|-------------|
+| 13 | [async/await — The Full Picture](#) | What `async` functions return, how `await` suspends execution, translating between chains and await, accidental serialisation in loops, the `await` in `forEach` trap, floating promises, and top-level await |
+
+---
+
+## Part V — Patterns and Recipes
+
+The practical half of the series. Real patterns used in real codebases, explained from first principles so you can adapt them — not just copy them.
+
+| # | Post | Description |
+|---|------|-------------|
+| 14 | [Execution Patterns and Concurrency Control](#) | Sequential tasks with `reduce`, parallelising with `Promise.all`, and building a promise pool / concurrency limiter from scratch |
+| 15 | [Retry, Timeout, and Fallback Patterns](#) | Exponential backoff, timeout wrappers with `Promise.race`, circuit breakers, and waterfall fallbacks |
+| 16 | [Deferred Pattern and Promise Factories](#) | Separating resolve/reject from the executor, lazy promises, and memoising async calls |
+| 17 | [Cancellation — The Gap Promises Leave](#) | Why the spec has no cancellation, AbortController in practice, and cooperative cancellation in chains |
+| 18 | [Promisifying Callback-based APIs](#) | Writing `promisify` by hand, `util.promisify` in Node.js, and promisifying event emitters |
+
+---
+
+## Part VI — Limitations and Gotchas
+
+Promises are powerful, but they have real constraints. This part is the honest accounting most tutorials skip.
+
+| # | Post | Description |
+|---|------|-------------|
+| 19 | [Promise Limitations and Pitfalls](#) | No cancellation, no progress, eager execution, silently swallowed rejections, and mixing `.then(null, fn)` with `.catch()` incorrectly |
+| 20 | [Memory and Performance Considerations](#) | Microtask queue pressure, long chains vs flat await, and avoiding memory leaks with settled promises |
+
+---
+
+## Part VII — Building the Polyfill
+
+The payoff. By this point in the series, you have enough context to read the Promises/A+ specification and actually understand it. This part walks through implementing a fully compliant `Promise` from scratch, step by step.
+
+| # | Post | Description |
+|---|------|-------------|
+| 21 | [The Promises/A+ Specification — A Deep Read](#) | What the spec covers, the resolution procedure `[[Resolve]](promise, x)` line by line, and the microtask requirement |
+| 22 | [Scaffolding the Polyfill — State and Executor](#) | Representing state with closures, running the executor safely, and implementing single-fire resolve/reject |
+| 23 | [Implementing `.then()`](#) | Creating the chained promise, queueing pending handlers, and scheduling with `queueMicrotask` |
+| 24 | [Implementing the Resolution Procedure](#) | Thenable detection, adopting the state of returned promises, and guarding against circular resolution |
+| 25 | [Adding `.catch()`, `.finally()`, and Static Methods](#) | Deriving instance methods from `.then()` and implementing all four static combinators |
+| 26 | [Testing and Validating the Polyfill](#) | Running the official Promises/A+ compliance suite, fixing edge cases, and comparing against native `Promise` |
+
+---
+
+## Part VIII — Interview Corner
+
+These posts are written specifically for interview preparation. Each one is self-contained and assumes you've worked through the series — they won't just give you answers to memorise, they'll give you the understanding to derive those answers yourself.
+
+| # | Post | Description |
+|---|------|-------------|
+| 27 | [Predict the Output — Promise Execution Order](#) | A curated set of tricky snippets involving microtasks, chaining, and async/await — with deep explanations of every output |
+| 28 | [The Most Common Promise Interview Questions](#) | The questions that come up repeatedly, answered properly — states, what `.then()` returns, difference between `all` and `allSettled`, and more |
+| 29 | [Implement These in an Interview — Promise Utilities](#) | Walking through live implementations of `promisify`, `retry`, a concurrency limiter, and `Promise.all` from scratch |
+| 30 | [async/await vs Promises — Interview Edition](#) | How to articulate the relationship clearly, what interviewers are actually testing, and the common misconceptions to avoid |
+
+---
+
+## Who This Is For
+
+- **JavaScript developers** who use Promises daily but want to understand what's actually happening under the hood
+- **Interview preppers** — Promises are one of the most commonly misunderstood topics in JS interviews, and Part VIII is written specifically for you
+- **Frontend and Node.js engineers** dealing with complex async flows in production
+- **Curious minds** who just want to know how something really works
+
+No prior knowledge of async internals is assumed. If you know what a function is, you can start at Post 01.
+
+---
+
+## A Note on the Polyfill
+
+The polyfill we build in Part VII is written for learning, not production. The goal is to make every line of the spec click into place. By the end, you will understand native Promises well enough that reading the V8 source code feels approachable.
+
+---
+
+*Posts will be linked as they are published. The series is written in order — each post assumes you've read the ones before it in the same part.*

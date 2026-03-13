@@ -1,0 +1,428 @@
+---
+title: "Form Configurator - Beyond Static Forms"
+date: "Jan 2024"
+pubDate: 2024-01-15
+category: Engineering
+author: Honey Sharma
+summary: A look at how we built a form configurator for 100+ recruiter segments.
+featured: true
+readingTime: 12
+tags: [form-configurator, engineering, architecture]
+relatedPosts: []
+---
+
+## How We Built a Context-Aware Form Engine for 100+ Recruiter Segments
+
+> A pharma recruiter posting a Medical Representative role and a BPO recruiter posting a voice-process job land on the same page, in the same product, backed by the same codebase. The pharma recruiter sees fields for therapeutic area, pharmaceutical specialization, and dosage form. The BPO recruiter sees fields for process type, shift preferences, and language proficiency. Neither recruiter sees what's irrelevant to them.
+>
+> This is not magic. It's architecture.
+
+---
+
+## The Problem: One Platform, Many Hiring Worlds
+
+Naukri.com serves recruiters across virtually every industry in India — from pharmaceutical companies hiring field medical representatives, to IT firms hiring backend engineers, to financial services firms hiring relationship managers, to BPO companies hiring voice-process agents.
+
+These aren't just different job categories. They represent fundamentally different hiring contexts, with different vocabularies, different mandatory data points, and different recruiter expectations. A form that serves a pharma recruiter well will confuse a sales recruiter. A form optimized for IT hiring will feel foreign to someone posting a finance role.
+
+At scale, this creates a hard engineering problem: **how do you build a single job-posting form that adapts intelligently to recruiter context, without turning your codebase into a maze of conditionals?**
+
+### Why the Obvious Approaches Don't Work
+
+When we first faced this problem, the straightforward options were unsatisfying:
+
+**Option A: One giant form, hide fields with CSS**
+Put everything in one form and toggle visibility with classes. Quick to build, nightmarish to maintain. The component becomes a dumping ground. Accessibility suffers — hidden fields are still in the DOM. Performance degrades as the form grows. Adding a new field for one segment risks breaking others.
+
+**Option B: A separate form component per segment**
+Build a `PharmaForm`, a `SalesForm`, a `BpoForm`. Clean isolation — until you need shared validation logic, shared field components, or shared API integrations. Now you're maintaining parallel implementations that drift apart over time. With 100+ form variants, this approach collapses under its own weight.
+
+**Option C: Hardcoded conditionals**
+Sprinkle `if (segment === 'pharma') showField('dosageForm')` throughout the rendering logic. This works for two segments. It does not work for twenty, and it especially does not work when the mapping between recruiter context and form variant is not a simple one-to-one lookup but a multi-dimensional function of role category, industry, salary range, experience, and feature flags.
+
+### What We Actually Needed
+
+The requirements that shaped the right solution were:
+
+1. **Runtime resolution** — which form variant to show must be determined dynamically from recruiter context, not baked into build artifacts
+2. **Declarative configuration** — engineers adding a new segment should write *data*, not *logic*
+3. **Clean separation** — the rendering engine should know nothing about pharma or sales; the business rules should know nothing about React
+4. **Composability** — form variants share a large surface area; the system should make it easy to inherit and selectively override
+5. **Multi-platform** — desktop and PWA have different layout needs but identical business logic; one config should serve both
+6. **Experiment-safe** — new form variants should be rollable via feature flags without a code deployment
+
+---
+
+## Architecture: Three Layers, Clean Boundaries
+
+The solution we landed on has three discrete layers, each with a single responsibility:
+
+```
+┌─────────────────────────────────────────────┐
+│              Rules Engine                   │
+│  context → template name                    │
+└──────────────────┬──────────────────────────┘
+                   │
+┌──────────────────▼──────────────────────────┐
+│            Template Registry                │
+│  template name → field configuration map   │
+└──────────────────┬──────────────────────────┘
+                   │
+┌──────────────────▼──────────────────────────┐
+│               Form SDK                      │
+│  field configuration map → rendered UI      │
+└─────────────────────────────────────────────┘
+```
+
+**The Rules Engine** takes a recruiter's context object and returns the name of the template that should be used.
+
+**The Template Registry** maps template names to configuration objects that describe every field on the form — its order, its visibility conditions, its validation rules, its data source.
+
+**The Form SDK** is a React-based renderer that takes any template configuration and produces a form. It has no knowledge of what segment it's serving.
+
+The power of this architecture lies in what each layer *doesn't know*. The SDK doesn't know about pharma or sales. The templates don't know about React or rendering. The rules engine doesn't know about fields. Each layer can be tested, extended, and reasoned about independently.
+
+---
+
+## Layer 1: The Rules Engine
+
+The rules engine answers one question: given what we know about this recruiter's job posting, which form template should we show?
+
+### What "Context" Means
+
+The context object carries everything we know about the posting at the time the form loads:
+
+- **Role category** — a taxonomy-backed identifier for the job function (e.g., "Sales / Business Development", "Pharmaceutical / Medical Representative")
+- **Industry** — what industry the hiring company operates in
+- **Experience range** — the minimum and maximum years of experience required
+- **Salary range** — the offered compensation range, with currency
+- **Job title** — a free-text string the recruiter has already entered
+- **Hiring category** — whether this is a full-time hire, contractual, internship, etc.
+- **Feature flag state** — which experiments or rollouts are active for this session
+
+### How Rules Are Structured
+
+Each rule in the engine is a plain object with two parts: a set of conditions and a target template name.
+
+```
+Rule {
+  conditions: {
+    roleCategory: [list of matching role category IDs],
+    industry: [list of matching industry IDs],
+    experienceRange: { min: 0, max: 3 },
+    hiringCategory: ['full-time', 'contractual'],
+    maxAverageSalary: 500_000
+  },
+  template: {
+    desktop: 'pharma_entry_level',
+    pwa: 'pharma_entry_level_pwa'
+  }
+}
+```
+
+All conditions within a rule are evaluated with AND logic — every condition must pass for the rule to match. Rules are registered in arrays, organized by recruiter segment. Within each segment, rules are ordered from most specific to least specific.
+
+### The Matching Algorithm
+
+The engine walks the rule array for the relevant segment and returns the template name from the first rule where all conditions pass:
+
+```
+function resolveTemplate(context, platform):
+  for each rule in segmentRules:
+    if allConditionsMet(rule.conditions, context):
+      return rule.template[platform]
+  return segmentDefaultTemplate[platform]
+```
+
+Some conditions are straightforward membership checks (does the context's role category appear in the rule's list?). Others involve derived values. For example, the `maxAverageSalary` condition computes `(salaryMin + salaryMax) / 2` before comparing — because a rule targeting entry-level roles shouldn't trigger for a recruiter who set a wide salary band with a high ceiling.
+
+Title matching is substring-based and case-insensitive, which handles the natural variation in how recruiters describe the same role ("Medical Rep", "MR", "Med Rep").
+
+### Feature Flags and Experiment Gating
+
+Rules can include a `customFunction` predicate — a function that receives the context object and returns a boolean. This is how A/B experiments and feature flag gating are expressed:
+
+```
+Rule {
+  conditions: {
+    roleCategory: [pharma_roles],
+    customFunction: (context) => featureFlags.isEnabled('NEW_PHARMA_FORM_V2')
+  },
+  template: { desktop: 'pharma_v2', pwa: 'pharma_v2_pwa' }
+}
+```
+
+When a new form variant is ready for gradual rollout, no deployment is needed. The flag is toggled in the feature flag system, and the rules engine picks it up at runtime. When the rollout is complete, the flag-gated rule is promoted to a standard rule and the old variant is retired.
+
+The key constraint we enforce on `customFunction` predicates: they must be pure with respect to the context object. They can read external state (like feature flags), but they cannot mutate anything. This keeps them testable and prevents side effects during rule evaluation.
+
+---
+
+## Layer 2: The Template System
+
+A template is a dictionary. Keys are field names; values are field descriptor objects. The template describes everything about a field except how to render it — that's the SDK's job.
+
+### Anatomy of a Field Descriptor
+
+```typescript
+type FieldDescriptor = {
+  order: number              // position in the rendered form
+  orderMultiPage?: number    // position override for multi-page layout
+  page?: number              // which page this field lives on (multi-page forms)
+  isVisible: boolean | ((formData, pageContext?) => boolean)
+  isCustom: boolean          // true if this field uses a non-standard component
+  props: {
+    id: string
+    label: string
+    componentType: 'TextInput' | 'Dropdown' | 'Chips' | 'RadioCheckbox' | 'ChipsWithDropdown'
+    data: {
+      idSource: 'Taxonomy' | 'DataStore' | 'DynamicAPI'
+      dynamicOptions?: { type: 'GET' | 'POST', url: string, params: object }
+      defaultValue: [] | ((pageContext) => any[])
+      optionsTransformer?: (options) => options  // sort, filter, or relabel
+    }
+    validation: {
+      mandatory?: { errorMessage: string }
+      min?: { value: number, errorMessage: string }
+      max?: { value: number, errorMessage: string }
+      format?: { value: RegExp | Function, errorMessage: string }
+      maxChars?: number
+      custom?: { value: (fieldValue, formData) => boolean, errorMessage: string }
+    }
+  }
+}
+```
+
+A template for a simple two-field form might look like:
+
+```typescript
+const baseTemplate = {
+  jobTitle: {
+    order: 1,
+    isVisible: true,
+    props: {
+      id: 'jobTitle',
+      label: 'Job Title',
+      componentType: 'TextInput',
+      validation: { mandatory: { errorMessage: 'Job title is required' } }
+    }
+  },
+  industry: {
+    order: 2,
+    isVisible: true,
+    props: {
+      id: 'industry',
+      label: 'Industry',
+      componentType: 'Dropdown',
+      data: { idSource: 'Taxonomy' },
+      validation: { mandatory: { errorMessage: 'Please select an industry' } }
+    }
+  }
+}
+```
+
+A segment-specific template that extends this base:
+
+```typescript
+const pharmaTemplate = {
+  ...baseTemplate,
+  therapeuticArea: {
+    order: 7,
+    isVisible: true,
+    props: {
+      id: 'therapeuticArea',
+      label: 'Therapeutic Area',
+      componentType: 'Chips',
+      data: { idSource: 'Taxonomy' },
+      validation: { mandatory: { errorMessage: 'Please select therapeutic areas' } }
+    }
+  },
+  dosageForm: {
+    order: 7.1,
+    isVisible: (formData) => {
+      const selected = formData.therapeuticArea?.selectedValues ?? []
+      return selected.some(item => MANUFACTURING_SPECIALIZATION_IDS.includes(item.id))
+    },
+    props: {
+      id: 'dosageForm',
+      label: 'Dosage Form',
+      componentType: 'Chips',
+      data: { idSource: 'Taxonomy' }
+    }
+  }
+}
+```
+
+### Composability via Spread
+
+The spread operator is the primary mechanism for template inheritance. A segment base template establishes defaults; variant templates spread the base and override only what changes.
+
+This keeps variants thin. A variant for experienced pharma hires might only differ from the base in that `dosageForm` becomes mandatory. Instead of copying the entire template, it spreads the base and patches one field:
+
+```typescript
+const pharmaExperiencedTemplate = {
+  ...pharmaTemplate,
+  dosageForm: {
+    ...pharmaTemplate.dosageForm,
+    props: {
+      ...pharmaTemplate.dosageForm.props,
+      validation: {
+        mandatory: { errorMessage: 'Dosage form is required for experienced roles' }
+      }
+    }
+  }
+}
+```
+
+When a shared field changes — say, the `jobTitle` label or its validation message — it changes in the base and propagates automatically to all variants that spread from it.
+
+---
+
+## Layer 3: Dynamic Visibility — The Hard Part
+
+Static fields are trivial. The interesting engineering challenge is *conditional* fields: fields whose visibility, and sometimes whose validation rules, depend on the current state of other fields.
+
+### Visibility as a Function
+
+The `isVisible` property on a field descriptor is polymorphic. It can be:
+
+- `true` — always visible
+- `false` — never visible (effectively removes the field from this template variant without deleting it)
+- `(formData) => boolean` — dynamically computed from current form state
+- `(formData, pageContext) => boolean` — dynamically computed with access to page-level metadata (for multi-page forms)
+
+When `isVisible` is a function, the renderer calls it on every render cycle, passing the current accumulated form data. The function is pure — it reads state, returns a boolean, produces no side effects. The renderer is responsible for acting on the result.
+
+This pattern pushes the *what* (should this field be visible given these values?) into the template config, where it belongs, and keeps the *how* (rendering, state management, lifecycle) in the SDK.
+
+A concrete example: in a pharma form, the "Dosage Form" field should only appear when the recruiter has selected a pharmaceutical specialization that involves manufacturing. The visibility function:
+
+```typescript
+isVisible: (formData) => {
+  const selectedSpecializations = formData.pharmaceuticalSpecialization?.selectedValues ?? []
+  return selectedSpecializations.some(s => MANUFACTURING_ROLE_IDS.includes(s.id))
+}
+```
+
+No event listeners. No imperative show/hide calls. The template declares the *condition*; the renderer evaluates it.
+
+### The Cleanup Contract
+
+There is a subtle but important invariant: **when a field becomes invisible, its data must be cleared.**
+
+Consider the scenario without this rule: a recruiter selects "Manufacturing" as their pharmaceutical specialization (making the "Dosage Form" field appear), fills it in, then changes their specialization to something else (making "Dosage Form" disappear). Without cleanup, the `dosageForm` value persists in form state and gets submitted, even though the recruiter last saw and interacted with a form that didn't show that field.
+
+We enforce a cleanup contract at the renderer level: when a field's `isVisible` function returns `false`, the field is unmounted *and its value is removed from form state*. This is not optional or configurable — it's a guarantee the renderer always provides. Template authors can rely on it without thinking about it.
+
+This turns out to be a form of unidirectional data flow. Parent field values determine child field visibility. Child field visibility determines whether child field data exists. There is no path for orphaned child data to accumulate.
+
+### Multi-Page Scoping
+
+Multi-page forms introduce a second dimension to visibility: the current page. A field on page 2 might have additional visibility conditions based on what the recruiter entered on page 1.
+
+The `pageContext` parameter passed to visibility functions carries:
+- The current page number
+- The hiring category (which affects which fields are relevant on later pages)
+- Any other metadata the form was initialized with
+
+Validation is also page-scoped during navigation. When the recruiter moves from page 1 to page 2, only the fields on page 1 are validated. Fields on later pages are excluded from this interim check. Full validation runs only when the form is submitted. This means a recruiter can navigate forward without being blocked by errors in fields they haven't reached yet — and equally, they can't submit without completing required fields on any page.
+
+---
+
+## The Form SDK: Rendering Without Knowledge
+
+The SDK's job is to take a template configuration object and produce a form. It knows nothing about which segment it's serving.
+
+### FormStore: State and Validation
+
+Form state lives in a React Context provided by `FormStore`. The store holds:
+
+- The current accumulated field values (keyed by field ID)
+- The current validation errors (keyed by field ID)
+- The current page number (for multi-page forms)
+
+Validation logic is not hardcoded in the store. Instead, the store reads validation rules from the field descriptors in the template and evaluates them on demand — either when the recruiter attempts to navigate to the next page, or when they submit the form.
+
+Custom validation functions in field descriptors receive both the field's current value and the full form data, enabling cross-field validation (e.g., "this field is required if that other field has a specific value") without coupling fields together in the rendering layer.
+
+### Lazy Loading for Performance
+
+With 100+ templates each potentially containing custom field components, bundle size is a real concern. Standard field types (text input, dropdown, chips, radio) are always available. Custom field components — those that implement domain-specific UI — are lazy-loaded via React's `Suspense` and `lazy` APIs.
+
+
+## Engineering Challenges and Lessons Learned
+
+### 1. Preventing Visibility Cycles
+
+**Challenge:** What happens when Field A's visibility depends on Field B, and Field B's visibility depends on Field A? In theory, this creates an infinite evaluation loop.
+
+**Solution:** We enforce that `isVisible` functions are pure readers — they access `formData` but cannot modify it, and they cannot call any function that modifies it. The renderer also tracks whether visibility results have changed since the last render; if they haven't, it skips re-evaluation. In practice, the domain model doesn't produce natural cycles, but the purity constraint means that even if someone writes a buggy visibility function, it can't cause a runaway re-render.
+
+**Lesson:** *Purity is not just an FP virtue; it's a stability contract.*
+
+### 2. Testing Rules Without a UI
+
+**Challenge:** With 100+ templates across 6 segments, each with multiple overlapping conditions, testing coverage is daunting. A UI-driven test suite for this would be slow and brittle.
+
+**Solution:** The rules engine is a pure function: `resolveTemplate(context) → templateName`. It takes a plain object and returns a string. Unit tests are fixture files — context objects and their expected template names. Running the full suite is fast and gives immediate signal when a rule change produces an unexpected resolution.
+
+**Lesson:** *Keeping the decision logic pure means QA is just data.*
+
+### 3. Stale Feature Flags in Cached Rules
+
+**Challenge:** If rules are evaluated once at page load and cached, they might reflect stale feature flag state — especially if flag values are hydrated asynchronously after the initial render.
+
+**Solution:** Rules that include a `customFunction` predicate are never cached. They're re-evaluated whenever the context changes. Standard rules (pure data comparisons) are stable and can be memoized safely.
+
+**Lesson:** *Anything reading global mutable state must be late-binding.*
+
+### 4. Multi-Platform Without Forking
+
+**Challenge:** Desktop forms and PWA forms have different layout constraints. Some fields need different label text, different validation thresholds, or different component variants depending on platform.
+
+**Solution:** Field descriptors support a `versionProps` object — a partial override that the SDK applies when rendering in a specific version context. The base descriptor covers all shared properties; `versionProps` patches only what differs. A single template config serves both platforms.
+
+**Lesson:** *Configuration branching beats code branching every time.*
+
+---
+
+## Results
+
+The architecture serves 100+ form variants across 6+ recruiter segments from a single codebase, with a single SDK shipping to all recruiter types.
+
+The engineering productivity gains are concrete:
+
+- **Adding a new segment variant** requires writing a configuration object — field descriptors and rule entries — not a new React component. The SDK renders it without modification.
+- **Experimenting with form changes** requires toggling a feature flag, not a deployment. The rules engine evaluates flags at runtime.
+- **Testing rule logic** is fast and offline — context fixtures feed into a pure function, no browser required.
+- **Debugging form behavior** is traceable: given a recruiter's context object, you can deterministically reproduce which template was selected and why.
+
+*(Segment-specific impact metrics available for internal use — e.g., form completion rates, error rates by segment, time-to-post measurements.)*
+
+---
+
+## What's Next
+
+A few directions we're actively thinking about:
+
+**Server-driven templates.** Currently, template configuration is bundled with the frontend. Moving template definitions to a backend API would allow field changes — adding a new dropdown option, updating a validation message, reordering fields — without a frontend deployment. The SDK architecture already supports this; the template is just a configuration object, and it doesn't matter whether it came from a static import or an API call.
+
+**Visual template editor.** Today, adding a new form variant requires an engineer to write TypeScript config. A visual editor that lets product managers compose templates from a field library — with live preview — could significantly reduce the loop between product intent and live form.
+
+**Smarter default values.** The system currently supports static and function-computed default values. There's an opportunity to use the recruiter's posting history and the job description text to pre-populate fields intelligently, reducing form completion time.
+
+**An open question for teams facing similar problems:** How do you handle form versioning when a recruiter has started filling a form and you deploy a new template that changes its structure mid-session? We've made pragmatic choices here, but it remains an interesting problem in stateful form systems.
+
+---
+
+## Conclusion
+
+The key insight behind this system is simple: the right abstraction for a multi-segment form isn't a smarter form component. It's a clean separation between *which form to show* (the rules engine), *what that form contains* (the template), and *how to render it* (the SDK).
+
+Each of these is independently testable, independently extensible, and independently deployable. Engineers working on form rules don't need to think about React. Engineers working on the SDK don't need to think about recruiter segments. Engineers adding a new segment variant don't need to think about either.
+
+If you're facing a similar problem — a UI that needs to adapt significantly based on user context, with many variants and a need for controlled experimentation — start by asking: **what is the smallest pure function that maps context to configuration?** Get that function right, and the rest of the system follows naturally.
+
+---
+
+*Have thoughts on form engine architecture, or a different approach you've used at scale? I would love to hear from you.*

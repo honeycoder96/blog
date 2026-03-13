@@ -167,7 +167,7 @@ export const ContactForm: React.FC = () => {
                 onChange={handleInputChange}
                 rows={3}
                 disabled={formState !== 'idle'}
-                className={`w-full bg-transparent py-4 outline-none transition-opacity peer resize-none text-white ${
+                className={`w-full bg-transparent py-4 outline-none transition-opacity peer resize-none text-fg ${
                   formState !== 'idle' && formState !== 'validating' ? 'opacity-0' : 'opacity-50 focus:opacity-100'
                 }`}
               />
@@ -178,7 +178,7 @@ export const ContactForm: React.FC = () => {
                 value={formData[fieldName]}
                 onChange={handleInputChange}
                 disabled={formState !== 'idle'}
-                className={`w-full bg-transparent py-4 outline-none transition-opacity peer text-white ${
+                className={`w-full bg-transparent py-4 outline-none transition-opacity peer text-fg ${
                   formState !== 'idle' && formState !== 'validating' ? 'opacity-0' : 'opacity-50 focus:opacity-100'
                 }`}
               />
@@ -189,7 +189,7 @@ export const ContactForm: React.FC = () => {
               animate={{
                 opacity: formState === 'compiling' || formState === 'sending' || formState === 'success' ? 0 : 0.5,
               }}
-              className={`absolute left-0 cursor-text transition-all tracking-widest font-mono uppercase text-white ${
+              className={`absolute left-0 cursor-text transition-all tracking-widest font-mono uppercase text-fg ${
                 formData[fieldName] || formState !== 'idle'
                   ? '-top-6 text-xs'
                   : 'top-4 text-sm peer-focus:-top-6 peer-focus:text-xs'
@@ -199,9 +199,9 @@ export const ContactForm: React.FC = () => {
             </motion.label>
 
             <div className="absolute bottom-0 left-0 w-full h-[1px]">
-              <div className="absolute inset-0 bg-white opacity-20" />
+              <div className="absolute inset-0 bg-fg opacity-20" />
               <motion.div
-                className={`absolute inset-0 origin-left ${scannedErrors[fieldName] ? 'bg-orange-400' : 'bg-white'}`}
+                className={`absolute inset-0 origin-left ${scannedErrors[fieldName] ? 'bg-orange-400' : 'bg-fg'}`}
                 initial={{ scaleX: 0 }}
                 animate={{
                   scaleX:
@@ -247,11 +247,11 @@ export const ContactForm: React.FC = () => {
             formState === 'compiling' || formState === 'sending' || formState === 'success' ? 60 : 180,
           borderRadius:
             formState === 'compiling' || formState === 'sending' || formState === 'success' ? 30 : 9999,
-          backgroundColor: formState === 'success' ? '#10b981' : '#ffffff',
+          backgroundColor: formState === 'success' ? '#10b981' : 'var(--theme-fg)',
         }}
         transition={{ duration: 0.5, ease: [0.76, 0, 0.24, 1] }}
         className="flex items-center justify-center h-[60px] overflow-hidden relative mt-4 origin-center self-start cursor-pointer"
-        style={{ color: '#0a0a0a' }}
+        style={{ color: 'var(--theme-bg)' }}
       >
         <AnimatePresence mode="wait">
           {(formState === 'idle' || formState === 'validating') && (
@@ -279,7 +279,7 @@ export const ContactForm: React.FC = () => {
                 cx="30"
                 cy="30"
                 r="28"
-                stroke="#0a0a0a"
+                stroke="var(--theme-bg)"
                 strokeWidth="2"
                 fill="none"
                 strokeDasharray="176"
@@ -297,7 +297,8 @@ export const ContactForm: React.FC = () => {
               key="success"
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
-              className="flex items-center justify-center text-white"
+              className="flex items-center justify-center"
+              style={{ color: 'var(--theme-bg)' }}
             >
               <Check size={24} />
             </motion.span>

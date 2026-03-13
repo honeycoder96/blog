@@ -1,9 +1,18 @@
 import React, { useRef, useEffect } from 'react';
 import { useReducedMotion } from 'framer-motion';
+import { useTheme } from '../hooks/useTheme';
+
+const THEME_COLORS: Record<string, { bg: string; particle: string; lineRgb: string }> = {
+  dark: { bg: 'rgba(10,10,10,1)', particle: 'rgba(255,255,255,0.2)', lineRgb: '255,255,255' },
+  light: { bg: 'rgba(255,255,255,1)', particle: 'rgba(0,0,0,0.15)', lineRgb: '0,0,0' },
+};
 
 export const HeroCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const prefersReducedMotion = useReducedMotion();
+  const theme = useTheme();
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
 
   useEffect(() => {
     if (prefersReducedMotion) return;
@@ -26,22 +35,23 @@ export const HeroCanvas: React.FC = () => {
     class Particle {
       x: number; y: number;
       directionX: number; directionY: number;
-      size: number; color: string;
+      size: number;
       baseX: number; baseY: number;
       density: number;
 
-      constructor(x: number, y: number, directionX: number, directionY: number, size: number, color: string) {
+      constructor(x: number, y: number, directionX: number, directionY: number, size: number) {
         this.x = x; this.y = y;
         this.directionX = directionX; this.directionY = directionY;
-        this.size = size; this.color = color;
+        this.size = size;
         this.baseX = x; this.baseY = y;
         this.density = Math.random() * 30 + 1;
       }
 
       draw() {
+        const colors = THEME_COLORS[themeRef.current] || THEME_COLORS.dark;
         ctx!.beginPath();
         ctx!.arc(this.x, this.y, this.size, 0, Math.PI * 2, false);
-        ctx!.fillStyle = this.color;
+        ctx!.fillStyle = colors.particle;
         ctx!.fill();
       }
 
@@ -82,11 +92,12 @@ export const HeroCanvas: React.FC = () => {
         const y = Math.random() * (canvas!.height - size * 4) + size * 2;
         const dX = Math.random() - 0.5;
         const dY = Math.random() - 0.5;
-        particles.push(new Particle(x, y, dX, dY, size, 'rgba(255,255,255,0.2)'));
+        particles.push(new Particle(x, y, dX, dY, size));
       }
     };
 
     const connect = () => {
+      const colors = THEME_COLORS[themeRef.current] || THEME_COLORS.dark;
       const w = canvas!.width;
       const h = canvas!.height;
       for (let a = 0; a < particles.length; a++) {
@@ -96,7 +107,7 @@ export const HeroCanvas: React.FC = () => {
           const dist = dx * dx + dy * dy;
           if (dist < (w / 7) * (h / 7)) {
             const opacity = (1 - dist / 20000) * 0.15;
-            ctx!.strokeStyle = `rgba(255,255,255,${opacity})`;
+            ctx!.strokeStyle = `rgba(${colors.lineRgb},${opacity})`;
             ctx!.lineWidth = 1;
             ctx!.beginPath();
             ctx!.moveTo(particles[a].x, particles[a].y);
@@ -109,7 +120,8 @@ export const HeroCanvas: React.FC = () => {
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
-      ctx!.fillStyle = 'rgba(10,10,10,1)';
+      const colors = THEME_COLORS[themeRef.current] || THEME_COLORS.dark;
+      ctx!.fillStyle = colors.bg;
       ctx!.fillRect(0, 0, canvas!.width, canvas!.height);
       particles.forEach(p => p.update());
       connect();

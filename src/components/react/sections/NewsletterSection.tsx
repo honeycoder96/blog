@@ -17,7 +17,7 @@ export const NewsletterSection: React.FC = () => {
   };
 
   return (
-    <section className="py-24 px-8 lg:px-24 border-t border-neutral-900">
+    <section className="py-24 px-8 lg:px-24 border-t border-line-faint">
       <div className="max-w-7xl mx-auto">
         <motion.div
           initial={prefersReducedMotion ? false : { opacity: 0, y: 30 }}
@@ -26,13 +26,13 @@ export const NewsletterSection: React.FC = () => {
           transition={{ duration: 0.6 }}
           className="max-w-2xl"
         >
-          <span className="font-mono text-xs text-neutral-600 uppercase tracking-widest mb-4 block">
+          <span className="font-mono text-xs text-fg-faint uppercase tracking-widest mb-4 block">
             Newsletter
           </span>
-          <h2 className="text-4xl font-display font-bold text-white tracking-tight mb-4">
+          <h2 className="text-4xl font-display font-bold text-fg tracking-tight mb-4">
             Stay in the loop
           </h2>
-          <p className="text-neutral-500 leading-relaxed mb-8">
+          <p className="text-fg-muted leading-relaxed mb-8">
             New articles about architecture, deep dives, and engineering culture — delivered when
             they're ready, not on a fixed schedule.
           </p>
@@ -62,12 +62,12 @@ export const NewsletterSection: React.FC = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="your@email.com"
                   required
-                  className="flex-1 bg-neutral-900 border border-neutral-800 rounded-full px-6 py-3 text-white placeholder-neutral-600 font-mono text-sm outline-none focus:border-neutral-600 transition-colors"
+                  className="flex-1 bg-surface-raised border border-line rounded-full px-6 py-3 text-fg placeholder-fg-faint font-mono text-sm outline-none focus:border-line-strong transition-colors"
                 />
                 <button
                   type="submit"
                   disabled={state === 'loading'}
-                  className="px-6 py-3 bg-white text-black rounded-full font-mono text-sm uppercase tracking-widest hover:bg-neutral-100 transition-colors disabled:opacity-50 cursor-pointer"
+                  className="px-6 py-3 bg-fg text-surface rounded-full font-mono text-sm uppercase tracking-widest hover:opacity-90 transition-colors disabled:opacity-50 cursor-pointer"
                 >
                   {state === 'loading' ? '...' : 'Subscribe'}
                 </button>

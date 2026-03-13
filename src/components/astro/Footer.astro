@@ -7,13 +7,13 @@ const links = [
 ];
 ---
 
-<footer class="border-t border-neutral-900 px-8 lg:px-24 py-12 mt-auto">
+<footer class="border-t border-line-faint px-8 lg:px-24 py-12 mt-auto">
   <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
     <div>
-      <a href="/" class="font-display font-bold text-xl tracking-tight text-white">
+      <a href="/" class="font-display font-bold text-xl tracking-tight text-fg">
         blog.honeyhimself
       </a>
-      <p class="text-neutral-600 text-sm mt-1 font-mono">
+      <p class="text-fg-faint text-sm mt-1 font-mono">
         &copy; {year} — Writing about the craft
       </p>
     </div>
@@ -24,7 +24,7 @@ const links = [
           href={link.href}
           target="_blank"
           rel="noopener noreferrer"
-          class="group relative overflow-hidden inline-flex h-5 font-mono text-sm tracking-widest uppercase text-neutral-500 hover:text-white transition-colors"
+          class="group relative overflow-hidden inline-flex h-5 font-mono text-sm tracking-widest uppercase text-fg-muted hover:text-fg transition-colors"
         >
           {link.label}
         </a>

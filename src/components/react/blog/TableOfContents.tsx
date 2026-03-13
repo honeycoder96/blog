@@ -42,7 +42,7 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({ headings }) =>
 
   return (
     <nav aria-label="Table of contents">
-      <p className="text-xs font-mono uppercase tracking-widest text-neutral-600 mb-4">
+      <p className="text-xs font-mono uppercase tracking-widest text-fg-faint mb-4">
         On this page
       </p>
       <ul className="flex flex-col gap-1">
@@ -60,14 +60,14 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({ headings }) =>
                   heading.depth === 2 ? 'pl-3' : ''
                 } ${
                   isActive
-                    ? 'text-white'
-                    : 'text-neutral-600 hover:text-neutral-300'
+                    ? 'text-fg'
+                    : 'text-fg-faint hover:text-fg-default'
                 }`}
               >
                 {isActive && (
                   <motion.span
                     layoutId="toc-indicator"
-                    className="inline-block w-1 h-1 rounded-full bg-white mr-2 align-middle"
+                    className="inline-block w-1 h-1 rounded-full bg-fg mr-2 align-middle"
                   />
                 )}
                 {heading.text}

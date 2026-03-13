@@ -8,7 +8,7 @@ summary: How React-reconciler works, why you'd ever want to build your own rende
 featured: true
 readingTime: 18
 tags: [react, renderer, reconciler, internals]
-relatedPosts: [react-server-components, art-of-micro-interactions]
+relatedPosts: [art-of-micro-interactions]
 ---
 
 Most React developers have a mental model that looks like this: React → DOM. That's the happy path. But React's actual architecture is a two-layer system: the reconciler (which manages component trees and diffs) and the renderer (which applies those diffs to some host environment). The DOM is just one possible target.

@@ -1,0 +1,47 @@
+---
+import { getCollection, render } from 'astro:content';
+import BlogLayout from '../../layouts/BlogLayout.astro';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog');
+  return posts.map((post) => ({
+    params: { slug: post.slug },
+    props: { post },
+  }));
+}
+
+const { post } = Astro.props;
+const { Content, headings } = await render(post);
+
+const allPosts = await getCollection('blog');
+
+// Prev / Next posts
+const prevPost = post.data.prevPost
+  ? allPosts.find((p) => p.slug === post.data.prevPost)
+  : undefined;
+const nextPost = post.data.nextPost
+  ? allPosts.find((p) => p.slug === post.data.nextPost)
+  : undefined;
+
+// Related posts
+const relatedPosts = post.data.relatedPosts.length
+  ? allPosts.filter((p) => post.data.relatedPosts.includes(p.slug)).slice(0, 2)
+  : allPosts
+      .filter((p) => p.slug !== post.slug && p.data.category === post.data.category)
+      .slice(0, 2);
+---
+
+<BlogLayout
+  title={post.data.title}
+  description={post.data.summary}
+  date={post.data.date}
+  category={post.data.category}
+  author={post.data.author}
+  readingTime={post.data.readingTime}
+  headings={headings}
+  prevPost={prevPost ? { slug: prevPost.slug, title: prevPost.data.title } : undefined}
+  nextPost={nextPost ? { slug: nextPost.slug, title: nextPost.data.title } : undefined}
+  relatedPosts={relatedPosts.map((r) => ({ slug: r.slug, title: r.data.title, category: r.data.category }))}
+>
+  <Content />
+</BlogLayout>

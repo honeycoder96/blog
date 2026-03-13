@@ -2,7 +2,19 @@
 import PageLayout from './PageLayout.astro';
 import { ReadingProgress } from '../components/react/blog/ReadingProgress';
 import { TableOfContents } from '../components/react/blog/TableOfContents';
+import { MobileSidebar } from '../components/react/blog/MobileSidebar';
 import CategoryBadge from '../components/astro/CategoryBadge.astro';
+
+interface PostLink {
+  slug: string;
+  title: string;
+}
+
+interface RelatedPost {
+  slug: string;
+  title: string;
+  category: string;
+}
 
 interface Props {
   title: string;
@@ -12,32 +24,59 @@ interface Props {
   author: string;
   readingTime?: number;
   headings: { depth: number; slug: string; text: string }[];
+  prevPost?: PostLink;
+  nextPost?: PostLink;
+  relatedPosts?: RelatedPost[];
 }
 
-const { title, description, date, category, author, readingTime, headings } = Astro.props;
+const { title, description, date, category, author, readingTime, headings, prevPost, nextPost, relatedPosts = [] } = Astro.props;
+const hasPostNav = prevPost || nextPost;
 ---
 
 <PageLayout title={`${title} — Honey Sharma`} description={description}>
   <ReadingProgress client:load />
+  <MobileSidebar headings={headings} relatedPosts={relatedPosts} client:idle />
 
   <div class="max-w-7xl mx-auto px-8 lg:px-24 py-16 w-full">
+    <!-- Top prev/next nav -->
+    {hasPostNav && (
+      <nav class="max-w-3xl flex justify-between items-center mb-6" aria-label="Post navigation">
+        {prevPost ? (
+          <a
+            href={`/blog/${prevPost.slug}`}
+            class="flex items-center gap-1.5 font-mono text-xs uppercase tracking-widest text-fg-faint hover:text-fg transition-colors"
+          >
+            <span aria-hidden="true">&larr;</span> Prev
+          </a>
+        ) : <span />}
+        {nextPost ? (
+          <a
+            href={`/blog/${nextPost.slug}`}
+            class="flex items-center gap-1.5 font-mono text-xs uppercase tracking-widest text-fg-faint hover:text-fg transition-colors"
+          >
+            Next <span aria-hidden="true">&rarr;</span>
+          </a>
+        ) : <span />}
+      </nav>
+    )}
+
     <!-- Article header -->
     <header class="max-w-3xl mb-16">
       <div class="flex items-center gap-4 mb-6">
         <CategoryBadge category={category} />
         {readingTime && (
-          <span class="text-neutral-600 font-mono text-xs">{readingTime} min read</span>
+          <span class="text-fg-faint font-mono text-xs">{readingTime} min read</span>
         )}
       </div>
-      <h1 class="text-4xl md:text-6xl font-display font-bold tracking-tight text-white leading-tight mb-6">
+      <h1 class="text-4xl md:text-6xl font-display font-bold tracking-tight text-fg leading-tight mb-6">
         {title}
       </h1>
       {description && (
-        <p class="text-xl text-neutral-400 leading-relaxed mb-8">{description}</p>
+        <p class="text-xl text-fg-muted leading-relaxed mb-8">{description}</p>
       )}
-      <div class="flex items-center gap-6 text-sm font-mono text-neutral-600 uppercase tracking-widest">
+      <div class="flex items-center gap-6 text-sm font-mono text-fg-faint uppercase tracking-widest">
         <span>{author}</span>
-        <span class="w-px h-4 bg-neutral-800"></span>
+        <span class="w-px h-4 bg-line"></span>
         <time>{date}</time>
       </div>
     </header>
@@ -49,14 +88,73 @@ const { title, description, date, category, author, readingTime, headings } = As
         <slot />
       </article>
 
-      <!-- Sticky TOC sidebar -->
-      {headings.filter(h => h.depth <= 2).length > 0 && (
+      <!-- Sticky sidebar: TOC + Related -->
+      {(headings.filter(h => h.depth <= 2).length > 0 || relatedPosts.length > 0) && (
         <aside class="hidden xl:block w-64 shrink-0">
           <div class="sticky top-32">
-            <TableOfContents headings={headings} client:idle />
+            {headings.filter(h => h.depth <= 2).length > 0 && (
+              <TableOfContents headings={headings} client:idle />
+            )}
+
+            {relatedPosts.length > 0 && (
+              <nav class={headings.filter(h => h.depth <= 2).length > 0 ? 'mt-10 pt-8 border-t border-line-faint' : ''}>
+                <p class="text-xs font-mono uppercase tracking-widest text-fg-faint mb-4">
+                  Related Reading
+                </p>
+                <ul class="flex flex-col gap-3">
+                  {relatedPosts.map((related) => (
+                    <li>
+                      <a
+                        href={`/blog/${related.slug}`}
+                        class="group block"
+                      >
+                        <span class="text-[10px] font-mono text-fg-faint uppercase tracking-wider block mb-0.5">
+                          {related.category}
+                        </span>
+                        <span class="text-sm text-fg-muted group-hover:text-fg transition-colors leading-snug block">
+                          {related.title}
+                        </span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            )}
           </div>
         </aside>
       )}
     </div>
+
+    <!-- Bottom prev/next cards -->
+    {hasPostNav && (
+      <nav class="max-w-3xl grid grid-cols-2 gap-6 mt-16 pt-12 border-t border-line-faint" aria-label="Previous and next posts">
+        {prevPost ? (
+          <a
+            href={`/blog/${prevPost.slug}`}
+            class="group p-6 rounded-2xl border border-line hover:border-line-strong transition-colors bg-surface-raised/50"
+          >
+            <span class="text-xs font-mono text-fg-faint uppercase tracking-wider block mb-2">
+              &larr; Previous Post
+            </span>
+            <span class="font-display font-bold text-fg-default group-hover:text-fg transition-colors leading-tight block">
+              {prevPost.title}
+            </span>
+          </a>
+        ) : <span />}
+        {nextPost ? (
+          <a
+            href={`/blog/${nextPost.slug}`}
+            class="group p-6 rounded-2xl border border-line hover:border-line-strong transition-colors bg-surface-raised/50 text-right col-start-2"
+          >
+            <span class="text-xs font-mono text-fg-faint uppercase tracking-wider block mb-2">
+              Next Post &rarr;
+            </span>
+            <span class="font-display font-bold text-fg-default group-hover:text-fg transition-colors leading-tight block">
+              {nextPost.title}
+            </span>
+          </a>
+        ) : <span />}
+      </nav>
+    )}
   </div>
 </PageLayout>
