@@ -45,19 +45,25 @@ const cardVariants = {
   exit: { opacity: 0, y: -10, transition: { duration: 0.15 } },
 };
 
+const PAGE_SIZE = 5;
+
 export const SeriesAccordion: React.FC<Props> = ({ series }) => {
   const [activeCategory, setActiveCategory] = useState<Category>(getInitialCategory);
   const [openIndex, setOpenIndex] = useState<number | null>(0);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const prefersReducedMotion = useReducedMotion();
 
   const filtered = activeCategory === 'All'
     ? series
     : series.filter(s => s.category === activeCategory);
 
-  // Reset open index when filter changes to open first visible item
+  const visible = filtered.slice(0, visibleCount);
+  const hasMore = visibleCount < filtered.length;
+
   const handleCategoryChange = (cat: Category) => {
     setActiveCategory(cat);
     setOpenIndex(0);
+    setVisibleCount(PAGE_SIZE);
   };
 
   return (
@@ -82,7 +88,7 @@ export const SeriesAccordion: React.FC<Props> = ({ series }) => {
       {/* Series accordion list */}
       <div className="w-full flex flex-col border-t border-line">
         <AnimatePresence mode="popLayout">
-          {filtered.map((s, idx) => {
+          {visible.map((s, idx) => {
             const isOpen = openIndex === idx;
             return (
               <motion.div
@@ -187,6 +193,17 @@ export const SeriesAccordion: React.FC<Props> = ({ series }) => {
       {filtered.length === 0 && (
         <div className="text-center py-24 text-fg-faint font-mono">
           No series in this category yet.
+        </div>
+      )}
+
+      {hasMore && (
+        <div className="flex justify-center mt-12">
+          <button
+            onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
+            className="px-8 py-3 rounded-full border border-line text-fg-muted hover:border-line-strong hover:text-fg font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer"
+          >
+            Load more <span className="text-fg-ghost">({filtered.length - visibleCount} remaining)</span>
+          </button>
         </div>
       )}
     </div>

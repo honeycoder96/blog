@@ -36,13 +36,19 @@ function getInitialCategory(): Category {
   return 'All';
 }
 
+const PAGE_SIZE = 10;
+
 export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
   const [activeCategory, setActiveCategory] = useState<Category>(getInitialCategory);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const prefersReducedMotion = useReducedMotion();
 
   const filtered = activeCategory === 'All'
     ? posts
     : posts.filter((p) => p.data.category === activeCategory);
+
+  const visible = filtered.slice(0, visibleCount);
+  const hasMore = visibleCount < filtered.length;
 
   const cardVariants = {
     hidden: { opacity: 0, y: 20 },
@@ -57,12 +63,11 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
         {CATEGORIES.map((cat) => (
           <button
             key={cat}
-            onClick={() => setActiveCategory(cat)}
-            className={`px-5 py-2 rounded-full border font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer ${
-              activeCategory === cat
+            onClick={() => { setActiveCategory(cat); setVisibleCount(PAGE_SIZE); }}
+            className={`px-5 py-2 rounded-full border font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer ${activeCategory === cat
                 ? 'bg-fg text-surface border-fg'
                 : 'border-line text-fg-muted hover:border-line-strong hover:text-fg-default'
-            }`}
+              }`}
           >
             {cat}
           </button>
@@ -72,7 +77,7 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
       {/* Posts list */}
       <div className="w-full flex flex-col border-t border-line">
         <AnimatePresence mode="popLayout">
-          {filtered.map((post) => (
+          {visible.map((post) => (
             <motion.a
               key={post.slug}
               href={`/blog/${post.slug}`}
@@ -85,9 +90,8 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
               <div className="md:w-1/4 flex flex-col gap-3">
                 <time className="text-fg-faint font-mono text-xs">{post.data.date}</time>
                 <span
-                  className={`self-start px-3 py-1 rounded-full border text-xs font-mono uppercase tracking-wider ${
-                    categoryColors[post.data.category] ?? 'text-fg-muted border-line'
-                  }`}
+                  className={`self-start px-3 py-1 rounded-full border text-xs font-mono uppercase tracking-wider ${categoryColors[post.data.category] ?? 'text-fg-muted border-line'
+                    }`}
                 >
                   {post.data.category}
                 </span>
@@ -130,6 +134,17 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
       {filtered.length === 0 && (
         <div className="text-center py-24 text-fg-faint font-mono">
           No posts in this category yet.
+        </div>
+      )}
+
+      {hasMore && (
+        <div className="flex justify-center mt-12">
+          <button
+            onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
+            className="px-8 py-3 rounded-full border border-line text-fg-muted hover:border-line-strong hover:text-fg font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer"
+          >
+            Load more <span className="text-fg-ghost">({filtered.length - visibleCount} remaining)</span>
+          </button>
         </div>
       )}
     </div>
