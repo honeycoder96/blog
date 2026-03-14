@@ -76,11 +76,27 @@ export const ContactForm: React.FC = () => {
         const res = await fetch(`${apiUrl}/v1/contact`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData),
+          body: JSON.stringify({ ...formData, origin: 'blog' }),
         });
         if (!res.ok) {
           const errorData = await res.json().catch(() => ({}));
-          throw new Error(errorData.message || 'Failed to send message');
+
+          if (res.status === 400 && Array.isArray(errorData.errors) && errorData.errors.length > 0) {
+            const fieldErrors: Record<string, string> = {};
+            (errorData.errors as { field: string; message: string }[]).forEach(({ field, message }) => {
+              fieldErrors[field] = `Exception: ${message}`;
+            });
+            setScannedErrors(fieldErrors);
+            setFormState('idle');
+            scrambleButton('SEND MESSAGE');
+            return;
+          }
+
+          if (res.status === 429) {
+            throw new Error('RATE LIMIT EXCEEDED. RETRY IN 15 MINUTES.');
+          }
+
+          throw new Error(errorData.message || 'TRANSMISSION FAILED. RETRY.');
         }
       } else {
         // No API configured — simulate success
@@ -195,7 +211,7 @@ export const ContactForm: React.FC = () => {
                   : 'top-4 text-sm peer-focus:-top-6 peer-focus:text-xs'
               }`}
             >
-              {fieldName === 'name' ? "What's your name?" : fieldName === 'message' ? 'Project Details' : 'Your Email'}
+              {fieldName === 'name' ? "What's your name?" : fieldName === 'message' ? 'Question, Comment or Message' : 'Your Email'}
             </motion.label>
 
             <div className="absolute bottom-0 left-0 w-full h-[1px]">
