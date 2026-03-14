@@ -10,6 +10,11 @@ const allPosts = await getCollection('blog');
 const sorted = allPosts
   .filter((p) => p.data.isVisible !== false)
   .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+const categoryCounts = sorted.reduce<Record<string, number>>((acc, p) => {
+  acc[p.data.category] = (acc[p.data.category] ?? 0) + 1;
+  return acc;
+}, {});
 const featuredPost = sorted.find((p) => p.data.featured);
 const featuredPosts = sorted
   .filter((p) => p.data.featured)
@@ -95,7 +100,7 @@ const featuredPosts = sorted
   </section>
 
   <!-- Categories: client:visible -->
-  <CategoriesSection client:visible />
+  <CategoriesSection categoryCounts={categoryCounts} client:visible />
 
   <!-- Newsletter: client:visible -->
   <NewsletterSection client:visible />

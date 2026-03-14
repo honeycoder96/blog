@@ -2,35 +2,39 @@ import React from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 
-const categories = [
-  {
-    name: 'Architecture',
+const categoryMeta: Record<string, { description: string; border: string; borderHover: string; accent: string }> = {
+  Architecture: {
     description: 'System design, distributed systems, and the decisions that define your platform.',
-    count: 3,
     border: 'border-line-strong',
     borderHover: 'hover:border-fg-muted',
     accent: 'text-fg',
   },
-  {
-    name: 'Deep Dive',
+  'Deep Dive': {
     description: 'Implementation details, internals, and the "how it actually works" explanations.',
-    count: 3,
     border: 'border-line-strong',
     borderHover: 'hover:border-fg-muted',
     accent: 'text-fg-default',
   },
-  {
-    name: 'Engineering',
+  Engineering: {
     description: 'Process, tooling, team dynamics, and building software at scale.',
-    count: 2,
     border: 'border-line-strong',
     borderHover: 'hover:border-fg-muted',
     accent: 'text-fg-muted',
   },
-];
+};
 
-export const CategoriesSection: React.FC = () => {
+interface Props {
+  categoryCounts: Record<string, number>;
+}
+
+export const CategoriesSection: React.FC<Props> = ({ categoryCounts }) => {
   const prefersReducedMotion = useReducedMotion();
+
+  const categories = Object.entries(categoryMeta).map(([name, meta]) => ({
+    name,
+    count: categoryCounts[name] ?? 0,
+    ...meta,
+  }));
 
   return (
     <section className="py-24 px-8 lg:px-24 border-t border-line-faint">
