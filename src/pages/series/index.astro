@@ -1,0 +1,50 @@
+---
+import PageLayout from '../../layouts/PageLayout.astro';
+import { SeriesAccordion } from '../../components/react/series/SeriesAccordion';
+import { AnimatedTitle } from '../../components/react/ui/AnimatedTitle';
+import { getCollection } from 'astro:content';
+
+const allEntries = await getCollection('series');
+
+const indexEntries = allEntries.filter(e => e.id.endsWith('/index.md'));
+const postEntries  = allEntries.filter(e => !e.id.endsWith('/index.md'));
+
+const seriesData = indexEntries.map(index => {
+  const seriesSlug = index.slug.replace('/index', '');
+  const postOrder: string[] = index.data.postOrder ?? [];
+  const posts = postOrder.flatMap(postSlug => {
+    const entry = postEntries.find(e => e.slug === `${seriesSlug}/${postSlug}`);
+    if (!entry) return [];
+    return [{ slug: postSlug, title: entry.data.title, summary: entry.data.summary, readingTime: entry.data.readingTime }];
+  });
+  return {
+    seriesSlug,
+    title: index.data.title,
+    description: index.data.description,
+    category: index.data.category,
+    posts,
+  };
+});
+
+const totalPosts = seriesData.reduce((sum, s) => sum + s.posts.length, 0);
+---
+
+<PageLayout
+  title="Series — Honey Sharma"
+  description="In-depth reading tracks on JavaScript, architecture, and engineering — each a structured multi-part series."
+>
+  <div class="max-w-7xl mx-auto px-8 lg:px-24 py-16">
+    <header class="mb-16">
+      <AnimatedTitle
+        text="Series"
+        className="text-5xl md:text-7xl font-display font-bold tracking-tighter text-fg mb-6"
+        client:visible
+      />
+      <p class="text-xl text-fg-muted max-w-2xl">
+        {seriesData.length} {seriesData.length === 1 ? 'series' : 'series'}, {totalPosts} posts — structured multi-part reading tracks.
+      </p>
+    </header>
+
+    <SeriesAccordion series={seriesData} client:load />
+  </div>
+</PageLayout>

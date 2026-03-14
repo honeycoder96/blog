@@ -3,17 +3,26 @@ import PageLayout from './PageLayout.astro';
 import { ReadingProgress } from '../components/react/blog/ReadingProgress';
 import { TableOfContents } from '../components/react/blog/TableOfContents';
 import { MobileSidebar } from '../components/react/blog/MobileSidebar';
+import { SandpackSheet } from '../components/react/sandpack/SandpackSheet';
 import CategoryBadge from '../components/astro/CategoryBadge.astro';
 
 interface PostLink {
   slug: string;
   title: string;
+  href?: string;
 }
 
 interface RelatedPost {
   slug: string;
   title: string;
   category: string;
+}
+
+interface SeriesContext {
+  seriesSlug: string;
+  seriesTitle: string;
+  part: number;
+  total: number;
 }
 
 interface Props {
@@ -27,15 +36,17 @@ interface Props {
   prevPost?: PostLink;
   nextPost?: PostLink;
   relatedPosts?: RelatedPost[];
+  seriesContext?: SeriesContext;
 }
 
-const { title, description, date, category, author, readingTime, headings, prevPost, nextPost, relatedPosts = [] } = Astro.props;
+const { title, description, date, category, author, readingTime, headings, prevPost, nextPost, relatedPosts = [], seriesContext } = Astro.props;
 const hasPostNav = prevPost || nextPost;
 ---
 
 <PageLayout title={`${title} — Honey Sharma`} description={description}>
   <ReadingProgress client:load />
   <MobileSidebar headings={headings} relatedPosts={relatedPosts} client:idle />
+  <SandpackSheet client:idle />
 
   <div class="max-w-7xl mx-auto px-8 lg:px-24 py-16 w-full">
     <!-- Top prev/next nav -->
@@ -43,7 +54,7 @@ const hasPostNav = prevPost || nextPost;
       <nav class="max-w-3xl flex justify-between items-center mb-6" aria-label="Post navigation">
         {prevPost ? (
           <a
-            href={`/blog/${prevPost.slug}`}
+            href={prevPost.href ?? `/blog/${prevPost.slug}`}
             class="flex items-center gap-1.5 font-mono text-xs uppercase tracking-widest text-fg-faint hover:text-fg transition-colors"
           >
             <span aria-hidden="true">&larr;</span> Prev
@@ -51,7 +62,7 @@ const hasPostNav = prevPost || nextPost;
         ) : <span />}
         {nextPost ? (
           <a
-            href={`/blog/${nextPost.slug}`}
+            href={nextPost.href ?? `/blog/${nextPost.slug}`}
             class="flex items-center gap-1.5 font-mono text-xs uppercase tracking-widest text-fg-faint hover:text-fg transition-colors"
           >
             Next <span aria-hidden="true">&rarr;</span>
@@ -62,6 +73,21 @@ const hasPostNav = prevPost || nextPost;
 
     <!-- Article header -->
     <header class="max-w-3xl mb-16">
+      {seriesContext && (
+        <div class="flex items-center gap-3 mb-4 font-mono text-xs text-fg-faint uppercase tracking-widest">
+          <a href="/series" class="hover:text-fg transition-colors">Series</a>
+          <span>/</span>
+          <a href={`/series/${seriesContext.seriesSlug}`} class="hover:text-fg transition-colors">
+            {seriesContext.seriesTitle}
+          </a>
+          <span class="ml-2 flex gap-1.5 items-center">
+            {Array.from({ length: seriesContext.total }, (_, i) => (
+              <span class={`w-1.5 h-1.5 rounded-full ${i + 1 === seriesContext.part ? 'bg-fg' : 'bg-line-strong'}`} />
+            ))}
+            <span class="ml-1">Part {seriesContext.part} of {seriesContext.total}</span>
+          </span>
+        </div>
+      )}
       <div class="flex items-center gap-4 mb-6">
         <CategoryBadge category={category} />
         {readingTime && (
@@ -130,7 +156,7 @@ const hasPostNav = prevPost || nextPost;
       <nav class="max-w-3xl grid grid-cols-2 gap-6 mt-16 pt-12 border-t border-line-faint" aria-label="Previous and next posts">
         {prevPost ? (
           <a
-            href={`/blog/${prevPost.slug}`}
+            href={prevPost.href ?? `/blog/${prevPost.slug}`}
             class="group p-6 rounded-2xl border border-line hover:border-line-strong transition-colors bg-surface-raised/50"
           >
             <span class="text-xs font-mono text-fg-faint uppercase tracking-wider block mb-2">
@@ -143,7 +169,7 @@ const hasPostNav = prevPost || nextPost;
         ) : <span />}
         {nextPost ? (
           <a
-            href={`/blog/${nextPost.slug}`}
+            href={nextPost.href ?? `/blog/${nextPost.slug}`}
             class="group p-6 rounded-2xl border border-line hover:border-line-strong transition-colors bg-surface-raised/50 text-right col-start-2"
           >
             <span class="text-xs font-mono text-fg-faint uppercase tracking-wider block mb-2">

@@ -6,6 +6,7 @@ import { getCollection } from 'astro:content';
 
 const allPosts = await getCollection('blog');
 const posts = allPosts
+  .filter((post) => post.data.isVisible !== false)
   .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
   .map((p) => ({
     slug: p.slug,

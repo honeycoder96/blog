@@ -3,6 +3,7 @@ import ThemeToggle from './ThemeToggle.astro';
 
 const navLinks = [
   { href: 'https://honeyhimself.com/', label: 'About', external: true },
+  { href: '/series', label: 'Series', external: false },
   { href: '/contact', label: 'Contact', external: false },
 ];
 
@@ -39,7 +40,7 @@ const currentPath = Astro.url.pathname;
       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
       </svg>
-      Posts
+      All posts
     </a>
 
     <ThemeToggle />

@@ -27,14 +27,6 @@ const categories = [
     borderHover: 'hover:border-fg-muted',
     accent: 'text-fg-muted',
   },
-  {
-    name: 'JavaScript',
-    description: 'JavaScript and TypeScript deep dives.',
-    count: 1,
-    border: 'border-line-strong',
-    borderHover: 'hover:border-fg-muted',
-    accent: 'text-fg',
-  }
 ];
 
 export const CategoriesSection: React.FC = () => {

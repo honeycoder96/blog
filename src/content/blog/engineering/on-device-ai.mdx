@@ -1,0 +1,723 @@
+---
+title: "On-device AI in the Browser"
+date: "Mar 2026"
+pubDate: 2026-03-14
+category: Engineering
+author: Honey Sharma
+summary: A look at how we built a production-grade, multi-agent code reviewer that runs entirely on WebGPU.
+featured: true
+readingTime: 12
+tags: [engineering, architecture]
+relatedPosts: []
+---
+
+## The Problem With Cloud-Hosted LLMs
+
+Every time you send code to a cloud AI API, you are making a series of implicit decisions: you accept the latency of a round-trip over the network, you accept that your code leaves your machine, and you accept an ongoing per-token cost. For many use cases — especially anything touching proprietary codebases, medical records, legal documents, or financial data — those trade-offs are non-starters.
+
+The question we started with was simple: *what if the entire inference stack ran inside the browser tab?*
+
+No API keys. No network calls during inference. No data leaving the device. Just a GPU, a compiled model, and a browser.
+
+This post walks through how we built a production-grade, multi-agent code reviewer that runs entirely on WebGPU — the architectural decisions, the hard constraints we worked within, and the patterns that generalised beyond this specific product.
+
+---
+
+## Part 1: WebGPU — The Foundation
+
+### What WebGPU Actually Is
+
+WebGPU is a W3C web standard that gives JavaScript direct, low-level access to the machine's GPU. It is the successor to WebGL, but the two serve fundamentally different purposes.
+
+WebGL was designed for 3D graphics. Its mental model is a graphics pipeline: vertices in, pixels out. Shaders manipulate geometry and colour. General-purpose computation was technically possible but deeply awkward — you had to disguise matrix multiplications as texture sampling operations.
+
+WebGPU was designed with general-purpose GPU compute as a first-class citizen. It exposes:
+
+- **Compute shaders** — arbitrary WGSL (WebGPU Shading Language) programs that run on the GPU with no graphics pipeline involved
+- **GPU buffers** — raw memory regions on the GPU, readable and writable by compute shaders
+- **Bind groups** — structured way to attach buffers and textures to shader invocations
+- **Command encoders** — batched GPU commands submitted as a single unit to minimise driver overhead
+
+This matters for machine learning because the core operation in every transformer layer — matrix multiplication (GEMM) — is exactly what GPUs were built to do in parallel. A single GPU can execute thousands of multiply-accumulate operations simultaneously.
+
+### Browser Support
+
+WebGPU shipped in Chrome 113 (May 2023) behind no flag. As of early 2026:
+
+| Browser | Status |
+|---|---|
+| Chrome 113+ | ✅ Stable |
+| Edge 113+ | ✅ Stable |
+| Firefox | 🔬 Behind flag (`dom.webgpu.enabled`) |
+| Safari 18+ (macOS 15) | ✅ Stable |
+| Chrome on Android | ✅ Stable |
+| Safari on iOS 18+ | ✅ Stable |
+
+### Detecting WebGPU at Runtime
+
+The entry point is `navigator.gpu`. If it is undefined, the browser has no WebGPU support.
+
+```js
+// Check for WebGPU support
+if (!navigator.gpu) {
+  throw new Error('WebGPU is not supported in this browser.')
+}
+
+// Request a GPU adapter (physical GPU or software fallback)
+const adapter = await navigator.gpu.requestAdapter()
+if (!adapter) {
+  throw new Error('No GPU adapter found.')
+}
+
+// Request a logical device (the actual interface you use)
+const device = await adapter.requestDevice()
+
+// Query limits — useful for deciding which model size to offer
+console.log('Max buffer size:', device.limits.maxBufferSize)
+console.log('Max storage buffer binding size:', device.limits.maxStorageBufferBindingSize)
+```
+
+For inference workloads, you mostly do not interact with the `device` directly — a library like WebLLM abstracts this entirely. But understanding the adapter/device model helps when debugging GPU capability issues.
+
+---
+
+## Part 2: WebLLM — LLM Inference on WebGPU
+
+### What WebLLM Is
+
+[WebLLM](https://github.com/mlc-ai/web-llm) is an open-source project from the MLC-AI team (the same group behind Apache TVM and MLC-LLM). It compiles large language models to run inside the browser using two targets:
+
+1. **WebAssembly (WASM)** — for the runtime, tokeniser, and non-compute logic
+2. **WebGPU** — for the heavy matrix multiplication operations in transformer layers
+
+The compilation pipeline (MLC-LLM → TVM → WGSL compute shaders) produces two artefacts per model:
+
+- A `.wasm` binary for the model runtime
+- Model weight files (`.bin` shards), quantised to INT4 or INT3 to fit in VRAM and over-the-wire
+
+The result is a fully self-contained LLM that runs in a browser tab with zero Python, zero native binaries, and zero server.
+
+### The Model Catalogue
+
+WebLLM ships pre-compiled versions of several popular open models. Here is what the current catalogue looks like, including the practical constraints:
+
+| Model | Download Size | Min VRAM | Context Window | Best For |
+|---|---|---|---|---|
+| Phi-3.5 Mini Instruct (INT4) | 2.2 GB | 3 GB | 4K tokens | ✅ Default — fast, broad hardware support |
+| Llama 3.2 3B Instruct (INT4) | 1.8 GB | 2.5 GB | 4K tokens | Lightweight, fast responses |
+| Llama 3.1 8B Instruct (INT4) | 4.9 GB | 6 GB | 8K tokens | Longer context tasks |
+| Mistral 7B Instruct (INT4) | 4.1 GB | 5 GB | 8K tokens | General reasoning |
+| Qwen 2.5 Coder 7B (INT4) | 4.3 GB | 5.5 GB | 8K tokens | ⭐ Best code quality |
+
+The default in our app is **Phi-3.5 Mini** — it runs on a wider range of hardware (including entry-level discrete GPUs and Apple Silicon MBPs) and still produces high-quality results for focused, structured prompts.
+
+### The API: Familiar by Design
+
+WebLLM's API mirrors the OpenAI Chat Completions interface. If you have used `openai.chat.completions.create`, you already know WebLLM's API:
+
+```js
+import * as webllm from '@mlc-ai/web-llm'
+
+// Create the engine — downloads and initialises the model
+const engine = await webllm.CreateMLCEngine('Phi-3.5-mini-instruct-q4f16_1-MLC', {
+  initProgressCallback: (progress) => {
+    console.log(`Loading: ${(progress.progress * 100).toFixed(0)}%`)
+  },
+})
+
+// Non-streaming completion
+const response = await engine.chat.completions.create({
+  messages: [
+    { role: 'system', content: 'You are a code reviewer.' },
+    { role: 'user', content: 'Review this function for bugs:\n\n```js\n...\n```' },
+  ],
+  max_tokens: 400,
+})
+
+console.log(response.choices[0].message.content)
+```
+
+For production use you almost always want **streaming** — local inference is slow enough (2–10 tokens/sec) that waiting for the full response feels broken:
+
+```js
+// Streaming completion — tokens arrive as they are generated
+const stream = await engine.chat.completions.create({
+  messages: [
+    { role: 'system', content: 'You are a security auditor.' },
+    { role: 'user', content: diff },
+  ],
+  stream: true,
+  max_tokens: 450,
+})
+
+let fullText = ''
+for await (const chunk of stream) {
+  const delta = chunk.choices[0]?.delta?.content ?? ''
+  fullText += delta
+  updateUI(fullText) // render tokens as they arrive
+}
+```
+
+### Model Weight Delivery: IndexedDB as a Cache
+
+The first time a user loads a model, WebLLM fetches the weight shards from a CDN (huggingface.co by default) and stores them in **IndexedDB**. On subsequent loads, the weights are read from IndexedDB — no network request.
+
+This is a critical UX detail. The first load for Phi-3.5 Mini takes roughly 2–4 minutes on a typical broadband connection (2.2 GB). Every load after that is under 10 seconds. Your onboarding UI must communicate this clearly.
+
+### Transformers.js: The WASM Alternative
+
+[Transformers.js](https://huggingface.co/docs/transformers.js) (Hugging Face) is a different approach to browser-local inference. It runs models via WebAssembly and ONNX Runtime Web rather than WebGPU. The trade-off:
+
+| | WebLLM | Transformers.js |
+|---|---|---|
+| Compute target | WebGPU (GPU) | WASM / ONNX (CPU) |
+| Model sizes | 1.8–7B params | 50M–500M params |
+| Hardware requirement | Discrete or integrated GPU | Any device |
+| Inference speed | 2–10 tok/s (GPU-bound) | 3–15 tok/s (CPU-bound, smaller models) |
+| Use case | Large instruction-following models | Classification, embedding, small seq2seq |
+
+For tasks like sentiment analysis, named entity recognition, or embedding generation, Transformers.js is often the right choice. For instruction-following tasks (code review, summarisation, Q&A), WebLLM's larger models produce meaningfully better results.
+
+---
+
+## Part 3: The Product — WebGPU Local Code Reviewer
+
+Before going into architecture, here is what we built and why.
+
+**The product** is a code review tool that accepts a `git diff` and returns structured findings across four dimensions: bugs, security vulnerabilities, performance issues, and an overall risk score — all computed locally, entirely in the browser.
+
+**The privacy motivation** is real. Code review tools that send diffs to cloud APIs are a non-starter for teams working on proprietary systems, financial infrastructure, or anything under NDA. Running inference locally eliminates the category of risk entirely.
+
+**The UX challenge** is that local inference is slow. A single agent pass on a medium-sized chunk takes 15–25 seconds on consumer hardware. A naive implementation — "show nothing until the model finishes" — is unusable. The entire engineering challenge is making a slow model feel responsive.
+
+---
+
+## Part 4: Architecture Deep-Dive
+
+### 4.1 The Engine Singleton
+
+WebGPU engine initialisation is expensive — allocating GPU memory, compiling shaders, loading model weights from IndexedDB into VRAM. You do this once per session, not once per request.
+
+```js
+// src/lib/engine.js
+let _engine = null
+
+export async function createEngine(modelId, onProgress) {
+  _engine = await webllm.CreateMLCEngine(modelId, {
+    initProgressCallback: onProgress,
+  })
+  return _engine
+}
+
+export function getEngine() {
+  return _engine
+}
+
+export function destroyEngine() {
+  // Free VRAM — called before switching models
+  _engine = null
+}
+```
+
+The singleton is held in module scope (outside React). Zustand stores the engine's *status* (loading, ready, error) and triggers re-renders; the actual `MLCEngine` object lives outside React's state to prevent serialisation overhead.
+
+Model switching is handled by destroying the engine, resetting the store, and calling `createEngine` again with the new model ID. Any active review is cancelled first — you cannot safely share VRAM between two model loads.
+
+### 4.2 Multi-Agent Pipeline on a Single Model
+
+The central insight: **one focused agent per concern beats one generic agent for everything.**
+
+We run four sequential agents per code chunk:
+
+```
+Chunk ──► Bug Reviewer ──► Security Auditor ──► Performance Reviewer ──► Summary Agent
+              │                   │                      │                      │
+         (streams)           (streams)               (streams)          (deduplicates,
+                                                                          ranks, scores)
+```
+
+Each agent is a distinct system prompt targeting a single concern:
+
+```js
+// src/lib/agents.js (simplified)
+export const AGENTS = [
+  {
+    id: 'bug',
+    name: 'Bug Reviewer',
+    icon: '🔍',
+    systemPrompt: `You are a precise bug reviewer. Focus exclusively on:
+- Logic errors and incorrect conditionals
+- Null/undefined dereferences
+- Off-by-one errors
+- Race conditions and async misuse
+- Unhandled exceptions
+
+Return a JSON array of findings. Each finding: { severity, line, description, suggestion }.
+Be concise. Do not comment on style.`,
+    skipFor: [],
+  },
+  {
+    id: 'security',
+    name: 'Security Auditor',
+    icon: '🔒',
+    systemPrompt: `You are a security auditor. Focus exclusively on:
+- Injection vulnerabilities (SQL, command, XSS)
+- Hardcoded secrets or credentials
+- Insecure deserialization
+- Path traversal
+- Missing authentication or authorization checks
+
+Return a JSON array of findings. Each finding: { severity, line, description, suggestion }.`,
+    // Skip security analysis on non-executable files
+    skipFor: ['css', 'scss', 'markdown', 'json', 'yaml', 'txt'],
+  },
+  {
+    id: 'performance',
+    name: 'Performance Reviewer',
+    icon: '⚡',
+    systemPrompt: `You are a performance reviewer. Focus exclusively on:
+- N+1 query patterns
+- Unnecessary re-renders or recomputation
+- Memory leaks (uncleaned listeners, timers, closures)
+- Blocking the main thread
+- Inefficient data structures
+
+Return a JSON array of findings. Each finding: { severity, line, description, suggestion }.`,
+    skipFor: ['css', 'scss', 'markdown', 'json', 'yaml', 'config'],
+  },
+  {
+    id: 'summary',
+    name: 'Summary Agent',
+    icon: '🧠',
+    systemPrompt: `You are a senior engineer synthesising code review findings.
+Given findings from three specialist reviewers, you must:
+1. Deduplicate overlapping findings (keep the most specific)
+2. Rank by severity (critical → high → medium → low)
+3. Assign an overall risk score (0–10) for this chunk
+
+Return JSON: { riskScore: number, findings: Finding[], commitNote: string }`,
+    skipFor: [],
+  },
+]
+```
+
+**Agent memory** — each downstream agent receives prior agents' findings as compact context. The Summary Agent sees all three prior outputs. This prevents duplicates and allows the Summary Agent to cross-reference findings:
+
+```js
+// src/lib/prompts.js
+export function buildAgentPrompt(chunk, agent, priorFindings) {
+  const priorContext = priorFindings.length > 0
+    ? `\n\nPrior findings from earlier reviewers:\n${formatFindings(priorFindings)}`
+    : ''
+
+  return [
+    { role: 'system', content: agent.systemPrompt },
+    {
+      role: 'user',
+      content: `File: ${chunk.filePath}\nLanguage: ${chunk.language}\n\n\`\`\`\n${chunk.content}\n\`\`\`${priorContext}`,
+    },
+  ]
+}
+
+function formatFindings(findings) {
+  // Compact format — saves ~100-200 tokens vs full JSON
+  return findings
+    .map(f => `[${f.severity.toUpperCase()}] Line ${f.line}: ${f.description}`)
+    .join('\n')
+}
+```
+
+**Language-aware skipping** — running a security analysis on a CSS file wastes 15 seconds and produces false positives. We skip agents whose `skipFor` list includes the file's detected language:
+
+```js
+export function getAgentsForFile(filePath, language) {
+  return AGENTS.filter(agent => !agent.skipFor.includes(language))
+}
+```
+
+### 4.3 Semantic Chunking Strategy
+
+A 500-line file cannot fit in a 4K context window after accounting for the system prompt, prior findings, and response budget. We chunk every file before review.
+
+**Token budget arithmetic** (per agent call):
+
+```
+System prompt:        ~150 tokens
+Code chunk:           500–800 tokens
+Prior findings:       ~100–300 tokens
+Response budget:      300–640 tokens (adaptive)
+─────────────────────────────────────
+Total per call:       ~1,150–1,890 tokens  ← fits 4K context
+```
+
+**Boundary detection** — we split at semantically meaningful boundaries to avoid cutting a function in half:
+
+```js
+// src/lib/chunker.js (simplified)
+const CHUNK_TOKEN_MIN = 500
+const CHUNK_TOKEN_MAX = 800
+
+const BOUNDARY_PATTERNS = [
+  /^(export\s+)?(async\s+)?function\s+\w+/,   // function declarations
+  /^(export\s+)?(abstract\s+)?class\s+\w+/,    // class declarations
+  /^(export\s+)?const\s+\w+\s*=\s*(async\s+)?\(/, // arrow functions
+  /^$/,                                          // blank lines (lowest priority)
+]
+
+export function chunkFile(fileDiff) {
+  const lines = diffToLines(fileDiff)
+  const chunks = []
+  let current = []
+  let currentTokens = 0
+
+  for (const line of lines) {
+    const lineTokens = estimateTokens(line.content)
+
+    const wouldExceedMax = currentTokens + lineTokens > CHUNK_TOKEN_MAX
+    const meetsMin = currentTokens >= CHUNK_TOKEN_MIN
+    const isBoundary = BOUNDARY_PATTERNS.some(p => p.test(line.content.trim()))
+
+    if (wouldExceedMax || (meetsMin && isBoundary)) {
+      if (current.length > 0) chunks.push(createChunk(current, fileDiff))
+      current = [line]
+      currentTokens = lineTokens
+    } else {
+      current.push(line)
+      currentTokens += lineTokens
+    }
+  }
+
+  if (current.length > 0) chunks.push(createChunk(current, fileDiff))
+  return chunks
+}
+```
+
+**Adaptive `max_tokens`** — smaller chunks need fewer tokens to describe. We adapt the completion limit to avoid wasted compute:
+
+```js
+function getMaxTokens(chunk) {
+  if (chunk.tokenCount < 100) return 300   // SMALL
+  if (chunk.tokenCount < 400) return 450   // MEDIUM
+  return 640                                // LARGE
+}
+```
+
+### 4.4 Off-Main-Thread Processing with Web Workers
+
+Parsing a large diff (thousands of lines) and chunking it synchronously on the main thread blocks the UI. We move both operations into Web Workers.
+
+Vite supports ES module workers natively — no bundler gymnastics required:
+
+```js
+// Spawning a module worker in Vite
+const worker = new Worker(
+  new URL('../workers/diffParser.worker.js', import.meta.url),
+  { type: 'module' }
+)
+```
+
+The diff parser worker:
+
+```js
+// src/workers/diffParser.worker.js
+import { parseDiff } from '../lib/diffParser.js'
+
+self.onmessage = ({ data }) => {
+  try {
+    const files = parseDiff(data.rawDiff)
+    self.postMessage({ ok: true, files })
+  } catch (err) {
+    self.postMessage({ ok: false, error: err.message })
+  }
+}
+```
+
+The chunker worker enables parallel chunking across all files simultaneously:
+
+```js
+// src/lib/reviewer.js (simplified)
+async function chunkAllFiles(files) {
+  // Spawn one worker per file, resolve in parallel
+  const chunkPromises = files.map(file => chunkFileInWorker(file))
+  return Promise.all(chunkPromises)
+}
+```
+
+For resilience, both workers have a synchronous fallback — if `new Worker()` throws (e.g. in test environments), we call the underlying function directly on the main thread.
+
+### 4.5 Progressive, Streaming UX
+
+This is the most important architectural decision in the product. Without it, the app is unusable.
+
+**Three levels of progressive feedback:**
+
+```
+Time 0s:   User clicks "Start Review"
+Time 1-2s: First tokens stream to screen (Bug Reviewer starts)
+Time 5-10s: Bug Reviewer complete, Security Auditor starts (status row updates)
+Time 15-25s: First file complete — FileTree marks ✓, inline comments appear, risk score updates
+Time 30-90s: Remaining files complete one by one
+```
+
+**Implementation — streaming tokens to React:**
+
+```jsx
+// src/components/StreamingText.jsx
+export function StreamingText({ text, isStreaming }) {
+  return (
+    <span className="font-mono text-sm whitespace-pre-wrap">
+      {text}
+      {isStreaming && (
+        <span className="inline-block w-2 h-4 bg-green-400 animate-pulse ml-0.5" />
+      )}
+    </span>
+  )
+}
+```
+
+**Implementation — file-level progressive delivery:**
+
+```js
+// src/lib/reviewer.js
+export async function reviewDiff(files, engine, callbacks) {
+  const { onFileComplete, onChunkStream, onAgentComplete } = callbacks
+
+  for (const file of files) {
+    const chunks = await chunkFileInWorker(file)
+    const chunkReviews = []
+
+    for (const chunk of chunks) {
+      const agents = getAgentsForFile(file.path, file.language)
+      const priorFindings = []
+
+      for (const agent of agents) {
+        const messages = buildAgentPrompt(chunk, agent, priorFindings)
+        const stream = await engine.chat.completions.create({
+          messages,
+          stream: true,
+          max_tokens: getMaxTokens(chunk),
+        })
+
+        let rawOutput = ''
+        for await (const streamChunk of stream) {
+          const delta = streamChunk.choices[0]?.delta?.content ?? ''
+          rawOutput += delta
+          onChunkStream(chunk.id, agent.id, rawOutput) // updates StreamingText
+        }
+
+        const findings = parseAgentResponse(rawOutput)
+        priorFindings.push(...findings)
+        onAgentComplete(chunk.id, agent.id, findings)
+      }
+
+      chunkReviews.push({ chunk, findings: priorFindings })
+    }
+
+    // Fire immediately when a file is done — don't wait for all files
+    onFileComplete(file.path, chunkReviews)
+  }
+}
+```
+
+**Zustand fine-grained subscriptions** — the store is structured so file completion only triggers re-renders in components subscribed to that specific file's data. The FileTree component does not re-render when a chunk streams tokens in the active file's review panel:
+
+```js
+// src/store/useStore.js (review slice)
+const reviewSlice = (set, get) => ({
+  fileReviews: {},   // { [filePath]: FileReview }
+  streamingState: {}, // { [chunkId]: { [agentId]: string } }
+
+  onFileComplete: (filePath, chunkReviews) => set(state => ({
+    fileReviews: {
+      ...state.fileReviews,
+      [filePath]: buildFileReview(filePath, chunkReviews),
+    },
+  })),
+
+  onChunkStream: (chunkId, agentId, text) => set(state => ({
+    streamingState: {
+      ...state.streamingState,
+      [chunkId]: { ...state.streamingState[chunkId], [agentId]: text },
+    },
+  })),
+})
+```
+
+### 4.6 Offline-First Data Strategy
+
+A browser-local AI app should be offline-capable. We use three storage layers:
+
+**localStorage — settings persistence**
+
+User preferences (selected model, enabled agents, severity filters, focus context) are persisted to localStorage and restored on mount. Inference results do not go here — localStorage is synchronous and size-limited.
+
+**sessionStorage — chunk result cache**
+
+Each chunk's review output is written to sessionStorage as it completes. If the user reloads mid-review, completed chunks are restored from cache rather than re-running inference:
+
+```js
+const CACHE_KEY = (chunkId) => `review_cache_${chunkId}`
+
+export function cacheChunkResult(chunkId, result) {
+  sessionStorage.setItem(CACHE_KEY(chunkId), JSON.stringify(result))
+}
+
+export function getCachedChunkResult(chunkId) {
+  const raw = sessionStorage.getItem(CACHE_KEY(chunkId))
+  return raw ? JSON.parse(raw) : null
+}
+```
+
+Using `sessionStorage` (not `localStorage`) is intentional: results are scoped to the current tab session and cleared when the tab closes, preventing stale results from a different diff appearing on next visit.
+
+**IndexedDB — model weights and review history**
+
+WebLLM manages model weights in IndexedDB automatically. We also maintain a review history store in IndexedDB for persisting past reviews across sessions.
+
+**PWA — offline app shell**
+
+Workbox (via `vite-plugin-pwa`) precaches all static assets — JS bundles, CSS, HTML, icons. The app shell loads offline. Model weights are excluded from precaching (they are already in IndexedDB via WebLLM) and external CDN requests are denylisted:
+
+```js
+// vite.config.js (relevant PWA config)
+VitePWA({
+  registerType: 'autoUpdate',
+  workbox: {
+    maximumFileSizeToCacheInBytes: 12 * 1024 * 1024, // 12 MB
+    navigateFallback: '/index.html',
+    navigateFallbackDenylist: [
+      /^https:\/\/huggingface\.co/,
+      /^https:\/\/cdn\./,
+    ],
+  },
+})
+```
+
+---
+
+## Part 5: Engineering Trade-offs and Lessons Learned
+
+### 1. The First-Load Experience Is the Hardest Problem
+
+Downloading 2.2 GB on first run is unavoidable. We mitigated it with:
+- A clear progress bar (bytes downloaded / total)
+- A cache-hit badge on the model selector so returning users know they will skip the download
+- Setting Phi-3.5 Mini as default (smallest footprint, widest hardware support)
+
+There is no way to make a 2.2 GB download fast. You can only make it feel purposeful.
+
+### 2. Context Windows Are Finite — Treat Every Token as Expensive
+
+At 4K tokens, Phi-3.5's context window is small by modern standards. Our token budget leaves no room for verbose prompts. The discipline of writing focused, concise agent prompts paid dividends in two ways: lower token consumption, and better model outputs (focused prompts produce more focused responses).
+
+The rule we adopted: *a system prompt that exceeds 200 tokens is doing too much.*
+
+### 3. Sequential Files, Parallel Chunks
+
+We process files sequentially but chunk them in parallel. This was a deliberate choice.
+
+Processing files in parallel would require holding multiple files' chunk results in VRAM simultaneously — a VRAM budget the model already occupies. We had one GPU, one model, one inference queue.
+
+Processing chunks of a single file in parallel would require multiple simultaneous calls to the engine, which WebLLM serialises internally anyway. There is no concurrency benefit — but parallelising the CPU-bound chunking step (before inference) via `Promise.all` + workers *does* save wall-clock time.
+
+### 4. Streaming Is Not Optional
+
+Without streaming, the app showed a spinner for 15–30 seconds before anything appeared. With streaming, the first token appears at 1–2 seconds. The psychological difference is enormous — the user sees work happening.
+
+The token streaming loop is only ~8 lines of code. The UX improvement is disproportionate.
+
+### 5. Vite Module Workers Are a First-Class Feature
+
+Using `{ type: 'module' }` workers in Vite means the worker imports the same library code as the main thread, with no duplication and no CommonJS interop issues. The build output separates worker bundles correctly. This is significantly better DX than the legacy `importScripts`-based worker pattern.
+
+One caveat: Vite's module worker support requires the worker URL to use `import.meta.url` — you cannot pass a bare string path.
+
+### 6. LLM Output Parsing Is Always Wrong the First Time
+
+LLMs do not always return valid JSON. They add prose preamble ("Here are my findings:"), they omit closing brackets, they escape characters inconsistently. We spent more time on the `parseAgentResponse` function than on any single agent prompt.
+
+The robust pattern: try `JSON.parse`, then extract the first JSON array/object with a regex fallback, then apply a schema validator, then log and discard anything that still fails:
+
+```js
+export function parseAgentResponse(raw) {
+  // 1. Try direct parse
+  try { return validate(JSON.parse(raw)) } catch (_) {}
+
+  // 2. Extract first JSON array from the response
+  const arrayMatch = raw.match(/\[[\s\S]*?\]/)
+  if (arrayMatch) {
+    try { return validate(JSON.parse(arrayMatch[0])) } catch (_) {}
+  }
+
+  // 3. Give up gracefully — don't throw, return empty
+  console.warn('Could not parse agent response:', raw.slice(0, 200))
+  return []
+}
+```
+
+---
+
+## Part 6: The Broader Picture
+
+### When On-Device AI Makes Sense
+
+The architecture described here generalises to any privacy-sensitive AI task:
+
+- **Legal document review** — contracts, NDAs, regulatory filings
+- **Medical note summarisation** — HIPAA-constrained environments
+- **Financial data analysis** — trading logic, internal reports
+- **Proprietary code understanding** — documentation generation, refactoring suggestions
+
+In each case, the key property is the same: the data never leaves the device.
+
+### The Hardware Reality
+
+On-device AI is not free. The minimum viable setup for Phi-3.5 Mini is a machine with 3 GB of available VRAM — a 2020-era discrete GPU or an Apple Silicon Mac. For larger models like Qwen 2.5 Coder 7B, you need 5.5 GB of VRAM.
+
+Integrated Intel/AMD graphics can run smaller Transformers.js models via WASM, but WebLLM's larger models will fail on them. Designing your model selector UI to surface hardware requirements clearly (and fail gracefully with a diagnostic message) is not optional — it is a core product requirement.
+
+### What Is Coming
+
+The on-device AI tooling space is evolving quickly:
+
+- **WebGPU on mobile** — Safari on iOS 18 ships WebGPU; smaller quantised models (1–2B params) are viable on high-end mobile
+- **WebGPU F16 operations** — `float16` GPU operations, currently behind an origin trial in Chrome, will reduce memory bandwidth requirements meaningfully
+- **WASM SIMD + multi-threading** — Transformers.js benefits from `SharedArrayBuffer` and WASM SIMD; both are available in cross-origin isolated contexts
+- **Smaller capable models** — the Phi-3.5 Mini → Phi-4 Mini trajectory suggests competitive quality at 2B params is achievable by 2026
+
+The gap between "cloud quality" and "on-device quality" is closing. The infrastructure for running these models in the browser is production-ready today.
+
+---
+
+## Try It Yourself
+
+The application is live and free to use. No account required, no API key, no data sent anywhere.
+
+👉 **[Explore the WebGPU Local Code Reviewer →](https://webllm.honeyhimself.com/)**
+
+**System requirements:**
+- Chrome 113+ or Edge 113+ (recommended)
+- A discrete GPU or Apple Silicon Mac (for best results)
+- ~3 GB of free VRAM (Phi-3.5 Mini, the default model)
+- ~2.5 GB of free disk space (IndexedDB cache on first run)
+
+**To try it:**
+1. Open the link above in Chrome
+2. Select a model and click **Load Model** (first run downloads ~2.2 GB — subsequent loads are instant)
+3. Paste any `git diff` output into the input area
+4. Click **Start Review**
+
+The first token will appear within 1–2 seconds. File-level results arrive progressively as each file finishes. Your code stays on your machine.
+
+---
+
+*If you found this useful or have questions about the architecture, open an issue or start a discussion on GitHub.*
+
+---
+
+**Tech Stack Referenced**
+- [@mlc-ai/web-llm](https://github.com/mlc-ai/web-llm) — WebGPU-accelerated LLM inference
+- [Transformers.js](https://huggingface.co/docs/transformers.js) — WASM/ONNX inference for smaller models
+- [WebGPU W3C Spec](https://www.w3.org/TR/webgpu/) — The underlying GPU API
+- [Vite](https://vitejs.dev) + [React 19](https://react.dev) + [Zustand 5](https://zustand.docs.pmnd.rs) — Application framework
+- [vite-plugin-pwa](https://vite-pwa-org.netlify.app) + [Workbox](https://developer.chrome.com/docs/workbox) — Offline support

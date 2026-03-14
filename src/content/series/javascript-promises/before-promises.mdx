@@ -1,4 +1,5 @@
 ---
+isVisible: true
 title: "The World Before Promises"
 date: "Mar 2026"
 pubDate: 2026-03-13
@@ -8,11 +9,9 @@ summary: Before you can truly understand Promises, you need to understand the en
 featured: false
 readingTime: 12
 tags: [javascript, promises, event-loop, js-interview]
-relatedPosts: []
-prevPost: js/promises-in-depth
-nextPost: custom-react-renderer
 ---
 import Note from '../../../components/astro/Note.astro'
+import { RunDemo } from '../../../components/react/sandpack/RunDemo'
 
 ---
 
@@ -79,8 +78,6 @@ The call stack has a maximum size. If you have a function that calls itself infi
 Run the code below and use the browser's debugger to step through it. Put a `debugger` statement inside `multiply` and open DevTools — you'll see the call stack panel on the right update live as you step through each frame.
 
 ```js
-// SANDPACK DEMO 1 — Call Stack Trace
-// Tip: open the browser console and step through with debugger
 
 function multiply(a, b) {
   debugger; // open DevTools to see the call stack here
@@ -101,6 +98,8 @@ printSquare(5);
 printSquare(6);
 ```
 
+<RunDemo client:visible id="before-promises/call-stack" label="Run: Call Stack Trace" />
+
 ## Blocking the Thread
 
 Because there is only one thread, any code that takes a long time to run will hold up *everything* else. No other JavaScript can execute, no UI updates can be painted, no click handlers can fire — the entire page is frozen until that code finishes.
@@ -110,7 +109,7 @@ This is called **blocking the thread**, and it is one of the most important prob
 Here is a concrete example:
 
 ```js
-// SANDPACK DEMO 2 — Blocking the Thread
+
 // Click "Start Heavy Work" and notice the UI freezes completely
 // The button becomes unresponsive, the counter stops updating
 
@@ -138,6 +137,8 @@ document.getElementById('btn').addEventListener('click', doHeavyWork);
 // <p>Counter: <span id="counter">0</span></p>
 // <button id="btn">Start Heavy Work</button>
 ```
+
+<RunDemo client:visible id="before-promises/blocking-thread" label="Run: Blocking Demo" />
 
 Click the button and watch the counter freeze mid-tick. The `while` loop monopolises the thread. The interval timer fires, but its callback is queued and cannot run until the stack is clear — which doesn't happen until the loop finishes.
 
@@ -327,6 +328,8 @@ Promise.resolve()
 
 console.log('script end');         // (2)
 ```
+
+<RunDemo client:visible id="before-promises/event-loop-trace" label="Run: Event Loop Trace" />
 
 Step-by-step trace:
 

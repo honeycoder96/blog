@@ -13,7 +13,7 @@ export default defineConfig({
       dedupe: ['react', 'react-dom', 'framer-motion'],
     },
     optimizeDeps: {
-      include: ['react', 'react-dom', 'framer-motion'],
+      include: ['react', 'react-dom', 'framer-motion', '@codesandbox/sandpack-react'],
     },
   },
   markdown: {

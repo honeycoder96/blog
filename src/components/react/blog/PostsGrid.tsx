@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 
-type Category = 'All' | 'Architecture' | 'Deep Dive' | 'Engineering' | 'JavaScript';
+type Category = 'All' | 'Architecture' | 'Deep Dive' | 'Engineering';
 
 interface Post {
   slug: string;
@@ -20,7 +20,7 @@ interface PostsGridProps {
   posts: Post[];
 }
 
-const CATEGORIES: Category[] = ['All', 'Architecture', 'Deep Dive', 'Engineering', 'JavaScript'];
+const CATEGORIES: Category[] = ['All', 'Architecture', 'Deep Dive', 'Engineering'];
 
 const categoryColors: Record<string, string> = {
   Architecture: 'text-blue-400 border-blue-800',
@@ -70,7 +70,7 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
       </div>
 
       {/* Posts list */}
-      <motion.div layout className="flex flex-col border-t border-line">
+      <div className="w-full flex flex-col border-t border-line">
         <AnimatePresence mode="popLayout">
           {filtered.map((post) => (
             <motion.a
@@ -80,8 +80,7 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
               initial={prefersReducedMotion ? undefined : 'hidden'}
               animate={prefersReducedMotion ? undefined : 'visible'}
               exit={prefersReducedMotion ? undefined : 'exit'}
-              layout
-              className="group border-b border-line py-8 md:py-10 flex flex-col md:flex-row justify-between md:items-center gap-4 hover:border-fg-muted transition-colors"
+              className="group border-b border-line py-8 md:py-10 flex flex-col md:flex-row justify-between md:items-center gap-4 hover:border-fg-muted transition-colors w-full"
             >
               <div className="md:w-1/4 flex flex-col gap-3">
                 <time className="text-fg-faint font-mono text-xs">{post.data.date}</time>
@@ -126,7 +125,7 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
             </motion.a>
           ))}
         </AnimatePresence>
-      </motion.div>
+      </div>
 
       {filtered.length === 0 && (
         <div className="text-center py-24 text-fg-faint font-mono">

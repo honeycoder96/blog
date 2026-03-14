@@ -1,0 +1,60 @@
+---
+import { getCollection, render } from 'astro:content';
+import BlogLayout from '../../../layouts/BlogLayout.astro';
+
+export async function getStaticPaths() {
+  const allEntries = await getCollection('series');
+  const indexEntries = allEntries.filter(e => e.id.endsWith('/index.md'));
+  const postEntries  = allEntries.filter(e => !e.id.endsWith('/index.md'));
+
+  return indexEntries.flatMap(index => {
+    const seriesSlug = index.slug.replace('/index', '');
+    const postOrder: string[] = index.data.postOrder ?? [];
+
+    return postOrder.flatMap((postSlug, i) => {
+      const entry = postEntries.find(e => e.slug === `${seriesSlug}/${postSlug}`);
+      if (!entry) return [];
+
+      const prevSlug = postOrder[i - 1];
+      const nextSlug = postOrder[i + 1];
+      const prevEntry = prevSlug ? postEntries.find(e => e.slug === `${seriesSlug}/${prevSlug}`) : undefined;
+      const nextEntry = nextSlug ? postEntries.find(e => e.slug === `${seriesSlug}/${nextSlug}`) : undefined;
+
+      return [{
+        params: { seriesSlug, postSlug },
+        props: {
+          entry,
+          seriesTitle: index.data.title,
+          part: i + 1,
+          total: postOrder.length,
+          prevPost: prevEntry
+            ? { slug: prevSlug, title: prevEntry.data.title, href: `/series/${seriesSlug}/${prevSlug}` }
+            : undefined,
+          nextPost: nextEntry
+            ? { slug: nextSlug, title: nextEntry.data.title, href: `/series/${seriesSlug}/${nextSlug}` }
+            : undefined,
+        },
+      }];
+    });
+  });
+}
+
+const { entry, seriesTitle, part, total, prevPost, nextPost } = Astro.props;
+const { seriesSlug } = Astro.params;
+const { Content, headings } = await render(entry);
+---
+
+<BlogLayout
+  title={entry.data.title}
+  description={entry.data.summary}
+  date={entry.data.date ?? ''}
+  category={entry.data.category}
+  author={entry.data.author}
+  readingTime={entry.data.readingTime}
+  headings={headings}
+  prevPost={prevPost}
+  nextPost={nextPost}
+  seriesContext={{ seriesSlug, seriesTitle, part, total }}
+>
+  <Content />
+</BlogLayout>
