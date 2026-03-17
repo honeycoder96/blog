@@ -55,6 +55,15 @@ export const CATEGORY_CONFIG: CategoryConfig[] = [
     showOnHomepage: true,
   },
   {
+    name: 'AI & Automation',
+    color: 'text-orange-400 border-orange-800',
+    description: 'AI-powered tooling, autonomous workflows, and intelligent automation for engineering.',
+    border: 'border-line-strong',
+    borderHover: 'hover:border-fg-muted',
+    accent: 'text-fg-muted',
+    showOnHomepage: true,
+  },
+  {
     name: 'JavaScript',
     color: 'text-yellow-400 border-yellow-800',
     description: 'Deep dives into JavaScript internals, async patterns, and the ecosystem.',
