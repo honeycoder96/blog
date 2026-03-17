@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
-
-type Category = 'All' | 'Architecture' | 'Deep Dive' | 'Engineering';
+import { CATEGORY_COLOR_MAP, buildFilterCategories } from '../../../config/categories';
 
 interface Post {
   slug: string;
@@ -20,26 +19,18 @@ interface PostsGridProps {
   posts: Post[];
 }
 
-const CATEGORIES: Category[] = ['All', 'Architecture', 'Deep Dive', 'Engineering'];
-
-const categoryColors: Record<string, string> = {
-  Architecture: 'text-blue-400 border-blue-800',
-  'Deep Dive': 'text-purple-400 border-purple-800',
-  Engineering: 'text-green-400 border-green-800',
-  JavaScript: 'text-yellow-400 border-yellow-800',
-};
-
-function getInitialCategory(): Category {
+function getInitialCategory(categories: string[]): string {
   if (typeof window === 'undefined') return 'All';
   const param = new URLSearchParams(window.location.search).get('category');
-  if (param && (CATEGORIES as string[]).includes(param)) return param as Category;
+  if (param && categories.includes(param)) return param;
   return 'All';
 }
 
 const PAGE_SIZE = 10;
 
 export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
-  const [activeCategory, setActiveCategory] = useState<Category>(getInitialCategory);
+  const categories = buildFilterCategories(posts.map((p) => p.data.category));
+  const [activeCategory, setActiveCategory] = useState<string>(() => getInitialCategory(categories));
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const prefersReducedMotion = useReducedMotion();
 
@@ -60,7 +51,7 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
     <div>
       {/* Category filters */}
       <div className="flex flex-wrap gap-3 mb-12">
-        {CATEGORIES.map((cat) => (
+        {categories.map((cat) => (
           <button
             key={cat}
             onClick={() => { setActiveCategory(cat); setVisibleCount(PAGE_SIZE); }}
@@ -90,7 +81,7 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
               <div className="md:w-1/4 flex flex-col gap-3">
                 <time className="text-fg-faint font-mono text-xs">{post.data.date}</time>
                 <span
-                  className={`self-start px-3 py-1 rounded-full border text-xs font-mono uppercase tracking-wider ${categoryColors[post.data.category] ?? 'text-fg-muted border-line'
+                  className={`self-start px-3 py-1 rounded-full border text-xs font-mono uppercase tracking-wider ${CATEGORY_COLOR_MAP[post.data.category] ?? 'text-fg-muted border-line'
                     }`}
                 >
                   {post.data.category}

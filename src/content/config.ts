@@ -6,7 +6,7 @@ const blogCollection = defineCollection({
     title: z.string(),
     date: z.string(),
     pubDate: z.coerce.date(),
-    category: z.enum(['Architecture', 'Deep Dive', 'Engineering', 'JavaScript']),
+    category: z.string(),
     author: z.string().default('Honey Sharma'),
     summary: z.string(),
     featured: z.boolean().default(false),
@@ -24,7 +24,7 @@ const seriesCollection = defineCollection({
   schema: z.object({
     title: z.string(),
     description: z.string().optional(),
-    category: z.enum(['Architecture', 'Deep Dive', 'Engineering', 'JavaScript']),
+    category: z.string(),
     // Index-only
     postOrder: z.array(z.string()).optional(),
     // Post-only

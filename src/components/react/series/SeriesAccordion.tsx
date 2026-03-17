@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronDown, BookOpen, Clock } from 'lucide-react';
+import { CATEGORY_COLOR_MAP, buildFilterCategories } from '../../../config/categories';
 
 interface SeriesPost {
   slug: string;
@@ -21,21 +22,10 @@ interface Props {
   series: Series[];
 }
 
-type Category = 'All' | 'Architecture' | 'Deep Dive' | 'Engineering' | 'JavaScript';
-
-const CATEGORIES: Category[] = ['All', 'JavaScript', 'Architecture', 'Deep Dive', 'Engineering'];
-
-const categoryColors: Record<string, string> = {
-  Architecture: 'text-blue-400 border-blue-800',
-  'Deep Dive': 'text-purple-400 border-purple-800',
-  Engineering: 'text-green-400 border-green-800',
-  JavaScript: 'text-yellow-400 border-yellow-800',
-};
-
-function getInitialCategory(): Category {
+function getInitialCategory(categories: string[]): string {
   if (typeof window === 'undefined') return 'All';
   const param = new URLSearchParams(window.location.search).get('category');
-  if (param && (CATEGORIES as string[]).includes(param)) return param as Category;
+  if (param && categories.includes(param)) return param;
   return 'All';
 }
 
@@ -48,7 +38,8 @@ const cardVariants = {
 const PAGE_SIZE = 5;
 
 export const SeriesAccordion: React.FC<Props> = ({ series }) => {
-  const [activeCategory, setActiveCategory] = useState<Category>(getInitialCategory);
+  const categories = buildFilterCategories(series.map((s) => s.category));
+  const [activeCategory, setActiveCategory] = useState<string>(() => getInitialCategory(categories));
   const [openIndex, setOpenIndex] = useState<number | null>(0);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const prefersReducedMotion = useReducedMotion();
@@ -60,7 +51,7 @@ export const SeriesAccordion: React.FC<Props> = ({ series }) => {
   const visible = filtered.slice(0, visibleCount);
   const hasMore = visibleCount < filtered.length;
 
-  const handleCategoryChange = (cat: Category) => {
+  const handleCategoryChange = (cat: string) => {
     setActiveCategory(cat);
     setOpenIndex(0);
     setVisibleCount(PAGE_SIZE);
@@ -70,7 +61,7 @@ export const SeriesAccordion: React.FC<Props> = ({ series }) => {
     <div>
       {/* Category filters */}
       <div className="flex flex-wrap gap-3 mb-12">
-        {CATEGORIES.filter(cat => cat === 'All' || series.some(s => s.category === cat)).map((cat) => (
+        {categories.map((cat) => (
           <button
             key={cat}
             onClick={() => handleCategoryChange(cat)}
@@ -108,7 +99,7 @@ export const SeriesAccordion: React.FC<Props> = ({ series }) => {
                   <div className="md:w-1/4 flex flex-col gap-3">
                     <span
                       className={`self-start px-3 py-1 rounded-full border text-xs font-mono uppercase tracking-wider ${
-                        categoryColors[s.category] ?? 'text-fg-muted border-line'
+                        CATEGORY_COLOR_MAP[s.category] ?? 'text-fg-muted border-line'
                       }`}
                     >
                       {s.category}
