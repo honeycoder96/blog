@@ -1,27 +1,7 @@
 import React from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
-
-const categoryMeta: Record<string, { description: string; border: string; borderHover: string; accent: string }> = {
-  Architecture: {
-    description: 'System design, distributed systems, and the decisions that define your platform.',
-    border: 'border-line-strong',
-    borderHover: 'hover:border-fg-muted',
-    accent: 'text-fg',
-  },
-  'Deep Dive': {
-    description: 'Implementation details, internals, and the "how it actually works" explanations.',
-    border: 'border-line-strong',
-    borderHover: 'hover:border-fg-muted',
-    accent: 'text-fg-default',
-  },
-  Engineering: {
-    description: 'Process, tooling, team dynamics, and building software at scale.',
-    border: 'border-line-strong',
-    borderHover: 'hover:border-fg-muted',
-    accent: 'text-fg-muted',
-  },
-};
+import { HOMEPAGE_CATEGORIES } from '../../../config/categories';
 
 interface Props {
   categoryCounts: Record<string, number>;
@@ -30,10 +10,9 @@ interface Props {
 export const CategoriesSection: React.FC<Props> = ({ categoryCounts }) => {
   const prefersReducedMotion = useReducedMotion();
 
-  const categories = Object.entries(categoryMeta).map(([name, meta]) => ({
-    name,
-    count: categoryCounts[name] ?? 0,
-    ...meta,
+  const categories = HOMEPAGE_CATEGORIES.map((cat) => ({
+    ...cat,
+    count: categoryCounts[cat.name] ?? 0,
   }));
 
   return (
