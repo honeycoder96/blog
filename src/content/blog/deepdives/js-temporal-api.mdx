@@ -1,0 +1,403 @@
+---
+title: "JavaScript Temporal API: Fixing 30 Years of Date Nightmares"
+date: "Mar 2026"
+pubDate: 2026-03-19
+category: "Deep Dive"
+author: "Honey Sharma"
+summary: "A hands-on guide to JavaScript's new Temporal API — what's broken with Date, how Temporal fixes it, and how to start using it today via polyfill."
+featured: false
+readingTime: 16
+tags: [javascript, temporal, dates, tc39, web-standards]
+relatedPosts: []
+---
+
+It was a Thursday evening. A user filed a support ticket: their scheduled meeting had disappeared. Somewhere between a timezone conversion and a DST transition, a date calculation had gone wrong by exactly one hour — and taken the event with it. The `Date` object had struck again.
+
+If you've written JavaScript for any length of time, you've been here. The `Date` object is one of those APIs that *mostly* works until it spectacularly doesn't. It was famously copied from Java in about 10 days back in 1995 — and unlike most of the web platform, it has never been fundamentally rethought.
+
+Until now.
+
+The **Temporal API** is a complete, ground-up redesign of date/time handling in JavaScript. It reached TC39 Stage 4 (finalized) and has already shipped in Chrome and Firefox. This post is your structured walkthrough: first, an honest look at what makes `Date` painful, then a hands-on tour of everything Temporal brings to replace it.
+
+---
+
+## Think You Know `Date`? Prove It.
+
+Before we dig in — there's a fantastic little quiz site called **[jsdate.wtf](https://jsdate.wtf/)** that fires 20 multiple-choice questions at you about the `Date` API's most absurd edge cases. It takes about 5 minutes.
+
+Go try it first. Seriously. Come back when you've got your score.
+
+The questions aren't trick questions — they're *real* behaviors. Things like what `new Date("0")` returns vs `new Date(0)`, what happens when you pass `"1990 (2010)"` to the constructor, or how minute-precision UTC offsets interact with year parsing. Every answer that surprises you is a bug waiting to happen in production code.
+
+Most developers with years of JS experience score somewhere in the 8–12 range out of 20. The rest of this post explains exactly why.
+
+---
+
+## Part 1 — The Quirks of `Date`
+
+Let's be specific. Here are the seven most painful ways `Date` fails in real-world code.
+
+### 1. Parsing is a Trap
+
+```js
+// ISO string → parsed as UTC midnight
+new Date("2026-03-19")
+// Thu Mar 19 2026 00:00:00 UTC  (UTC midnight)
+
+// Slash-separated → parsed as LOCAL midnight
+new Date("2026/03/19")
+// Thu Mar 19 2026 00:00:00 GMT+0530 (India Standard Time) ← different instant!
+```
+
+The same conceptual date produces two different timestamps depending on the separator you use. This is implementation-defined behavior — results vary across browsers and Node.js versions. The spec essentially says "good luck."
+
+> **The bug:** You store a date as `"2026-03-19"` and display it for a user in UTC+5:30. They see March 18th. Valid complaint.
+
+### 2. Months are 0-Indexed (Days are Not)
+
+```js
+// January is 0, December is 11
+new Date(2026, 0, 1)   // January 1st ✅
+new Date(2026, 12, 1)  // January 1st of 2027 😱 (overflows silently)
+
+// But days ARE 1-indexed, so:
+new Date(2026, 0, 0)   // December 31st 2025 (underflows to previous month)
+```
+
+This asymmetry has caused more off-by-one bugs than almost any other API decision in the language. There's no good reason for it — it was inherited from Java's original `java.util.Date`, which was itself considered a mistake.
+
+### 3. Mutability is a Silent Bug Factory
+
+```js
+function addOneWeek(date) {
+  date.setDate(date.getDate() + 7) // ← mutates the original!
+  return date
+}
+
+const deadline = new Date("2026-03-19")
+const nextDeadline = addOneWeek(deadline)
+
+console.log(deadline === nextDeadline) // true — same object, both modified
+console.log(deadline.toISOString())    // 2026-03-26 — the original is now wrong
+```
+
+Every `set*` method on `Date` modifies the object in place. If you pass a date to a function and that function calls `setMonth` or `setHours`, your original value is gone. This makes dates unsafe to share across components, callbacks, or utility functions without defensively cloning everywhere.
+
+### 4. No Real Timezone Support
+
+```js
+const now = new Date()
+
+// You get two flavors:
+now.getHours()      // local machine time (whatever TZ the runtime is configured to)
+now.getUTCHours()   // UTC
+
+// That's it. You cannot do:
+now.getHoursIn("America/New_York") // ❌ doesn't exist
+```
+
+If you need to display a time in a specific timezone — say, showing a New York user their local time while your server runs in UTC — you have to reach for `Intl.DateTimeFormat`, third-party libraries like `date-fns-tz` or `luxon`, or write your own offset arithmetic. The `Date` object itself is completely blind to named timezones.
+
+### 5. DST Transitions Will Bite You
+
+```js
+// UK clocks spring forward at 01:00 on March 29, 2026
+const before = new Date("2026-03-29T00:30:00Z") // 00:30 UTC = 00:30 London (still GMT)
+const plusOneHour = new Date(before.getTime() + 60 * 60 * 1000)
+
+// We added exactly 3,600,000 milliseconds
+// But "one hour later" in London is now 02:30 BST (clocks skipped 01:00–02:00)
+// The timestamp is correct, but reasoning about it as "1 hour later" breaks expectations
+```
+
+Calendar-based thinking ("tomorrow at the same time") and elapsed-time thinking ("exactly 86,400 seconds from now") are fundamentally different operations — especially across DST transitions. `Date` gives you raw millisecond arithmetic with no concept of which you want.
+
+### 6. Arithmetic is Verbose and Fragile
+
+```js
+// "Add one month" — sounds simple
+function addOneMonth(date) {
+  const result = new Date(date)
+  result.setMonth(result.getMonth() + 1)
+  return result
+}
+
+// But:
+addOneMonth(new Date("2026-01-31"))
+// → March 3rd 2026 🤦 (February doesn't have 31 days, silently overflows)
+
+// "Last day of next month"?
+function endOfNextMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth() + 2, 0)
+  // Setting day=0 goes to last day of previous month... yes, really
+}
+```
+
+Every non-trivial date operation requires you to remember which edge cases exist and write around them. The API provides no guard rails.
+
+### 7. No Non-Gregorian Calendar Support
+
+The `Date` object is Gregorian-only. Working with Islamic (Hijri), Hebrew, Persian, or Japanese calendars requires either external libraries or complex manual conversion. For apps serving global audiences, this is a real gap — not a niche concern.
+
+---
+
+## Part 2 — Enter Temporal
+
+The Temporal proposal was years in the making, with deep involvement from experts at Bloomberg, Igalia, and the broader TC39 community. It's now **Stage 4** — the final stage before being merged into the ECMAScript specification. The API is frozen; no breaking changes are coming.
+
+### Current Browser & Runtime Support
+
+This is critical to understand before you ship anything.
+
+| Environment | Status |
+|---|---|
+| Chrome 144+ | ✅ Shipped (January 2026) |
+| Firefox 139+ | ✅ Shipped (May 2025) |
+| Edge 144+ | ✅ Shipped |
+| **Safari** | **❌ Not yet** |
+| **Node.js** | **❌ Not yet** (v26 tentative) |
+
+Safari's absence is significant — it means you cannot rely on native `Temporal` today without a polyfill, even in modern browsers. Similarly, any Node.js server-side code needs the polyfill until Node v26 ships with it built in.
+
+### Using the Polyfill Today
+
+The `temporal-polyfill` package is the recommended way to use Temporal right now:
+
+```bash
+npm install temporal-polyfill
+```
+
+```js
+// Option 1: named import (works alongside a future native Temporal)
+import { Temporal } from 'temporal-polyfill'
+
+// Option 2: global polyfill (adds Temporal to globalThis)
+import 'temporal-polyfill/global'
+// Now `Temporal` is available everywhere without imports
+```
+
+The polyfill is spec-compliant and passes the official TC39 test suite. Code you write against it today will work unchanged when browsers ship native support.
+
+### Design Principles
+
+Before diving into the types, here's what's different at a philosophical level:
+
+- **Immutable** — every operation returns a new object; nothing mutates in place
+- **Explicit about timezone** — you must say what you mean; no silent local-time assumptions
+- **Nanosecond precision** — not milliseconds like `Date`
+- **Calendar-aware** — Gregorian is the default, but others are first-class
+- **Unambiguous parsing** — strict ISO 8601 format; no guess-the-separator behavior
+
+---
+
+## Part 3 — The Type System, Hands-On
+
+This is where Temporal feels genuinely different. Instead of one catch-all `Date` object, you choose the right type for your use case. Here's each one.
+
+### `Temporal.Instant` — A Raw Timestamp
+
+An `Instant` is a single point on the timeline. No timezone. No calendar. Just nanoseconds since Unix epoch.
+
+```js
+import { Temporal } from 'temporal-polyfill'
+
+// Current moment
+const now = Temporal.Now.instant()
+console.log(now.epochMilliseconds) // e.g. 1742378400000
+
+// From a stored timestamp
+const stored = Temporal.Instant.fromEpochMilliseconds(1742378400000)
+
+// Convert to a different timezone for display
+const inTokyo = stored.toZonedDateTimeISO("Asia/Tokyo")
+console.log(inTokyo.toString())
+// → "2026-03-19T15:00:00+09:00[Asia/Tokyo]"
+```
+
+**When to use it:** Storing timestamps in a database, writing to logs, measuring elapsed time. It's the equivalent of "just the number" — you add context (timezone) when you need to display or compare in human terms.
+
+### `Temporal.ZonedDateTime` — The Full Picture
+
+This is the main replacement for `Date` in most application code. It holds an exact moment in time *plus* the timezone it's anchored to — so DST arithmetic just works.
+
+```js
+// Create from an ISO string with timezone annotation
+const meeting = Temporal.ZonedDateTime.from(
+  "2026-03-29T00:30:00[Europe/London]"
+)
+
+// Add one hour — Temporal knows clocks spring forward at 01:00
+const oneHourLater = meeting.add({ hours: 1 })
+console.log(oneHourLater.toString())
+// → "2026-03-29T02:30:00+01:00[Europe/London]"
+// (01:00–02:00 doesn't exist on this day — Temporal handles it correctly)
+
+// Add one calendar day — preserves wall clock time across DST
+const nextDay = meeting.add({ days: 1 })
+console.log(nextDay.hour) // still 0 (00:30 the next day, not 01:30)
+
+// Get the current moment with full timezone context
+const nowInParis = Temporal.Now.zonedDateTimeISO("Europe/Paris")
+console.log(nowInParis.toString())
+// → "2026-03-19T11:45:32.123456789+01:00[Europe/Paris]"
+```
+
+**When to use it:** Calendar events, scheduling, anything where you need to display a time in a specific timezone and perform calendar-aware arithmetic.
+
+### `Temporal.PlainDate` — Date Without Time
+
+Sometimes you don't want time at all. Birthdays, public holidays, billing cycles — these are *dates*, not moments.
+
+```js
+const birthday = Temporal.PlainDate.from("1995-10-12")
+console.log(birthday.year)  // 1995
+console.log(birthday.month) // 10 (1-indexed! finally)
+console.log(birthday.day)   // 12
+
+// Add one month safely — no overflow into wrong month
+const nextBirthday = birthday.with({ year: 2026 })
+console.log(nextBirthday.toString()) // "2026-10-12"
+
+// Days until next birthday
+const today = Temporal.Now.plainDateISO()
+const until = today.until(nextBirthday)
+console.log(until.days) // e.g. 207
+
+// Comparison
+const result = Temporal.PlainDate.compare(today, nextBirthday)
+// -1 = today is before, 0 = same, 1 = today is after
+```
+
+**When to use it:** Form inputs (date pickers), birth dates, deadline dates, anything that is conceptually "a day" with no time component.
+
+### `Temporal.PlainTime` — Time Without Date
+
+```js
+const openingTime = Temporal.PlainTime.from("09:00:00")
+const closingTime = Temporal.PlainTime.from("17:30:00")
+
+// Is it currently within business hours?
+const currentTime = Temporal.Now.plainTimeISO()
+const isOpen =
+  Temporal.PlainTime.compare(currentTime, openingTime) >= 0 &&
+  Temporal.PlainTime.compare(currentTime, closingTime) < 0
+
+console.log(openingTime.hour)   // 9
+console.log(openingTime.minute) // 0
+```
+
+**When to use it:** Business hours, recurring daily schedules, time-of-day rules that don't depend on a specific date.
+
+### `Temporal.PlainDateTime` — Date + Time, No Timezone
+
+A wall-clock reading: "3pm on the 19th of March" — without saying *where* that 3pm applies.
+
+```js
+const appointment = Temporal.PlainDateTime.from("2026-03-19T15:00:00")
+
+// Add 90 minutes
+const endTime = appointment.add({ minutes: 90 })
+console.log(endTime.toString()) // "2026-03-19T16:30:00"
+
+// No DST concerns — this is purely calendar/clock arithmetic
+```
+
+**When to use it:** Draft events before a timezone is assigned, server-side templates, situations where timezone is handled at a different layer.
+
+### `Temporal.Duration` — A Span of Time
+
+```js
+const duration = Temporal.Duration.from({ hours: 2, minutes: 30 })
+
+// Convert to total minutes
+console.log(duration.total({ unit: "minutes" })) // 150
+
+// Difference between two dates
+const start = Temporal.PlainDate.from("2026-01-01")
+const end = Temporal.PlainDate.from("2026-03-19")
+const diff = start.until(end)
+console.log(diff.total({ unit: "days" })) // 77
+
+// Human-readable (via Intl.DurationFormat in supporting environments)
+const d = Temporal.Duration.from({ years: 1, months: 2, days: 5 })
+console.log(d.toString()) // "P1Y2M5D" (ISO 8601 duration)
+```
+
+**When to use it:** Time ranges, "expires in X days" counters, elapsed time displays.
+
+### `Temporal.PlainYearMonth` and `Temporal.PlainMonthDay`
+
+Two niche but useful types for partial date representations:
+
+```js
+// Monthly billing cycle: "March 2026"
+const billingMonth = Temporal.PlainYearMonth.from("2026-03")
+const nextBillingMonth = billingMonth.add({ months: 1 })
+console.log(nextBillingMonth.toString()) // "2026-04"
+
+// Recurring anniversary: "March 19th" (any year)
+const anniversary = Temporal.PlainMonthDay.from("03-19")
+const thisYear = anniversary.toPlainDate({ year: 2026 })
+console.log(thisYear.toString()) // "2026-03-19"
+```
+
+---
+
+## Part 4 — Migration Cheat Sheet
+
+Here's a quick reference for the most common `Date` operations and their Temporal equivalents:
+
+| Task | `Date` | `Temporal` |
+|---|---|---|
+| Current moment | `new Date()` | `Temporal.Now.zonedDateTimeISO()` |
+| Current timestamp (ms) | `Date.now()` | `Temporal.Now.instant().epochMilliseconds` |
+| Parse a date string | `new Date("2026-03-19")` ⚠️ | `Temporal.PlainDate.from("2026-03-19")` |
+| Add N days | `date.setDate(date.getDate() + n)` ⚠️ mutates | `date.add({ days: n })` — returns new object |
+| Add N months (safe) | `setMonth(getMonth() + n)` overflows | `date.add({ months: n })` handles edge cases |
+| Compare two dates | `a.getTime() < b.getTime()` | `Temporal.PlainDate.compare(a, b) < 0` |
+| Convert to UTC string | `date.toISOString()` | `instant.toString()` |
+| Get day of month | `date.getDate()` | `date.day` (1-indexed) |
+| Get month | `date.getMonth() + 1` 🤦 | `date.month` (1-indexed, no +1 needed) |
+| Timezone-aware display | `Intl.DateTimeFormat` (manual) | `zdt.toLocaleString("en-US", { timeZone: "America/New_York" })` |
+
+A few patterns worth internalizing:
+
+```js
+// Old: defensive copy before mutation
+function scheduleFollowUp(date) {
+  const copy = new Date(date.getTime()) // must clone manually
+  copy.setDate(copy.getDate() + 14)
+  return copy
+}
+
+// New: immutability is built in
+function scheduleFollowUp(date) {
+  return date.add({ days: 14 }) // always returns a new object
+}
+```
+
+```js
+// Old: "end of month" hack
+const endOfMonth = new Date(year, month + 1, 0) // day 0 = last day of prev month
+
+// New: direct and readable
+const endOfMonth = Temporal.PlainDate.from({ year, month, day: 1 })
+  .add({ months: 1 })
+  .subtract({ days: 1 })
+```
+
+---
+
+## Where Things Stand
+
+Temporal is the most significant addition to JavaScript's date/time story since the language was created. After years of the community papering over `Date`'s gaps with Moment.js, date-fns, Luxon, and others, there's now a native, standardized answer.
+
+The path forward is clear:
+
+1. **Install `temporal-polyfill`** today — it's spec-compliant and production-ready
+2. **Reach for the right type** — `PlainDate` for calendar dates, `ZonedDateTime` for events, `Instant` for storage
+3. **Keep an eye on Safari and Node.js** — until they ship native support, the polyfill is non-negotiable
+
+The cookbook at [tc39.es/proposal-temporal/docs/cookbook.html](https://tc39.es/proposal-temporal/docs/cookbook.html) is excellent for going deeper — it has worked examples for dozens of real-world patterns from "convert between timezones" to "next occurrence of a weekday."
+
+Thirty years of `Date` bugs end here.
