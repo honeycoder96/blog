@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronDown, BookOpen, Clock } from 'lucide-react';
-import { CATEGORY_COLOR_MAP, buildFilterCategories } from '../../../config/categories';
+import { CATEGORY_COLOR_MAP, slugifyCategory } from '../../../config/categories.client';
 
 interface SeriesPost {
   slug: string;
@@ -18,15 +18,15 @@ interface Series {
   posts: SeriesPost[];
 }
 
-interface Props {
+interface CachedPage {
   series: Series[];
+  total: number;
 }
 
-function getInitialCategory(categories: string[]): string {
-  if (typeof window === 'undefined') return 'All';
-  const param = new URLSearchParams(window.location.search).get('category');
-  if (param && categories.includes(param)) return param;
-  return 'All';
+interface Props {
+  initialSeries: Series[];
+  initialTotal: number;
+  categories: string[];
 }
 
 const cardVariants = {
@@ -35,27 +35,130 @@ const cardVariants = {
   exit: { opacity: 0, y: -10, transition: { duration: 0.15 } },
 };
 
-const PAGE_SIZE = 5;
-
-export const SeriesAccordion: React.FC<Props> = ({ series }) => {
-  const categories = buildFilterCategories(series.map((s) => s.category));
-  const [activeCategory, setActiveCategory] = useState<string>(() => getInitialCategory(categories));
+export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, categories }) => {
+  const [activeCategory, setActiveCategory] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'All';
+    const param = new URLSearchParams(window.location.search).get('category');
+    if (param && categories.includes(param)) return param;
+    return 'All';
+  });
+  const [series, setSeries] = useState<Series[]>(initialSeries);
+  const [total, setTotal] = useState<number>(initialTotal);
+  const [page, setPage] = useState<number>(1);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [openIndex, setOpenIndex] = useState<number | null>(0);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const prefersReducedMotion = useReducedMotion();
 
-  const filtered = activeCategory === 'All'
-    ? series
-    : series.filter(s => s.category === activeCategory);
+  const prefetchCache = useRef<Map<string, CachedPage>>(new Map());
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const visible = filtered.slice(0, visibleCount);
-  const hasMore = visibleCount < filtered.length;
+  const hasMore = series.length < total;
 
-  const handleCategoryChange = (cat: string) => {
+  // ---------------------------------------------------------------------------
+  // Background prefetch
+  // ---------------------------------------------------------------------------
+
+  const prefetchInBackground = useCallback((category: string, pageNum: number) => {
+    const cacheKey = `${category}::${pageNum}`;
+    if (prefetchCache.current.has(cacheKey)) return;
+    const slug = slugifyCategory(category);
+    fetch(`/api/series/${slug}/${pageNum}.json`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data) prefetchCache.current.set(cacheKey, data); })
+      .catch(() => {});
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Core fetch helper
+  // ---------------------------------------------------------------------------
+
+  const fetchPage = useCallback(async (category: string, pageNum: number, append: boolean) => {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    const cacheKey = `${category}::${pageNum}`;
+    const cached = prefetchCache.current.get(cacheKey);
+    if (cached) {
+      setSeries((prev) => (append ? [...prev, ...cached.series] : cached.series));
+      setTotal(cached.total);
+      setPage(pageNum);
+      prefetchInBackground(category, pageNum + 1);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const slug = slugifyCategory(category);
+      const res = await fetch(`/api/series/${slug}/${pageNum}.json`, { signal: controller.signal });
+      if (!res.ok) return;
+      const data = await res.json();
+      prefetchCache.current.set(cacheKey, data);
+      setSeries((prev) => (append ? [...prev, ...data.series] : data.series));
+      setTotal(data.total);
+      setPage(pageNum);
+      prefetchInBackground(category, pageNum + 1);
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [prefetchInBackground]);
+
+  // ---------------------------------------------------------------------------
+  // On hydration: prefetch page 2 of "All", honour ?category= URL param
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    prefetchInBackground('All', 2);
+
+    const param = new URLSearchParams(window.location.search).get('category');
+    if (param && categories.includes(param) && param !== 'All') {
+      fetchPage(param, 1, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Handlers
+  // ---------------------------------------------------------------------------
+
+  const handleCategoryChange = useCallback((cat: string) => {
+    if (cat === activeCategory) return;
     setActiveCategory(cat);
     setOpenIndex(0);
-    setVisibleCount(PAGE_SIZE);
-  };
+    if (cat === 'All') {
+      abortControllerRef.current?.abort();
+      setSeries(initialSeries);
+      setTotal(initialTotal);
+      setPage(1);
+    } else {
+      fetchPage(cat, 1, false);
+    }
+  }, [activeCategory, initialSeries, initialTotal, fetchPage]);
+
+  const handleLoadMore = useCallback(() => {
+    fetchPage(activeCategory, page + 1, true);
+  }, [activeCategory, page, fetchPage]);
+
+  const handleCategoryPointerEnter = useCallback((cat: string) => {
+    if (cat === activeCategory) return;
+    hoverTimerRef.current = setTimeout(() => {
+      prefetchInBackground(cat, 1);
+    }, 100);
+  }, [activeCategory, prefetchInBackground]);
+
+  const handleCategoryPointerLeave = useCallback(() => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
 
   return (
     <div>
@@ -65,6 +168,8 @@ export const SeriesAccordion: React.FC<Props> = ({ series }) => {
           <button
             key={cat}
             onClick={() => handleCategoryChange(cat)}
+            onPointerEnter={() => handleCategoryPointerEnter(cat)}
+            onPointerLeave={handleCategoryPointerLeave}
             className={`px-5 py-2 rounded-full border font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer ${
               activeCategory === cat
                 ? 'bg-fg text-surface border-fg'
@@ -79,7 +184,7 @@ export const SeriesAccordion: React.FC<Props> = ({ series }) => {
       {/* Series accordion list */}
       <div className="w-full flex flex-col border-t border-line">
         <AnimatePresence mode="popLayout">
-          {visible.map((s, idx) => {
+          {series.map((s, idx) => {
             const isOpen = openIndex === idx;
             return (
               <motion.div
@@ -181,19 +286,41 @@ export const SeriesAccordion: React.FC<Props> = ({ series }) => {
         </AnimatePresence>
       </div>
 
-      {filtered.length === 0 && (
+      {series.length === 0 && !isLoading && (
         <div className="text-center py-24 text-fg-faint font-mono">
           No series in this category yet.
+        </div>
+      )}
+
+      {/* Loading skeleton */}
+      {isLoading && series.length === 0 && (
+        <div className="w-full flex flex-col border-t border-line">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="border-b border-line py-8 md:py-10 flex flex-col md:flex-row gap-4 animate-pulse">
+              <div className="md:w-1/4 flex flex-col gap-3">
+                <div className="h-5 w-24 rounded-full bg-line" />
+                <div className="h-3 w-16 rounded bg-line" />
+              </div>
+              <div className="md:w-2/4 flex flex-col gap-2">
+                <div className="h-6 w-3/4 rounded bg-line" />
+                <div className="h-4 w-full rounded bg-line" />
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
       {hasMore && (
         <div className="flex justify-center mt-12">
           <button
-            onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
-            className="px-8 py-3 rounded-full border border-line text-fg-muted hover:border-line-strong hover:text-fg font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer"
+            onClick={handleLoadMore}
+            disabled={isLoading}
+            className="px-8 py-3 rounded-full border border-line text-fg-muted hover:border-line-strong hover:text-fg font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Load more <span className="text-fg-ghost">({filtered.length - visibleCount} remaining)</span>
+            {isLoading
+              ? 'Loading...'
+              : <>Load more <span className="text-fg-ghost">({total - series.length} remaining)</span></>
+            }
           </button>
         </div>
       )}

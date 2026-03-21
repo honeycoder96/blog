@@ -90,6 +90,10 @@ export const getStaticPaths: GetStaticPaths = async () => {
 
 export const GET: APIRoute = ({ props }) => {
   return new Response(JSON.stringify(props as PostsPagePayload), {
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      // #10 — content-addressed static files; safe to cache at edge indefinitely
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    },
   });
 };

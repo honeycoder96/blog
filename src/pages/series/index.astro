@@ -3,13 +3,16 @@ import PageLayout from '../../layouts/PageLayout.astro';
 import { SeriesAccordion } from '../../components/react/series/SeriesAccordion';
 import { AnimatedTitle } from '../../components/react/ui/AnimatedTitle';
 import { getCollection } from 'astro:content';
+import { buildFilterCategories } from '../../config/categories';
+
+const PAGE_SIZE = 5;
 
 const allEntries = await getCollection('series');
 
 const indexEntries = allEntries.filter(e => e.id.endsWith('/index.md'));
 const postEntries  = allEntries.filter(e => !e.id.endsWith('/index.md'));
 
-const seriesData = indexEntries.map(index => {
+const allSeries = indexEntries.map(index => {
   const seriesSlug = index.slug.replace('/index', '');
   const postOrder: string[] = index.data.postOrder ?? [];
   const posts = postOrder.flatMap(postSlug => {
@@ -26,7 +29,13 @@ const seriesData = indexEntries.map(index => {
   };
 });
 
-const totalPosts = seriesData.reduce((sum, s) => sum + s.posts.length, 0);
+// Only the first page is baked into the HTML.
+// Everything after that is fetched from /api/series/[category]/[page].json
+const initialSeries = allSeries.slice(0, PAGE_SIZE);
+const initialTotal = allSeries.length;
+const categories = buildFilterCategories(allSeries.map(s => s.category));
+
+const totalPosts = allSeries.reduce((sum, s) => sum + s.posts.length, 0);
 ---
 
 <PageLayout
@@ -41,10 +50,15 @@ const totalPosts = seriesData.reduce((sum, s) => sum + s.posts.length, 0);
         client:visible
       />
       <p class="text-xl text-fg-muted max-w-2xl">
-        {seriesData.length} {seriesData.length === 1 ? 'series' : 'series'}, {totalPosts} posts — structured multi-part reading tracks.
+        {allSeries.length} {allSeries.length === 1 ? 'series' : 'series'}, {totalPosts} posts — structured multi-part reading tracks.
       </p>
     </header>
 
-    <SeriesAccordion series={seriesData} client:load />
+    <SeriesAccordion
+      initialSeries={initialSeries}
+      initialTotal={initialTotal}
+      categories={categories}
+      client:idle
+    />
   </div>
 </PageLayout>

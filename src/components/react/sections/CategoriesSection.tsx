@@ -1,16 +1,24 @@
 import React from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
-import { HOMEPAGE_CATEGORIES } from '../../../config/categories';
+
+export interface CategoryCardData {
+  name: string;
+  description: string;
+  border: string;
+  borderHover: string;
+  accent: string;
+}
 
 interface Props {
+  categories: CategoryCardData[];
   categoryCounts: Record<string, number>;
 }
 
-export const CategoriesSection: React.FC<Props> = ({ categoryCounts }) => {
+export const CategoriesSection: React.FC<Props> = ({ categories, categoryCounts }) => {
   const prefersReducedMotion = useReducedMotion();
 
-  const categories = HOMEPAGE_CATEGORIES.map((cat) => ({
+  const cats = categories.map((cat) => ({
     ...cat,
     count: categoryCounts[cat.name] ?? 0,
   }));
@@ -26,7 +34,7 @@ export const CategoriesSection: React.FC<Props> = ({ categoryCounts }) => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {categories.map((cat) => (
+          {cats.map((cat) => (
             <motion.a
               key={cat.name}
               href={`/blog?category=${cat.name}`}

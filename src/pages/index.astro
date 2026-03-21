@@ -5,6 +5,7 @@ import { FeaturedPostsList } from '../components/react/blog/FeaturedPostsList';
 import { CategoriesSection } from '../components/react/sections/CategoriesSection';
 import { NewsletterSection } from '../components/react/sections/NewsletterSection';
 import { getCollection } from 'astro:content';
+import { HOMEPAGE_CATEGORIES } from '../config/categories';
 
 const allPosts = await getCollection('blog');
 const sorted = allPosts
@@ -100,7 +101,7 @@ const featuredPosts = sorted
   </section>
 
   <!-- Categories: client:visible -->
-  <CategoriesSection categoryCounts={categoryCounts} client:visible />
+  <CategoriesSection categories={HOMEPAGE_CATEGORIES} categoryCounts={categoryCounts} client:visible />
 
   <!-- Newsletter: client:visible -->
   <NewsletterSection client:visible />

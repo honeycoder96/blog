@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
-import { CATEGORY_COLOR_MAP, slugifyCategory } from '../../../config/categories';
+import { CATEGORY_COLOR_MAP, slugifyCategory } from '../../../config/categories.client';
 
 interface Post {
   slug: string;
@@ -13,6 +13,11 @@ interface Post {
     readingTime?: number | null;
     tags: string[];
   };
+}
+
+interface CachedPage {
+  posts: Post[];
+  total: number;
 }
 
 interface PostsGridProps {
@@ -31,9 +36,6 @@ const cardVariants = {
 };
 
 export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal, categories }) => {
-  // Always start with "All" / first-page data that was baked in.
-  // A useEffect below handles ?category= URL params after hydration
-  // to avoid an SSR/hydration mismatch.
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [posts, setPosts] = useState<Post[]>(initialPosts);
   const [total, setTotal] = useState<number>(initialTotal);
@@ -41,38 +43,84 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const prefersReducedMotion = useReducedMotion();
 
+  // #6 — in-memory cache keyed by "category::page"
+  const prefetchCache = useRef<Map<string, CachedPage>>(new Map());
+  // #8 — abort in-flight fetches on rapid category switch
+  const abortControllerRef = useRef<AbortController | null>(null);
+  // #7 — debounce timer for hover prefetch
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const hasMore = posts.length < total;
 
   // ---------------------------------------------------------------------------
-  // Core fetch helper
+  // #6 — Background prefetch: fetch silently, write to cache, no state changes
   // ---------------------------------------------------------------------------
 
-  const fetchPage = useCallback(async (category: string, pageNum: number, append: boolean) => {
-    setIsLoading(true);
-    try {
-      const slug = slugifyCategory(category);
-      const res = await fetch(`/api/posts/${slug}/${pageNum}.json`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setPosts((prev) => (append ? [...prev, ...data.posts] : data.posts));
-      setTotal(data.total);
-      setPage(pageNum);
-    } finally {
-      setIsLoading(false);
-    }
+  const prefetchInBackground = useCallback((category: string, pageNum: number) => {
+    const cacheKey = `${category}::${pageNum}`;
+    if (prefetchCache.current.has(cacheKey)) return;
+    const slug = slugifyCategory(category);
+    fetch(`/api/posts/${slug}/${pageNum}.json`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data) prefetchCache.current.set(cacheKey, data); })
+      .catch(() => {});
   }, []);
 
   // ---------------------------------------------------------------------------
-  // On hydration: honour ?category= URL param without causing SSR mismatch
+  // Core fetch helper — #8 abort previous, #6 check cache, signal new controller
+  // ---------------------------------------------------------------------------
+
+  const fetchPage = useCallback(async (category: string, pageNum: number, append: boolean) => {
+    // #8 — abort any in-flight request before starting a new one
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    // #6 — serve from cache when available
+    const cacheKey = `${category}::${pageNum}`;
+    const cached = prefetchCache.current.get(cacheKey);
+    if (cached) {
+      setPosts((prev) => (append ? [...prev, ...cached.posts] : cached.posts));
+      setTotal(cached.total);
+      setPage(pageNum);
+      prefetchInBackground(category, pageNum + 1);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const slug = slugifyCategory(category);
+      const res = await fetch(`/api/posts/${slug}/${pageNum}.json`, { signal: controller.signal });
+      if (!res.ok) return;
+      const data = await res.json();
+      // Cache the result then update state
+      prefetchCache.current.set(cacheKey, data);
+      setPosts((prev) => (append ? [...prev, ...data.posts] : data.posts));
+      setTotal(data.total);
+      setPage(pageNum);
+      // #6 — prefetch the next page in the background
+      prefetchInBackground(category, pageNum + 1);
+    } catch (e) {
+      // #8 — AbortError is expected on rapid switch, silently ignore
+      if ((e as Error).name === 'AbortError') return;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [prefetchInBackground]);
+
+  // ---------------------------------------------------------------------------
+  // On hydration: #6 prefetch page 2 of "All", honour ?category= URL param
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
+    // #6 — kick off page 2 prefetch immediately so Load More is instant
+    prefetchInBackground('All', 2);
+
     const param = new URLSearchParams(window.location.search).get('category');
     if (param && categories.includes(param) && param !== 'All') {
       setActiveCategory(param);
       fetchPage(param, 1, false);
     }
-    // Intentionally empty dep array — runs once on mount only
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -84,7 +132,8 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
     if (cat === activeCategory) return;
     setActiveCategory(cat);
     if (cat === 'All') {
-      // Reset to the baked-in data — no fetch needed
+      // #8 — cancel any in-flight request, reset to baked-in data instantly
+      abortControllerRef.current?.abort();
       setPosts(initialPosts);
       setTotal(initialTotal);
       setPage(1);
@@ -96,6 +145,21 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
   const handleLoadMore = useCallback(() => {
     fetchPage(activeCategory, page + 1, true);
   }, [activeCategory, page, fetchPage]);
+
+  // #7 — prefetch on hover with 100ms debounce
+  const handleCategoryPointerEnter = useCallback((cat: string) => {
+    if (cat === activeCategory) return;
+    hoverTimerRef.current = setTimeout(() => {
+      prefetchInBackground(cat, 1);
+    }, 100);
+  }, [activeCategory, prefetchInBackground]);
+
+  const handleCategoryPointerLeave = useCallback(() => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -109,6 +173,8 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
           <button
             key={cat}
             onClick={() => handleCategoryChange(cat)}
+            onPointerEnter={() => handleCategoryPointerEnter(cat)}
+            onPointerLeave={handleCategoryPointerLeave}
             className={`px-5 py-2 rounded-full border font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer ${
               activeCategory === cat
                 ? 'bg-fg text-surface border-fg'
