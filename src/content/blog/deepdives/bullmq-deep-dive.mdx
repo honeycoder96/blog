@@ -1,0 +1,500 @@
+---
+title: "BullMQ: The Complete Engineering Guide to Job Queues"
+date: "Mar 2026"
+pubDate: 2026-03-21
+category: "Deep Dive"
+author: "Honey Sharma"
+summary: "A ground-up engineering guide to BullMQ — why job queues exist, how BullMQ uses Redis as its backbone, the full job lifecycle, concurrency models, reliability patterns, and when to reach for something else entirely."
+featured: false
+readingTime: 22
+tags: [bullmq, redis, job-queues, system-design, backend, distributed-systems, node]
+relatedPosts: ["uptime-monitor-architecture"]
+---
+
+It was Black Friday. A user places an order. Your API endpoint accepts the request, tries to send a confirmation email, resize the uploaded product image, notify the warehouse system, update inventory counts, and trigger a fraud check — all synchronously, all inside a single HTTP request handler. Response time: 14 seconds. The load balancer times out at 30. Users see a blank page. The order goes through anyway, but the email never sends because the process died halfway through.
+
+This is the job queue problem. Not "we need a queue" — that realization comes later. The first symptom is always the same: you have a single synchronous path doing too many things, and when it breaks, it breaks in ways that are hard to reason about and impossible to retry.
+
+BullMQ is a production-grade job and message queue built on Redis. It is the successor to the widely-used Bull library, rewritten in TypeScript with a focus on correctness, reliability, and a richer set of primitives. This post is a complete engineering walkthrough — from first principles to production patterns — for engineers building systems that need to do work outside the request cycle.
+
+We will not look at individual lines of library code. Instead, we will look at architecture: how BullMQ is designed, what guarantees it makes, where those guarantees break down, and what it means for system design decisions.
+
+---
+
+## Part 1: Why Job Queues Exist
+
+### The synchronous trap
+
+HTTP is a request-response protocol. A client sends a request, your server processes it, the server responds. The client is blocked waiting. This model is fine when work is fast. It breaks down the moment work becomes:
+
+- **Slow** — sending email, calling third-party APIs, resizing images, generating PDFs
+- **Unreliable** — external services go down, networks fail, rate limits get hit
+- **Expensive** — machine learning inference, video transcoding, data aggregation
+- **Side-effectful** — you cannot safely retry an operation that may have partially succeeded
+
+The natural response is to push that work out of the request cycle. Instead of doing the work now, you record an intent to do the work, return a fast response to the user, and process the work later — in a separate process, at your own pace, with full control over retries and failure handling.
+
+This separation has a name: **the producer-consumer model**. The HTTP handler is the producer — it creates a description of work to be done. A separate process, the worker, is the consumer — it reads those descriptions and executes them. The channel between them is the queue.
+
+### What a queue actually needs to be
+
+A queue sounds simple. It is a list. Things go in one end, things come out the other. But a job queue operating in a real distributed system needs to provide guarantees that a plain list cannot:
+
+**Persistence.** If a worker crashes mid-execution, the job should not be lost. It should become eligible for retry.
+
+**At-least-once delivery.** A job must be executed at least once. Losing a job silently is worse than executing it twice.
+
+**Concurrency control.** Multiple workers should be able to consume from the same queue without processing the same job twice.
+
+**Visibility.** You need to know how many jobs are waiting, how many are running, how many have failed, and why they failed.
+
+**Scheduling.** Some jobs need to run at a specific time or on a recurring schedule.
+
+**Priority.** Not all jobs are equal. A password reset email should not wait behind a weekly digest batch job.
+
+None of these guarantees are free. Every queue system makes tradeoffs about which guarantees it provides, under what conditions they hold, and at what cost. BullMQ makes specific choices, all of which flow from its foundational decision: **use Redis as the backing store**.
+
+---
+
+## Part 2: Redis as the Backbone
+
+### Why Redis?
+
+Redis is a single-threaded, in-memory data structure server with optional persistence. Those properties seem like weaknesses for a queue backing store — in-memory means you can run out of space; single-threaded means you cannot parallelize operations; optional persistence means you could lose data. So why Redis?
+
+**Atomicity.** Redis executes commands one at a time. No two operations interleave. When you use a Lua script or a transaction, you get atomic multi-step operations without locks. This is exactly what a queue needs: "move this job from the waiting list to the active list" needs to happen atomically or not at all.
+
+**Speed.** Sub-millisecond operations. A Redis `LMOVE` that moves a job from waiting to active takes less than a millisecond. This is an order of magnitude faster than equivalent operations against PostgreSQL or MySQL.
+
+**Rich data structures.** Redis has sorted sets, lists, hashes, and streams — all the primitives needed to implement a sophisticated queue without inventing custom storage semantics.
+
+**Pub/Sub and keyspace notifications.** Workers can subscribe to channels and receive real-time notifications when jobs become available, rather than polling.
+
+### The data structures BullMQ uses
+
+BullMQ represents queue state using several Redis data structures, all namespaced under a configurable prefix. Understanding these structures helps you reason about guarantees and failure modes.
+
+```
+bull:{queueName}:wait          → LIST      — jobs waiting to be picked up
+bull:{queueName}:active        → LIST      — jobs currently being processed
+bull:{queueName}:completed     → ZSET      — completed jobs, sorted by finish time
+bull:{queueName}:failed        → ZSET      — failed jobs, sorted by failure time
+bull:{queueName}:delayed       → ZSET      — jobs scheduled for the future, sorted by run timestamp
+bull:{queueName}:prioritized   → ZSET      — jobs with explicit priority, sorted by priority score
+bull:{queueName}:events        → STREAM    — event log (all state transitions)
+bull:{queueName}:{jobId}       → HASH      — job data, options, attempts, timestamps
+```
+
+When a producer adds a job, BullMQ executes a Lua script that atomically creates the job hash and pushes the job ID into the appropriate list or sorted set. When a worker picks up a job, another Lua script atomically moves the job ID from `wait` to `active` and records a lock expiry timestamp. This atomic move is the foundation of BullMQ's delivery guarantee.
+
+### The lock mechanism
+
+Every active job holds a lock. The lock is a Redis key with an expiry: `bull:{queueName}:{jobId}:lock`. As long as the lock exists, the job is considered active and owned by a specific worker. Workers must periodically renew their lock while processing. If they fail to do so — because the process crashed, the event loop was blocked, or the network partitioned — the lock expires, and the job is detected as stalled.
+
+This is the "at-least-once" mechanism. A stalled job is not lost; it is moved back to the waiting list for another worker to attempt.
+
+---
+
+## Part 3: Core Abstractions
+
+BullMQ exposes four primary abstractions. Understanding what each one is responsible for — and what it is not — is essential before designing any system around it.
+
+### Queue
+
+A `Queue` is the producer interface. It represents a named channel and provides methods to add jobs to it. The queue itself does no processing — it only writes to Redis. You can have many queue instances across many processes all pointing at the same underlying Redis keys.
+
+A queue is cheap to instantiate. In a typical web application, you might create a queue instance per request handler or per module, all sharing the same Redis connection pool.
+
+The queue determines the namespace. Every job in the system belongs to exactly one queue. There is no global job store — jobs live in queue-scoped Redis keys. This means you can have multiple independent queue systems in the same Redis instance without conflict, as long as their names differ.
+
+### Worker
+
+A `Worker` is the consumer. It connects to Redis, subscribes to events on a queue, and processes jobs as they arrive. A worker runs a user-provided processor function — the handler that does the actual work. Workers are long-running processes, not per-request constructs.
+
+A single worker process can handle multiple concurrent jobs. The concurrency limit is configurable. At `concurrency: 5`, a worker will process up to five jobs simultaneously, using JavaScript's event loop for interleaving. CPU-bound work needs separate processes; I/O-bound work benefits from concurrency within a single process.
+
+Workers emit events during the lifecycle of each job. They can be combined with `QueueEvents` for centralized monitoring.
+
+### QueueEvents
+
+`QueueEvents` is a listener interface that subscribes to the Redis Stream for a specific queue. It receives all state transition events: job added, job active, job completed, job failed, job stalled. Unlike a worker (which processes jobs), `QueueEvents` only observes. It is the foundation for monitoring dashboards, alerting systems, and integration hooks.
+
+Because events come from the Redis Stream, they are ordered and persistent. A monitoring service that restarts can replay recent events from its last seen ID.
+
+### FlowProducer
+
+`FlowProducer` is an advanced abstraction for adding jobs that have parent-child dependencies — a directed acyclic graph (DAG) of work. A parent job will not execute until all of its child jobs have completed. We will examine this in Part 7.
+
+---
+
+## Part 4: The Job Lifecycle
+
+Every job in BullMQ moves through a deterministic state machine. Understanding this state machine is more important than any API detail, because it is what determines your system's reliability and failure behavior.
+
+```
+                         ┌─────────────────────────────────────────┐
+                         │                                         │
+          add()          │          lock expires / crash           │
+Producer ──────► waiting ├──────────► active ──────────────────► stalled
+                         │               │                         │
+                 delayed ◄───────────────┼── delay retry           │
+                    │    │               │                         ▼
+                    │    │               ├── max attempts       waiting
+                    ▼    │               │   exceeded
+                 waiting ◄               ▼
+                         │            failed
+                         │               │
+                         │               ▼ (if moveToCompleted=false)
+                         │            retained
+                         │
+                  (priority queue)
+                  prioritized ──────► active
+```
+
+### waiting
+
+A job enters `waiting` immediately after being added, unless it is scheduled for the future (in which case it enters `delayed` first). The `wait` list in Redis is an ordered structure — jobs are consumed FIFO by default, but priority modifies this.
+
+### active
+
+A worker atomically moves a job from `waiting` to `active`. The job ID is added to the `active` list and a lock key is created with a TTL. The worker's processor function is called with the job object.
+
+Only one worker claims any given job. The Lua script that performs the `wait → active` transition is atomic — even with 100 workers connected to the same queue, each job is claimed by exactly one.
+
+### completed
+
+When the processor function resolves successfully, the job moves to `completed`. By default, BullMQ keeps the last 1,000 completed jobs in the sorted set for observability. Older ones are pruned automatically. The retention count is configurable.
+
+### failed
+
+When the processor function throws an error (or rejects its promise), BullMQ checks the job's retry configuration. If attempts remain, the job moves to `delayed` with a backoff-adjusted delay. If the maximum attempt count is exhausted, the job moves to `failed` and stays there until you manually retry or discard it.
+
+The `failed` set is your dead letter store. Jobs here are not lost — they retain their data, their error message, and a full stack trace.
+
+### delayed
+
+Jobs enter `delayed` in two situations: a producer explicitly schedules a job with a `delay` option, or a failed job is waiting for its backoff period before retrying. The `delayed` sorted set uses the scheduled timestamp as the score. A background process (the `QueueScheduler` in older Bull, now handled internally in BullMQ's worker) periodically moves jobs whose scheduled time has passed into `waiting`.
+
+### stalled
+
+A stalled job is an active job whose lock has expired. This happens when a worker crashes, freezes, or is killed without releasing its lock. BullMQ's internal scheduler detects stalled jobs during periodic sweeps and moves them back to `waiting` for reprocessing.
+
+The stalled state is why you get at-least-once delivery rather than exactly-once. A job can complete successfully in the worker but fail to record its completion before the lock expires, causing it to be retried. Design your job processors to be idempotent — safe to run more than once.
+
+---
+
+## Part 5: Concurrency and Scaling
+
+### Horizontal scaling: multiple worker processes
+
+The simplest way to increase queue throughput is to run more worker processes. Because all state lives in Redis and all transitions are atomic, you can run hundreds of worker processes against the same queue without coordination. Each worker independently polls for and claims available jobs.
+
+```
+                    ┌────────────┐
+         ┌──────────► Worker A   │
+         │          │ (2 jobs)   │
+         │          └────────────┘
+Redis    │          ┌────────────┐
+Queue ───┼──────────► Worker B   │
+         │          │ (2 jobs)   │
+         │          └────────────┘
+         │          ┌────────────┐
+         └──────────► Worker C   │
+                    │ (2 jobs)   │
+                    └────────────┘
+```
+
+Each worker process runs independently. You can run workers on the same machine, on different machines in the same region, or across regions. The queue is the shared coordination point — no worker knows about any other worker.
+
+**Scaling up vs. scaling out.** Vertical scaling (more concurrency per worker) works well for I/O-bound jobs. Sending emails, calling APIs, reading from databases — these spend most of their time waiting. A single worker with `concurrency: 50` can keep 50 such jobs in flight. CPU-bound jobs — image processing, PDF generation, data transformation — should be scaled horizontally with multiple single-concurrency workers, one per CPU core, to avoid starving the event loop.
+
+### The concurrency ceiling
+
+Every worker has a concurrency limit. This limit serves two purposes: it prevents a single worker from consuming all resources on its host, and it creates natural back-pressure. If jobs arrive faster than workers can process them, the `wait` list grows. This is observable — a long wait list is a signal to scale.
+
+### Rate limiting
+
+BullMQ has a built-in rate limiter that operates at the queue level. You can configure a queue to process at most N jobs per M milliseconds, regardless of how many workers are connected or how high their concurrency settings are. The rate limit is enforced in Redis, so it is consistent across all workers.
+
+```
+queue config:
+  rateLimit:
+    max: 100        # process at most 100 jobs
+    duration: 1000  # per 1000ms window
+```
+
+When the rate limit is reached, BullMQ moves the worker to a paused state and automatically resumes it when the window resets. This is critical when your job processor calls an external API with rate limits — you enforce the constraint in the queue, not in ad-hoc application code.
+
+### The thundering herd problem
+
+When a queue has been empty for a while and then receives a large batch of jobs simultaneously, all idle workers wake up at once. This is the thundering herd: a sudden spike in Redis connections, CPU, and potentially downstream service calls.
+
+BullMQ mitigates this via its event-based wakeup mechanism. Workers subscribe to Redis keyspace events rather than polling in a tight loop. When a job arrives, Redis notifies subscribed workers. The notification is broadcast, but each job can only be claimed by one worker due to atomic Lua scripts.
+
+For cases where you're adding many jobs in bulk and want to smooth the consumption, the rate limiter is the right tool. Add 10,000 jobs at once, set a rate limit of 500/second, and consumption happens at a controlled pace regardless of when the jobs arrived.
+
+---
+
+## Part 6: Reliability Patterns
+
+### Retry strategies
+
+Every job can be configured with a retry policy independently of the queue's defaults. The policy has two dimensions: how many times to retry, and how long to wait between attempts.
+
+**Fixed delay.** Wait the same amount of time between every attempt. Simple, predictable. Appropriate when the failure mode is transient and brief (network blip, connection pool exhaustion).
+
+**Exponential backoff.** Double the wait time on each retry. After 1s, 2s, 4s, 8s, 16s... Good for external services that are overloaded — backing off gives them time to recover. The canonical retry strategy for third-party API calls.
+
+**Exponential backoff with jitter.** Add a random component to the delay. Without jitter, all retrying jobs from a spike re-converge at the same time, creating a new spike. Jitter spreads them out. This is the correct strategy when you have many concurrent jobs retrying against the same downstream service.
+
+```
+Attempt 1: wait 1s + random(0, 0.3s)
+Attempt 2: wait 2s + random(0, 0.6s)
+Attempt 3: wait 4s + random(0, 1.2s)
+Attempt 4: wait 8s + random(0, 2.4s)
+```
+
+### The failed set as dead letter queue
+
+When a job exhausts its attempts, it moves to `failed`. This is functionally equivalent to a dead letter queue. Jobs here retain their full data and error information. You have several options:
+
+**Manual retry.** An operator inspects the failed job, determines the cause, fixes the underlying issue, and triggers a retry. BullMQ provides methods to move individual failed jobs back to waiting.
+
+**Bulk retry.** Retry all failed jobs in a queue at once. Useful after an outage — fix the external dependency, then drain the backlog.
+
+**Drain and discard.** If failed jobs are no longer relevant (e.g., a cache warming job that's already stale), discard them and move on.
+
+**Alert and escalate.** `QueueEvents` fires a `failed` event for every job that reaches the failed state. Subscribe to this event to send alerts, open incidents, or page on-call engineers.
+
+Never let the `failed` set grow unbounded. A queue with 100,000 failed jobs that nobody monitors is worse than no queue at all — it gives a false sense of safety while hiding a systemic problem.
+
+### Job deduplication with explicit IDs
+
+By default, BullMQ generates a unique ID for every job. But if you provide an explicit `jobId`, BullMQ will refuse to add a job if one with the same ID already exists in any non-completed, non-failed state. This is job deduplication.
+
+This is the correct pattern for scenarios like: "send a daily report to user X." If your scheduler fires twice due to a bug or restart, you don't want two reports sent. Give the job a deterministic ID based on the user and the date. The second add attempt is a no-op.
+
+Deduplication is not free. It requires a Redis check on every add. At high throughput, this can become a bottleneck. Use it where correctness matters; skip it where throughput matters and the processor is naturally idempotent.
+
+### Idempotency in processors
+
+No queue system guarantees exactly-once delivery. BullMQ guarantees at-least-once. This means your processor function will occasionally be called more than once for the same job. Design for it.
+
+**Database writes.** Use upserts rather than inserts. Check for existence before writing.
+
+**External API calls.** Include an idempotency key in outbound HTTP requests. Most payment APIs and email providers support this.
+
+**Multi-step processors.** Record progress. A job that processes 1,000 records should checkpoint after each batch so a restart resumes from where it left off, not from the beginning.
+
+---
+
+## Part 7: Advanced Patterns
+
+### Job priorities
+
+BullMQ supports numeric priorities on individual jobs. Lower numbers = higher priority. Priority 1 jobs are processed before priority 10 jobs, regardless of when they arrived.
+
+Internally, prioritized jobs go into the `prioritized` sorted set rather than the `wait` list. Workers check the prioritized set before the wait list, so a high-priority job can skip ahead of thousands of normal jobs.
+
+**Use priority sparingly.** If every job declares itself high priority, priority becomes meaningless. Reserve priority 1–3 for genuinely time-sensitive work: user-initiated actions, password resets, payment confirmations. Use priority 10+ for background batch work that can wait.
+
+### Delayed jobs
+
+A job with a `delay` option (in milliseconds) enters the `delayed` sorted set rather than `wait`. BullMQ's internal scheduler promotes it to `wait` when the delay expires, and a worker picks it up in the normal flow.
+
+Delayed jobs are the correct primitive for "do this later" patterns:
+- Send an email 24 hours after a user signs up
+- Retry a webhook that returned 503 in 5 minutes
+- Trigger a report every Monday morning
+
+For recurring scheduled work, BullMQ also supports repeatable jobs.
+
+### Repeatable jobs (cron)
+
+BullMQ has built-in support for cron-expression-based repeatable jobs. A repeatable job is defined once and automatically re-added to the queue on its schedule. The scheduler stores metadata in Redis and is resilient to worker restarts — if the scheduler process goes down and comes back up, it reconstructs the schedule from Redis state.
+
+```
+Repeatable job configuration:
+
+queue: reports
+pattern: 0 9 * * 1      # 9am every Monday
+job: generate-weekly-digest
+data: { reportType: "weekly", format: "pdf" }
+```
+
+A subtle correctness property: BullMQ's repeatable scheduler ensures that only one instance of a repeatable job is queued at any given time. If processing a job takes longer than the cron interval, the next scheduled instance waits until the current one completes. This prevents the cascading backlog that naive cron implementations create.
+
+### Flows: parent-child job graphs
+
+`FlowProducer` lets you add a tree of jobs atomically where parent jobs wait for all children to finish before executing.
+
+```
+                  ┌─────────────────────┐
+                  │  generate-report     │  (parent — runs last)
+                  └──────────┬──────────┘
+              ┌──────────────┼──────────────┐
+              ▼              ▼              ▼
+       ┌──────────┐   ┌──────────┐   ┌──────────┐
+       │ fetch-   │   │ fetch-   │   │ fetch-   │
+       │ sales    │   │ inventory│   │ customers│
+       └──────────┘   └──────────┘   └──────────┘
+        (child 1)      (child 2)      (child 3)
+```
+
+Children are added to their respective queues immediately. The parent does not enter the waiting state until all children reach `completed`. Children can themselves have children, forming arbitrarily deep trees.
+
+Children and parent do not need to be in the same queue. Each node in the flow graph specifies its own queue name, allowing different worker types to handle different stages of the pipeline.
+
+**Use flows when tasks have hard dependencies.** "Generate the report" cannot start until "fetch sales data," "fetch inventory," and "fetch customer data" are all finished. Flows encode this constraint in the queue system, not in fragile application-level polling or sleep loops.
+
+### Fan-out pattern
+
+Fan-out is the inverse of flows: one job produces many child jobs. A single "process-order" job completes and then adds jobs to multiple queues — email queue, warehouse queue, analytics queue, fraud-check queue — all in a single transaction.
+
+```
+                  ┌───────────────┐
+                  │  order-placed │
+                  └───────┬───────┘
+         ┌────────┬────────┼────────┬─────────┐
+         ▼        ▼        ▼        ▼         ▼
+      email   warehouse analytics fraud   loyalty
+      queue    queue     queue    queue   queue
+```
+
+Each downstream queue is independent. If the fraud check fails, it retries independently without blocking the email or warehouse steps. If you need all-or-nothing semantics across the fan-out, that requires a saga pattern with compensating jobs — a more complex design covered next.
+
+### The saga pattern
+
+A saga is a sequence of steps where each step is a separate job, and each step has a corresponding compensating job that undoes it if a later step fails.
+
+```
+Step 1: reserve-inventory        → compensate: release-inventory
+Step 2: charge-payment           → compensate: refund-payment
+Step 3: schedule-fulfillment     → compensate: cancel-fulfillment
+Step 4: send-confirmation        → (no compensation needed)
+```
+
+Each step's job, on success, adds the next step's job to the queue. On failure, it adds compensating jobs for all previously completed steps. This achieves distributed consistency without distributed transactions.
+
+BullMQ's at-least-once delivery makes the saga pattern tractable — you can rely on jobs executing, so compensation logic will run. What you cannot rely on is that exactly one execution happens, so each step must be idempotent.
+
+---
+
+## Part 8: Observability
+
+### What to measure
+
+A job queue without observability is a black box. The minimum metrics every production queue system should expose:
+
+| Metric | Why It Matters |
+|---|---|
+| Waiting job count | Growing unboundedly = workers can't keep up |
+| Active job count | Should track worker concurrency limit × worker count |
+| Failed job count | Non-zero and growing = systemic problem |
+| Delayed job count | Useful for scheduled work; shouldn't grow unexpectedly |
+| Job processing time (p50, p95, p99) | Identify slow processor functions |
+| Queue age (oldest job in wait) | High age = consumers are blocked or undersized |
+| Throughput (jobs/sec completed) | Baseline for capacity planning |
+| Retry rate | High retry rate = systemic issue with external dependencies |
+
+### Bull Board
+
+Bull Board is the standard web UI for BullMQ queues. It connects to your Redis instance and renders a dashboard with job counts per state, job detail views (data, error messages, stack traces, timestamps), and controls to retry, promote, or discard individual jobs.
+
+Run Bull Board as a separate process in your infrastructure, protected behind authentication. It is a read-heavy tool — it queries Redis directly and can add load during high-throughput periods.
+
+### QueueEvents as an integration bus
+
+`QueueEvents` is not just for monitoring dashboards. It is an event bus. Every state transition — job added, active, completed, failed, delayed, stalled, progress updated — fires an event on the queue's Redis Stream. Subscribe to these events in any process that needs to react.
+
+**Webhooks.** When a job completes, fire a webhook to the originating service. The webhook handler is itself a small job in a separate queue — avoiding the recursive problem of a webhook delivery failing and causing the original job to fail.
+
+**Metrics ingestion.** Subscribe to completed and failed events, extract timing information, and push metrics to Prometheus or Datadog.
+
+**Real-time UI updates.** In a dashboard that shows job status to end users, subscribe to `QueueEvents` in a server-sent events handler. When a user's export job completes, push a notification to their browser immediately.
+
+---
+
+## Part 9: BullMQ vs. Alternatives
+
+The ecosystem for job queues in Node.js and broader distributed systems is large. BullMQ is not always the right choice.
+
+| | BullMQ | pg-boss | Amazon SQS | RabbitMQ | Apache Kafka |
+|---|---|---|---|---|---|
+| **Backing store** | Redis | PostgreSQL | AWS-managed | AMQP broker | Log-structured storage |
+| **Setup complexity** | Low | Low | None (managed) | Medium | High |
+| **Throughput** | Very high | Medium | Very high | High | Extremely high |
+| **Message ordering** | Per-queue FIFO | Per-queue FIFO | Not guaranteed | Per-queue FIFO | Per-partition strict |
+| **Scheduling / cron** | ✅ Built-in | ✅ Built-in | ❌ External needed | ❌ External needed | ❌ External needed |
+| **Priority queues** | ✅ | ❌ | ❌ | ✅ | ❌ |
+| **Job DAGs / flows** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Exactly-once** | ❌ (at-least-once) | ❌ | ❌ | ❌ | ✅ (with transactions) |
+| **Message retention** | Redis TTL | Configurable | 4–14 days | Until consumed | Configurable (days/weeks) |
+| **Horizontal scaling** | Easy | Medium | Trivial | Medium | Complex |
+| **When to use** | Node.js apps with complex job logic | Already on Postgres, want one less dependency | Cloud-native AWS stack | Complex routing, multi-language | Event streaming, audit logs, very high throughput |
+
+### Choose BullMQ when
+
+You are building a Node.js application that needs sophisticated job management: priorities, delays, scheduling, retries, job hierarchies, and rich observability. Redis is already in your stack, or you're willing to add it. Your job throughput is in the hundreds to low-tens-of-thousands per second range.
+
+### Choose pg-boss when
+
+You want to avoid adding Redis to your infrastructure and you are already using PostgreSQL. pg-boss uses your existing database as the queue backing store. You lose some features (no job priorities, simpler scheduling), but the operational simplicity of not running a separate database is real.
+
+### Choose SQS when
+
+You are in AWS and want a fully managed queue with no operational overhead. SQS scales infinitely, has very high availability guarantees, and integrates with the rest of the AWS ecosystem. The tradeoff is reduced expressiveness — no priorities, no built-in scheduling, no DAGs. You implement those in application code.
+
+### Choose Kafka when
+
+Your use case is event streaming rather than job processing. Kafka is a distributed log, not a job queue. It excels at ordered, high-throughput event streams that multiple consumer groups read independently. If you are building an event-sourced system, an audit trail, or a data pipeline with millions of events per second, Kafka is the right tool. If you are sending transactional emails and resizing images, it is not.
+
+---
+
+## Part 10: What We Would Reconsider
+
+BullMQ is not without its failure modes. After operating queue-heavy systems in production, here are the decisions worth examining before committing.
+
+### Redis as a single point of failure
+
+If your Redis instance goes down, your queue system stops. Jobs stop being added. Workers stop processing. The system degrades completely, not gracefully.
+
+Mitigations: Redis Sentinel for automatic failover (seconds of downtime during promotion), Redis Cluster for sharding and higher availability, or Redis Enterprise for commercial SLA guarantees. For most teams, a well-configured Redis Sentinel setup with daily snapshots is sufficient. Know your failover time and design your producers to handle `Connection refused` gracefully — buffer locally, retry the add, or surface an error to the user rather than silently dropping the job.
+
+### Memory as the limiting resource
+
+Redis stores everything in memory. Your queue size is bounded by available RAM. At 1KB per job (data + metadata), a Redis instance with 4GB of memory can hold approximately four million jobs. This is more than enough for most workloads, but batch operations that add millions of jobs at once can exhaust memory quickly.
+
+Configure `maxmemory` and `maxmemory-policy` carefully. For a queue workload, `noeviction` is the safest policy — refuse writes rather than silently evicting data. An out-of-memory error is loud and fixable. Silently dropped jobs are neither.
+
+Prune completed jobs aggressively. The default retention of 1,000 completed jobs per queue is reasonable. For high-throughput queues, reduce this to 100 or even 0 — completed jobs are not useful for retrying, only for debugging.
+
+### Long-running jobs and lock TTLs
+
+The lock TTL (default 30 seconds) is extended by the worker while processing. If your job takes 20 minutes to run, the worker extends the lock every ~15 seconds. This works, but it creates a fragility: if the worker's event loop blocks — say, a synchronous CPU-intensive operation — lock extension fails, the lock expires, the job is detected as stalled, and another worker picks it up. Now two workers are processing the same job simultaneously.
+
+For CPU-intensive or very long-running work, use child processes or worker threads rather than running the work directly in the BullMQ worker's event loop. The job processor should delegate to a subprocess and await its completion; the event loop remains free to send heartbeats.
+
+### No native multi-queue transactions
+
+Adding a job to queue A and queue B atomically is not directly supported. `FlowProducer` handles parent-child relationships within the flow graph, but arbitrary cross-queue atomic operations require a Lua script or careful application-level design. This matters for saga compensation: if adding a compensating job fails, you need a separate recovery mechanism.
+
+### Observability depth
+
+BullMQ's built-in observability covers job state counts and individual job history. It does not cover: inter-job causality (which producer added this job?), distributed traces across queue boundaries, or fine-grained performance profiling of processor code. For a complete observability story, integrate with OpenTelemetry — instrument your processor functions with spans, propagate trace context through job data, and correlate queue spans with the upstream HTTP request that triggered the work.
+
+---
+
+## Where to Go From Here
+
+BullMQ's documentation covers the API surface thoroughly. What it covers less thoroughly is the system design thinking behind architectural decisions. The patterns in this post — fan-out, sagas, flows, idempotent processors, rate-limited queues — are patterns that emerge from operating real systems, not from reading documentation.
+
+The most important thing you can do before adopting BullMQ is define your reliability requirements explicitly. What does "at-least-once" mean for your processors? Where do you need deduplication? Where does order matter? What happens if Redis goes down for 60 seconds? Answer those questions first, then evaluate whether BullMQ's guarantees match.
+
+A job queue is not a performance optimization. It is a reliability boundary. It decouples the rate at which you accept work from the rate at which you perform it, and it gives you control over retry, failure, and backpressure that the HTTP request cycle never can.
+
+The Black Friday order that timed out at 14 seconds? With a queue, the HTTP handler records the order, returns in 50ms, and everything downstream — the email, the image resize, the warehouse notification, the fraud check — happens reliably, retries automatically on failure, and is fully observable. The user sees a fast response. The system processes the work at its own pace. That is the value.
+
+---
+
+*Questions about queue architecture, Redis configuration, or system design tradeoffs? Happy to go deeper on any of these patterns.*

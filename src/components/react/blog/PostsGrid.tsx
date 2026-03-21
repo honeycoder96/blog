@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
-import { CATEGORY_COLOR_MAP, buildFilterCategories } from '../../../config/categories';
+import { CATEGORY_COLOR_MAP, slugifyCategory } from '../../../config/categories';
 
 interface Post {
   slug: string;
@@ -10,42 +10,96 @@ interface Post {
     date: string;
     category: string;
     summary: string;
-    readingTime?: number;
+    readingTime?: number | null;
     tags: string[];
   };
 }
 
 interface PostsGridProps {
-  posts: Post[];
+  /** First page of posts, baked into the HTML at build time. */
+  initialPosts: Post[];
+  /** Total post count across all categories — used to determine if Load More exists on first render. */
+  initialTotal: number;
+  /** Ordered category list (with "All" prepended) — built server-side so filter tabs appear immediately. */
+  categories: string[];
 }
 
-function getInitialCategory(categories: string[]): string {
-  if (typeof window === 'undefined') return 'All';
-  const param = new URLSearchParams(window.location.search).get('category');
-  if (param && categories.includes(param)) return param;
-  return 'All';
-}
+const cardVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0, transition: { type: 'spring' as const, stiffness: 200, damping: 20 } },
+  exit: { opacity: 0, y: -10, transition: { duration: 0.15 } },
+};
 
-const PAGE_SIZE = 10;
-
-export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
-  const categories = buildFilterCategories(posts.map((p) => p.data.category));
-  const [activeCategory, setActiveCategory] = useState<string>(() => getInitialCategory(categories));
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal, categories }) => {
+  // Always start with "All" / first-page data that was baked in.
+  // A useEffect below handles ?category= URL params after hydration
+  // to avoid an SSR/hydration mismatch.
+  const [activeCategory, setActiveCategory] = useState<string>('All');
+  const [posts, setPosts] = useState<Post[]>(initialPosts);
+  const [total, setTotal] = useState<number>(initialTotal);
+  const [page, setPage] = useState<number>(1);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const prefersReducedMotion = useReducedMotion();
 
-  const filtered = activeCategory === 'All'
-    ? posts
-    : posts.filter((p) => p.data.category === activeCategory);
+  const hasMore = posts.length < total;
 
-  const visible = filtered.slice(0, visibleCount);
-  const hasMore = visibleCount < filtered.length;
+  // ---------------------------------------------------------------------------
+  // Core fetch helper
+  // ---------------------------------------------------------------------------
 
-  const cardVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { type: 'spring' as const, stiffness: 200, damping: 20 } },
-    exit: { opacity: 0, y: -10, transition: { duration: 0.15 } },
-  };
+  const fetchPage = useCallback(async (category: string, pageNum: number, append: boolean) => {
+    setIsLoading(true);
+    try {
+      const slug = slugifyCategory(category);
+      const res = await fetch(`/api/posts/${slug}/${pageNum}.json`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setPosts((prev) => (append ? [...prev, ...data.posts] : data.posts));
+      setTotal(data.total);
+      setPage(pageNum);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // On hydration: honour ?category= URL param without causing SSR mismatch
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    const param = new URLSearchParams(window.location.search).get('category');
+    if (param && categories.includes(param) && param !== 'All') {
+      setActiveCategory(param);
+      fetchPage(param, 1, false);
+    }
+    // Intentionally empty dep array — runs once on mount only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Handlers
+  // ---------------------------------------------------------------------------
+
+  const handleCategoryChange = useCallback((cat: string) => {
+    if (cat === activeCategory) return;
+    setActiveCategory(cat);
+    if (cat === 'All') {
+      // Reset to the baked-in data — no fetch needed
+      setPosts(initialPosts);
+      setTotal(initialTotal);
+      setPage(1);
+    } else {
+      fetchPage(cat, 1, false);
+    }
+  }, [activeCategory, initialPosts, initialTotal, fetchPage]);
+
+  const handleLoadMore = useCallback(() => {
+    fetchPage(activeCategory, page + 1, true);
+  }, [activeCategory, page, fetchPage]);
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
 
   return (
     <div>
@@ -54,11 +108,12 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
         {categories.map((cat) => (
           <button
             key={cat}
-            onClick={() => { setActiveCategory(cat); setVisibleCount(PAGE_SIZE); }}
-            className={`px-5 py-2 rounded-full border font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer ${activeCategory === cat
+            onClick={() => handleCategoryChange(cat)}
+            className={`px-5 py-2 rounded-full border font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer ${
+              activeCategory === cat
                 ? 'bg-fg text-surface border-fg'
                 : 'border-line text-fg-muted hover:border-line-strong hover:text-fg-default'
-              }`}
+            }`}
           >
             {cat}
           </button>
@@ -68,7 +123,7 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
       {/* Posts list */}
       <div className="w-full flex flex-col border-t border-line">
         <AnimatePresence mode="popLayout">
-          {visible.map((post) => (
+          {posts.map((post) => (
             <motion.a
               key={post.slug}
               href={`/blog/${post.slug}`}
@@ -81,8 +136,9 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
               <div className="md:w-1/4 flex flex-col gap-3">
                 <time className="text-fg-faint font-mono text-xs">{post.data.date}</time>
                 <span
-                  className={`self-start px-3 py-1 rounded-full border text-xs font-mono uppercase tracking-wider ${CATEGORY_COLOR_MAP[post.data.category] ?? 'text-fg-muted border-line'
-                    }`}
+                  className={`self-start px-3 py-1 rounded-full border text-xs font-mono uppercase tracking-wider ${
+                    CATEGORY_COLOR_MAP[post.data.category] ?? 'text-fg-muted border-line'
+                  }`}
                 >
                   {post.data.category}
                 </span>
@@ -122,19 +178,44 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ posts }) => {
         </AnimatePresence>
       </div>
 
-      {filtered.length === 0 && (
+      {/* Empty state */}
+      {posts.length === 0 && !isLoading && (
         <div className="text-center py-24 text-fg-faint font-mono">
           No posts in this category yet.
         </div>
       )}
 
+      {/* Loading skeleton */}
+      {isLoading && posts.length === 0 && (
+        <div className="w-full flex flex-col border-t border-line">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="border-b border-line py-8 md:py-10 flex flex-col md:flex-row gap-4 animate-pulse">
+              <div className="md:w-1/4 flex flex-col gap-3">
+                <div className="h-3 w-16 rounded bg-line" />
+                <div className="h-5 w-24 rounded-full bg-line" />
+              </div>
+              <div className="md:w-2/4 flex flex-col gap-2">
+                <div className="h-6 w-3/4 rounded bg-line" />
+                <div className="h-4 w-full rounded bg-line" />
+                <div className="h-4 w-2/3 rounded bg-line" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Load More */}
       {hasMore && (
         <div className="flex justify-center mt-12">
           <button
-            onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
-            className="px-8 py-3 rounded-full border border-line text-fg-muted hover:border-line-strong hover:text-fg font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer"
+            onClick={handleLoadMore}
+            disabled={isLoading}
+            className="px-8 py-3 rounded-full border border-line text-fg-muted hover:border-line-strong hover:text-fg font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Load more <span className="text-fg-ghost">({filtered.length - visibleCount} remaining)</span>
+            {isLoading
+              ? 'Loading...'
+              : <>Load more <span className="text-fg-ghost">({total - posts.length} remaining)</span></>
+            }
           </button>
         </div>
       )}

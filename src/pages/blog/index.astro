@@ -3,6 +3,9 @@ import PageLayout from '../../layouts/PageLayout.astro';
 import { PostsGrid } from '../../components/react/blog/PostsGrid';
 import { AnimatedTitle } from '../../components/react/ui/AnimatedTitle';
 import { getCollection } from 'astro:content';
+import { buildFilterCategories } from '../../config/categories';
+
+const PAGE_SIZE = 10;
 
 const allPosts = await getCollection('blog');
 const posts = allPosts
@@ -19,6 +22,12 @@ const posts = allPosts
       tags: p.data.tags,
     },
   }));
+
+// Only the first page is baked into the HTML.
+// Everything after that is fetched from /api/posts/[category]/[page].json
+const initialPosts = posts.slice(0, PAGE_SIZE);
+const totalPosts = posts.length;
+const categories = buildFilterCategories(posts.map((p) => p.data.category));
 ---
 
 <PageLayout
@@ -33,10 +42,15 @@ const posts = allPosts
         client:visible
       />
       <p class="text-xl text-fg-muted max-w-2xl">
-        {posts.length} articles on architecture, deep dives, and engineering culture.
+        {totalPosts} articles on architecture, deep dives, and engineering culture.
       </p>
     </header>
 
-    <PostsGrid posts={posts} client:load />
+    <PostsGrid
+      initialPosts={initialPosts}
+      initialTotal={totalPosts}
+      categories={categories}
+      client:idle
+    />
   </div>
 </PageLayout>

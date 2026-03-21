@@ -1,0 +1,738 @@
+---
+title: "CRDTs From Scratch: The Engineering Guide to Conflict-Free Collaboration"
+date: "Mar 2026"
+pubDate: 2026-03-21
+category: "Engineering"
+author: "Honey Sharma"
+summary: "A ground-up guide to Conflict-Free Replicated Data Types — from the fundamental problem of distributed state, through the mathematics of convergence, to the real-world tradeoffs of building collaborative systems at scale."
+featured: false
+readingTime: 28
+tags: [crdt, distributed-systems, consistency, collaboration, system-design, data-structures, real-time]
+relatedPosts: []
+---
+
+Two engineers are on a flight with no internet. Both are editing the same design document offline. Three hours later, the plane lands, their laptops sync, and the document looks exactly right — both sets of changes present, sensibly merged, no conflicts, no "choose your version" dialogs, no data loss.
+
+This is not magic. It is mathematics applied to distributed systems design. The data structure making it possible is a **Conflict-Free Replicated Data Type**, and it is one of the most elegant ideas in distributed systems engineering.
+
+This post is a complete walkthrough — from the first principles that make the problem hard, through the mathematical guarantees that CRDTs provide, to the concrete data structures and their tradeoffs, to what production systems actually do. We will build intuition before formalism, and we will be honest about where the elegant theory runs into the messy reality of real systems.
+
+No library code. No framework-specific examples. The goal is to understand the idea deeply enough to evaluate, design, and reason about CRDT-based systems yourself.
+
+---
+
+## Part 1: The Problem — Distributed State Is Fundamentally Hard
+
+### Why distributed state breaks
+
+In a single-server system with a single database, concurrent writes are handled by the database. Two requests arrive simultaneously — the database serializes them, one wins, the other waits or retries. The outcome is deterministic. The state is consistent.
+
+Distribute that state across multiple nodes — whether those are replicas in a datacenter, servers in different regions, or mobile devices that work offline — and serialization becomes impossible or too expensive. You cannot ask a laptop on a plane to wait for a server acknowledgment before allowing a keystroke.
+
+So writes happen independently. Node A changes the document. Node B changes the same document. Later, they need to merge. This is the fundamental challenge: **how do you merge independent concurrent writes into a consistent result?**
+
+### The three approaches
+
+Every distributed system that allows concurrent writes chooses between three broad strategies:
+
+**Pessimistic locking.** Only one node can write at a time. The others wait. This eliminates conflicts by preventing them. The tradeoff is availability — if the lock holder goes offline, no one can write. Unacceptable for offline-capable apps and high-availability systems.
+
+**Operational Transformation (OT).** Don't prevent conflicts; transform operations to account for concurrent edits. If Alice inserts a character at position 5 and Bob deletes a character at position 3, Bob's operation is transformed before being applied to Alice's document. Google Docs used OT for years.
+
+OT works, but it is notoriously hard to get right. The transformation functions grow in complexity with the richness of the data model. A correct OT implementation for a general document model requires reasoning about every possible pair of concurrent operations. Google employed researchers for years to get it right. Several well-funded companies shipped OT implementations that had subtle bugs that caused document divergence in edge cases — bugs that only appeared after hours of concurrent editing.
+
+**CRDTs.** Design data structures with merge functions that are guaranteed to converge to the same result regardless of the order operations are applied. No locks. No conflict resolution dialogs. No transformation functions. Just data structures with a mathematical convergence guarantee.
+
+CRDTs trade some expressiveness for a correctness guarantee. Not everything can be naturally expressed as a CRDT. But for a large class of collaborative data — documents, counters, presence indicators, shopping carts, JSON documents — CRDTs deliver a correctness guarantee that OT approaches can only approximate.
+
+---
+
+## Part 2: The Mathematics of Convergence
+
+You do not need to be a mathematician to use CRDTs, but you do need to understand one concept: **a join-semilattice**.
+
+### What a semilattice is
+
+A semilattice is a set of values with a merge operation (often written ⊔, pronounced "join") that satisfies three properties:
+
+**Commutativity:** `A ⊔ B = B ⊔ A`
+The order you merge two states does not matter.
+
+**Associativity:** `(A ⊔ B) ⊔ C = A ⊔ (B ⊔ C)`
+The grouping of merges does not matter. You can merge pairwise in any order.
+
+**Idempotency:** `A ⊔ A = A`
+Merging a state with itself produces no change. Receiving a message twice has the same effect as receiving it once.
+
+These three properties together guarantee that **any set of states, merged in any order, any number of times, will always converge to the same result**. This is the CRDT guarantee. Not "the system will try to merge" — the system *will* converge, provably.
+
+### Why these properties matter for distributed systems
+
+In a distributed system, you cannot control the order messages arrive. Network partitions cause delays. Gossip protocols deliver messages out of order. A node that was offline for three days reconnects with thousands of state updates. If your merge function satisfies the semilattice properties, none of this matters. Merge everything, in any order, as many times as you like. The result will be the same.
+
+### The monotonicity requirement
+
+There is one more requirement for state-based CRDTs: state must only move in one direction. Merging must always produce a state that is "greater than or equal to" both inputs — it never discards information. This is the **monotonic join-semilattice** property.
+
+```
+States form a partial order: A ≤ B means B "knows everything A knows, and possibly more"
+
+     {a, b, c}
+      /      \
+  {a, b}   {b, c}
+    |    \  /  |
+  {a}   {b}  {c}
+      \  |  /
+        {}
+
+Merge always moves up the lattice, never down.
+```
+
+This has an important implication: **you can never undo an operation in a state-based CRDT**. Deletion requires a workaround (tombstones, which we will cover in detail). This is not a bug — it is the source of the guarantee. Information only accumulates; it never disappears.
+
+### Two families of CRDTs
+
+The semilattice property can be implemented in two fundamentally different ways, leading to two families of CRDTs:
+
+**State-based CRDTs (CvRDTs — Convergent Replicated Data Types).** Nodes share their entire state when communicating. When a replica receives another replica's state, it merges it with its own using the join function. Bandwidth-expensive, but simple — you can resend state at any time and convergence holds.
+
+**Operation-based CRDTs (CmRDTs — Commutative Replicated Data Types).** Nodes broadcast operations rather than full state. Each replica applies operations locally as they arrive. Requires that the delivery layer guarantees operations are delivered exactly once and in causal order. More bandwidth-efficient, more complex delivery requirements.
+
+Modern systems and research increasingly use **delta CRDTs** — a hybrid that propagates only the "delta" (the difference since last sync) rather than full state, capturing efficiency benefits of op-based while maintaining the simplicity of state-based. We will return to delta CRDTs in Part 9.
+
+---
+
+## Part 3: The Foundational CRDTs
+
+Before we get to the complex ones, we need to understand the simple ones. Every CRDT you encounter in the wild is either one of these or a composition of them.
+
+### G-Counter (Grow-Only Counter)
+
+The simplest CRDT. A distributed counter that only ever increments.
+
+**The naive approach fails.** Say you have three nodes, each with a count that they increment locally. Node A increments 5 times. Node B increments 3 times. Node C increments 2 times. If you simply merge by taking the maximum value across nodes, you get max(5, 3, 2) = 5 — which is wrong. The correct answer is 10.
+
+**The G-Counter solution.** Each node maintains its own slot in a vector. A node only increments its own slot. The total count is the sum of all slots. Merge takes the element-wise maximum.
+
+```
+Node A's view:  [A:5, B:0, C:0]   → local count: 5
+Node B's view:  [A:0, B:3, C:0]   → local count: 3
+Node C's view:  [A:0, B:0, C:2]   → local count: 2
+
+After full sync:
+Merged:         [A:5, B:3, C:2]   → total count: 10  ✓
+```
+
+The merge function (element-wise maximum) is commutative, associative, and idempotent. It satisfies the semilattice properties. The G-Counter is a valid CRDT.
+
+**Why element-wise max works.** A node can only increment its own slot. So node A's slot value in any replica is always the most recent value A has written — or zero if A hasn't synced yet. Taking the max across all replicas for each slot gives the "most recent" value for each node, which is the globally correct total.
+
+### PN-Counter (Positive-Negative Counter)
+
+A counter that supports both increment and decrement.
+
+**The approach.** Maintain two G-Counters: one for increments (P) and one for decrements (N). The value is P − N. Merge merges each G-Counter independently using element-wise max.
+
+```
+Increment: add to P counter at your node's slot
+Decrement: add to N counter at your node's slot
+
+Value = sum(P) - sum(N)
+
+Merge: merge P counters, merge N counters independently
+```
+
+The PN-Counter is a composition of two G-Counters. This compositional approach — building complex CRDTs from simpler ones — is a common pattern.
+
+**The limitation.** You can never prevent the counter from going negative. If you need an invariant like "this counter must stay non-negative," a PN-Counter alone cannot enforce it. You would need coordination — which breaks the CRDT model. This is one of the fundamental expressiveness limitations: **CRDTs cannot enforce cross-node invariants without coordination**.
+
+### G-Set (Grow-Only Set)
+
+A set that only supports add, never remove.
+
+**The merge function.** Set union. Adding an element to any replica means it is in the merged set. No element is ever truly removed.
+
+```
+Node A:  {apple, banana}
+Node B:  {banana, cherry}
+
+Merge: {apple, banana} ∪ {banana, cherry} = {apple, banana, cherry}
+```
+
+Trivially satisfies all semilattice properties. Union is commutative, associative, and idempotent. The G-Set is the simplest non-trivial CRDT.
+
+### 2P-Set (Two-Phase Set)
+
+A set that supports both add and remove — but only one remove per element.
+
+**The approach.** Maintain two G-Sets: A (added) and R (removed). An element is in the set if it is in A and not in R. Merge unions both sets independently.
+
+```
+Add:     add element to A
+Remove:  add element to R (element must already be in A)
+
+Lookup: A \ R
+
+Merge: union A sets, union R sets
+```
+
+The constraint "only one remove per element" is the limitation. Once you remove an element and it enters R, it can never be re-added. A 2P-Set models "this item was purchased" or "this task was completed" — things with a one-way lifecycle.
+
+For sets where elements can come and go multiple times, the 2P-Set is insufficient. We need the OR-Set.
+
+### OR-Set (Observed-Remove Set)
+
+The correct general-purpose set CRDT. Elements can be added and removed any number of times. Concurrent add and remove of the same element resolves in favor of the add.
+
+**The key insight.** Rather than tracking elements alone, track element-tag pairs. Each addition generates a unique tag. Removal removes specific tags, not the element itself. If an add and a remove of the same element are concurrent, the add wins because its tag was not present when the remove happened — the remove only removes the tags it "observed."
+
+```
+Alice adds "banana":
+  A's set: {("banana", tag-1)}
+
+Bob simultaneously adds "banana":
+  B's set: {("banana", tag-2)}
+
+Alice removes "banana" (removes tag-1):
+  A's set: {} (tag-1 removed)
+  A's remove-set: {tag-1}
+
+After sync:
+  Merged add-set: {("banana", tag-1), ("banana", tag-2)}
+  Merged remove-set: {tag-1}
+
+  Live elements: add-set minus removed tags
+  = {("banana", tag-2)}
+
+  "banana" is in the set. ✓  (Bob's concurrent add wins)
+```
+
+The OR-Set resolves the add-wins semantics at the level of individual additions rather than elements. This matches the intuitive expectation: if two people concurrently add the same item to a shopping cart and one of them removes it, the item stays because there is still a concurrent add that the remover did not "see."
+
+---
+
+## Part 4: Registers and the Last-Write-Wins Problem
+
+### LWW-Register (Last-Write-Wins Register)
+
+A register holds a single value. The LWW-Register resolves concurrent writes by keeping the value associated with the highest timestamp.
+
+```
+Node A writes value="red" at t=100
+Node B writes value="blue" at t=103
+
+After merge: value="blue" (t=103 wins)
+```
+
+**The timestamp problem.** LWW relies on timestamps being globally ordered. Physical clocks in distributed systems are not synchronized. Two nodes at t=103 on their local clocks may have written concurrently, with neither "happening after" the other. The node with the slightly faster clock wins — not the node with the later operation in any meaningful causal sense.
+
+This is a real problem. Amazon's Dynamo used LWW registers for years and documented cases where legitimate writes were silently overwritten due to clock drift. In a system where "last write wins" is semantically wrong — where you want "both writes preserved" or "the user's explicit choice" — LWW is the wrong primitive.
+
+**When LWW is acceptable.** Settings that are inherently last-write-wins by user expectation: a user changes their display name, their theme preference, their notification setting. Only one value is meaningful. The latest expressed preference is what the user wants. LWW is semantically correct here.
+
+**When LWW is not acceptable.** Collaborative document editing. If Alice and Bob both edit a paragraph concurrently, the "latest" write should not silently discard the other's work. You need a merge function that preserves both, not one that picks a winner.
+
+### Multi-Value Register (MV-Register)
+
+An alternative to LWW that preserves all concurrent values rather than picking one.
+
+```
+Node A writes value="red"  at vector-clock {A:1}
+Node B writes value="blue" at vector-clock {B:1}
+
+Merged state: {("red", {A:1}), ("blue", {B:1})}
+— both values are siblings, with their causal context
+```
+
+The MV-Register stores all values that are causally concurrent — values that cannot be determined to have happened before or after each other. The application layer decides what to do with siblings: present them to the user as a conflict to resolve, apply a domain-specific merge (numeric values could be summed), or pick one according to application logic.
+
+This is what Amazon's Dynamo did in later versions: surfacing "siblings" to the application rather than silently discarding one. The shopping cart example from the Dynamo paper is canonical — if two writes to a shopping cart are concurrent, you want both items, not one discarded.
+
+---
+
+## Part 5: Causality and Clocks
+
+CRDTs cannot function without a way to reason about causality — whether one operation happened before another, or whether they are concurrent. Physical timestamps are insufficient. We need logical clocks.
+
+### Lamport clocks
+
+A Lamport clock is a single integer that increments with every event. When a message is received, the receiver updates its clock to `max(local, received) + 1`. This creates a partial order: if A's clock is less than B's, A happened before B. But if two events have the same clock value, we cannot determine their order — they may be concurrent, or one may have happened before the other on a different partition.
+
+```
+Node A: event at t=1, sends message
+Node B: receives at t=2 (max(0,1)+1), event at t=2
+Node A: event at t=2 (independent of B)
+
+A's t=2 and B's t=2 — we cannot order these.
+Lamport clocks give total order only when combined with node ID as tiebreaker.
+```
+
+Lamport clocks give a total order (with tiebreaking), but the order is not guaranteed to reflect causality. Two unrelated events at different nodes could be ordered arbitrarily.
+
+### Vector clocks
+
+A vector clock is one Lamport clock per node. Each node increments only its own slot. When a message is received, the receiver takes element-wise maximum and then increments its own slot.
+
+```
+Initially: A=[0,0,0], B=[0,0,0], C=[0,0,0]
+
+A does an event: A=[1,0,0]
+A sends to B: B receives → B=[1,1,0] (max + B increments)
+B sends to C: C receives → C=[1,1,1]
+A does another event: A=[2,0,0]
+A sends to C: C receives → C=[2,1,1] (max of [2,0,0] and [1,1,1])
+```
+
+With vector clocks, you can determine:
+- `A ≤ B` (A happened before B) if every slot of A is ≤ the corresponding slot of B
+- `A` and `B` are concurrent if neither A ≤ B nor B ≤ A
+
+This is what you need for an MV-Register's sibling detection and for OR-Set's "observed" semantics.
+
+**The cost.** Vector clocks grow linearly with the number of nodes. A system with 1,000 nodes has 1,000-element vector clocks attached to every operation. This is prohibitive for large-scale peer-to-peer systems.
+
+### Hybrid Logical Clocks (HLC)
+
+Hybrid Logical Clocks combine physical time with a logical counter to give you the best of both: timestamps that are close to physical time (useful for debugging, TTLs, and user-facing timestamps) but that correctly capture causality even when physical clocks are skewed.
+
+```
+HLC timestamp: (physical_time, logical_counter, node_id)
+
+Rules:
+- On send/local event:
+    physical = max(local.physical, now())
+    if physical > local.physical: counter = 0
+    else: counter = local.counter + 1
+
+- On receive:
+    physical = max(local.physical, received.physical, now())
+    if physical > max(local, received): counter = 0
+    elif physical == received.physical: counter = max(local.counter, received.counter) + 1
+    else: counter = local.counter + 1
+```
+
+HLCs are used in production systems including CockroachDB and TiDB. They give you a globally ordered timestamp that degrades gracefully when physical clocks are skewed — still maintaining correctness even if a clock drifts by seconds.
+
+---
+
+## Part 6: Sequence CRDTs — The Hard Problem
+
+Everything so far has been relatively tractable. Sets, counters, and registers have natural merge semantics. The hard CRDT problem is **ordered sequences** — the data structure that underlies collaborative text editing, ordered lists, and richly structured documents.
+
+Why is this hard? Because position in a sequence is relative. If Alice inserts "X" at position 5 and Bob simultaneously deletes the character at position 3, Alice's position 5 is not Bob's position 5 after his deletion. Merging these operations requires knowing their causal relationship.
+
+### Why position-based approaches fail
+
+The naive approach: represent text as an array, operations as `insert(position, character)` and `delete(position)`.
+
+```
+Initial state: "hello world"
+                0123456789...
+
+Alice: insert 'X' at position 5 → "helloX world"
+Bob:   delete character at position 4 → "hell world"
+
+Apply Alice's op to Bob's result: insert 'X' at position 5 in "hell world"
+Result: "hell Xworld"  ← wrong
+
+Apply Bob's op to Alice's result: delete position 4 in "helloX world"
+Result: "hellX world"  ← different, also wrong
+```
+
+Both orderings produce different (wrong) results. Positions are not stable identifiers. This is the core problem that OT tries to solve by transforming positions, and that CRDTs solve by not using positions at all.
+
+### Unique identifiers for positions
+
+Every CRDT approach to sequences assigns each character (or list element) a **stable, globally unique identifier** that does not change as other characters are inserted or deleted. Instead of "character at position 5," you refer to "the character with ID ⟨A,3⟩."
+
+The sequence is then an ordered set of (ID, value) pairs, where the ordering is defined by an algorithm that determines where a new element's ID falls relative to existing ones.
+
+The challenge: given a new element's ID and its two neighbors (left and right) at the time of insertion, determine a consistent global ordering for the element even when concurrent insertions happen between the same neighbors.
+
+### WOOT (Without Operational Transformation)
+
+WOOT (2006) was one of the first sequence CRDTs. Each character has a unique ID, a value, a left neighbor ID, and a right neighbor ID at the time of insertion. Deleted characters are replaced with tombstones — they remain in the sequence structure but are not displayed.
+
+```
+Insert character 'X' between ID:5 and ID:7:
+  Character: {id: (A, 1), value: 'X', left: ID:5, right: ID:7}
+
+Concurrent insert of 'Y' also between ID:5 and ID:7:
+  Character: {id: (B, 1), value: 'Y', left: ID:5, right: ID:7}
+
+WOOT's disambiguation rule: order by ID (e.g., lexicographic on node ID)
+  → 'X' before 'Y' if A < B, or 'Y' before 'X' if B < A
+  Both nodes reach the same ordering: deterministic, convergent.
+```
+
+**The tombstone problem.** WOOT never physically removes deleted characters — it only marks them as deleted. This means the internal representation grows unboundedly. A document that has had 100,000 characters typed and deleted has 100,000 tombstones forever. For short sessions this is fine; for documents edited over years, it becomes a serious storage and performance problem.
+
+WOOT is not used in production systems today, but its conceptual contribution — unique character IDs and intention-based neighbor references — underpins all subsequent approaches.
+
+### RGA (Replicated Growable Array)
+
+RGA (2011) improved on WOOT by introducing a simpler identifier scheme and a more efficient integration algorithm. Each element has a timestamp (logical clock) as its identifier. Concurrent insertions at the same position are ordered by their timestamp, with the higher timestamp winning (inserted after the lower one in the sequence).
+
+```
+Sequence after inserting A, B, C at time t=1, t=2, t=3:
+  [A(t=1), B(t=2), C(t=3)]
+
+Concurrent inserts after C(t=3):
+  Node 1 inserts X(t=4) after C
+  Node 2 inserts Y(t=4) after C (same t=4, but different node)
+
+Disambiguation: compare node IDs
+  If Node1 > Node2: [A, B, C, X, Y]
+  If Node2 > Node1: [A, B, C, Y, X]
+  All nodes reach the same result. ✓
+```
+
+RGA is significantly more efficient than WOOT and underpins several production collaborative editing systems. It still has tombstones, and the identifier size can grow with the number of unique insertion points.
+
+### Logoot and LSEQ
+
+Logoot (2009) and its successor LSEQ (2013) take a different approach: rather than referring to neighbors, each element gets a fractional position identifier — a point in a dense rational number space. An element inserted between positions 1 and 2 gets position 1.5. An element inserted between 1 and 1.5 gets 1.25.
+
+```
+Initial: "hello" → [h(1), e(2), l(3), l(4), o(5)]
+
+Insert 'X' between 'l'(3) and 'l'(4):
+  X gets position 3.5: [h(1), e(2), l(3), X(3.5), l(4), o(5)]
+
+Insert 'Y' between X(3.5) and l(4):
+  Y gets position 3.75
+```
+
+**The identifier explosion problem.** With LSEQ, identifiers grow in size as you insert between increasingly narrow gaps. Deep insertions at the same location produce exponentially longer identifiers. A document with many insertions at the same location accumulates identifiers that are kilobytes long per character. LSEQ's contribution was a variable-length identifier strategy that bounds this growth in practice (though not in the worst case).
+
+### YATA and the Yjs approach
+
+YATA (2016), the algorithm underlying Yjs, introduces a refined set of integration rules that prevent a class of anomalies (interleaving) that earlier approaches suffered from.
+
+**The interleaving anomaly.** If Alice types "AB" and Bob types "CD" concurrently at the same position, a naive algorithm might produce "ACBD" — the characters interleave. The intuitive correct result is either "ABCD" or "CDAB" — each author's characters stay together.
+
+YATA defines integration rules that guarantee non-interleaving: a character's position is determined relative to both its left and right neighbors at insertion time, plus a comparison of origins for disambiguation. The result is that concurrent insertions at the same location preserve the integrity of each insertion sequence.
+
+```
+Alice inserts 'A' then 'B' after position P:
+  A: {id: (alice,1), origin: P,    rightOrigin: null}
+  B: {id: (alice,2), origin: (alice,1), rightOrigin: null}
+
+Bob inserts 'C' then 'D' after position P (concurrently):
+  C: {id: (bob,1), origin: P,    rightOrigin: null}
+  D: {id: (bob,2), origin: (bob,1), rightOrigin: null}
+
+YATA integration result (deterministic across all nodes):
+  Either: P → A → B → C → D
+  Or:     P → C → D → A → B
+  Never:  P → A → C → B → D  (no interleaving) ✓
+```
+
+Yjs is used in production by Heptabase, JupyterLab, Codemirror, and dozens of other collaborative tools. Automerge uses a different algorithm (based on RGA with extensions for rich JSON structures) but faces the same fundamental tradeoffs.
+
+---
+
+## Part 7: Document CRDTs and the Move Problem
+
+Text sequences are one challenge. Richer data structures — JSON documents with arrays, nested objects, and mixed content — require extending these ideas.
+
+### Representing JSON as a CRDT
+
+A JSON document is a tree: objects (maps from string keys to values), arrays (ordered sequences), and scalar values (strings, numbers, booleans, null). Each of these needs a CRDT representation:
+
+- **Object keys.** Use an LWW-Register or MV-Register per key. Two nodes setting the same key concurrently results in LWW (one wins) or MV (both survive as siblings for the application to resolve).
+
+- **Array.** Use a sequence CRDT. Each element has a stable ID.
+
+- **Nested structures.** Each node in the tree has its own CRDT type. The tree itself is a CRDT.
+
+The challenge is that the tree structure itself changes. Objects get added and removed. Elements are nested inside other elements. This is where it gets complicated.
+
+### The move operation
+
+Moving an element — taking a node from one location in the tree and placing it in another — is the hardest operation in document CRDTs.
+
+Why? Because two concurrent moves of the same element are not automatically safe to merge.
+
+```
+Initial tree:
+  Root
+  ├── Folder A
+  │   └── File X
+  └── Folder B
+
+Node 1: Move File X from Folder A to Folder B
+  Root
+  ├── Folder A
+  └── Folder B
+      └── File X
+
+Node 2 (concurrent): Move Folder A into Folder B
+  Root
+  └── Folder B
+      └── Folder A
+          └── File X
+
+Naive merge of both moves:
+  Node 1 thinks X is in Folder B (under Root)
+  Node 2 thinks Folder A is in Folder B
+  Result: File X is in Folder A, which is in Folder B ✓ (works)
+
+But what if the moves create a cycle?
+
+Node 1: Move Folder B into Folder A
+Node 2 (concurrent): Move Folder A into Folder B
+
+Naive merge: Folder A is in Folder B, Folder B is in Folder A
+— a cycle, an invalid tree state
+```
+
+Cycles are the key danger. A correct tree CRDT must handle concurrent moves without ever creating cycles. This is a hard problem and an active area of research.
+
+**The Kleppmann/Martin/Gomes approach (2022)** addresses this with a "tombstone + redo" strategy: when two moves conflict, choose one winner (by timestamp or node ID), apply it, and re-anchor the losing subtree to the root's "undo" zone. The resulting state is always a valid tree, and the winning move's semantics are preserved. No cycles, no data loss.
+
+The practical takeaway: if you need a document CRDT that supports move operations (file systems, outlines, drag-and-drop hierarchies), reach for a library that has specifically solved this problem. It is not trivially composable from simpler CRDTs.
+
+---
+
+## Part 8: Practical Patterns and System Design
+
+### The CRDT as the storage format
+
+The most important architectural decision when adopting CRDTs is whether the CRDT state is the canonical storage format or a layer on top of a traditional database.
+
+**CRDT as storage.** The replica stores the full CRDT state — including tombstones, vector clocks, and all metadata. Queries are evaluated against this state. This is how Yjs and Automerge work: the document state is the CRDT itself, and you derive the "current view" by traversing the CRDT. Simple, correct, but metadata overhead can be significant.
+
+**CRDT as sync layer.** The authoritative representation is a traditional normalized form. The CRDT is only used during the sync period — to merge incoming changes — and then "squashed" into the canonical form. Simpler storage, but you lose the full history that makes conflict resolution possible, and the squash step requires careful design to avoid losing semantics.
+
+Most production collaborative systems use the first approach for documents and the second for coarser-grained data (user profiles, settings, catalog data) where the CRDT primitives (OR-Set, LWW-Register) are applied to individual fields.
+
+### Replication topology
+
+```
+               ┌──────────────────────────────────┐
+               │         Server (replica)          │
+               │   Full CRDT state, all clients    │
+               └──────┬──────────────┬─────────────┘
+                      │              │
+            sync      │              │  sync
+            updates   │              │  updates
+                      ▼              ▼
+        ┌─────────────────┐    ┌─────────────────┐
+        │  Client A        │    │  Client B        │
+        │  (partial state) │    │  (partial state) │
+        └─────────────────┘    └─────────────────┘
+                  │                      │
+                  │   direct P2P sync    │
+                  └──────────────────────┘
+                   (WebRTC / local network)
+```
+
+**Server-mediated replication.** All clients sync through a central server. The server holds the authoritative state, validates merges, and propagates updates. Simpler to reason about. The server becomes a bottleneck but also a natural point for access control and persistence.
+
+**Peer-to-peer replication.** Clients sync directly with each other (over WebRTC, local network, or Bluetooth). No single point of failure. Useful for offline-first local-first apps. Requires more careful thinking about how peers discover each other and how stale replicas catch up.
+
+**Hybrid.** Clients sync directly for low latency (real-time collaboration) and also sync with the server for persistence, catch-up after long offline periods, and integration with server-side features. This is what Figma, Linear, and Notion-style collaboration systems approximate.
+
+### Snapshot and delta sync
+
+Full state sync is prohibitive at scale. A document with years of edit history has a large CRDT state. Sending the full state on every connection is wasteful.
+
+The standard approach is snapshot plus delta:
+
+1. **Snapshot.** Periodically compact the CRDT state into a snapshot. The snapshot is a point-in-time representation of the document that a new replica can initialize from. Snapshots lose detailed operation history but retain all live content.
+
+2. **Delta sync.** Track which operations each replica has seen (using vector clocks or sequence IDs). When a replica connects, send only the operations it has not yet seen, not the full state.
+
+3. **State vectors.** Each replica maintains a "state vector" — a compact summary of how many operations from each known node it has integrated. When syncing, exchange state vectors; the sender computes the diff and sends only what's missing.
+
+```
+Replica A's state vector: {alice: 142, bob: 89, charlie: 33}
+Replica B's state vector: {alice: 139, bob: 92, charlie: 33}
+
+A needs from B: bob's operations 90, 91, 92
+B needs from A: alice's operations 140, 141, 142
+
+Exchange only the deltas — not full state.
+```
+
+---
+
+## Part 9: Anti-Entropy and Gossip
+
+CRDTs guarantee convergence given that all updates eventually reach all replicas. Making "eventually" actually happen in a distributed system requires an **anti-entropy protocol**.
+
+### Gossip protocols
+
+Gossip (epidemic) protocols are the standard anti-entropy mechanism. Each node periodically selects a random peer and syncs state with it. Information spreads through the network like an epidemic — each "infected" node spreads to others. With mathematical reliability, all nodes converge within O(log N) gossip rounds for N nodes.
+
+```
+Round 1: Node A gossips to Node C  → C has A's updates
+Round 2: Node C gossips to Node F  → F has A's and C's updates
+Round 3: Node F gossips to Node B  → B has A's, C's, and F's updates
+...
+```
+
+Gossip is probabilistic but has strong convergence guarantees in expectation. A node that never receives a specific update will receive it through indirect paths. Partitioned nodes reconnect and sync through gossip rounds.
+
+For interactive collaborative applications, pure gossip is too slow — you want changes to appear in sub-second latency. In practice, systems use gossip for anti-entropy (catching up missed updates) and WebSockets or WebRTC for real-time propagation. The two mechanisms complement each other: real-time for low latency, gossip for eventual correctness.
+
+### Delta CRDTs
+
+Standard state-based CRDTs send the full state on every sync. For a large document, this is prohibitive. **Delta CRDTs** solve this by defining a "delta" — a minimal representation of the changes made since the last sync — that can be merged like a full state.
+
+```
+Full state sync:
+  Send entire document state → O(document size)
+
+Delta CRDT sync:
+  Send only the operations since last acked sync → O(change size)
+```
+
+Delta CRDTs maintain the mathematical guarantees of state-based CRDTs while achieving the bandwidth efficiency of operation-based CRDTs. The delta itself forms a join-semilattice — deltas can be merged with each other and with full states interchangeably.
+
+The tradeoff: delta CRDTs require tracking what each peer has seen. More bookkeeping, but dramatically less bandwidth. For production systems with large documents, delta CRDTs or operation-based approaches are essential.
+
+---
+
+## Part 10: Production CRDT Systems
+
+### Amazon Dynamo
+
+Dynamo (2007) brought CRDTs to mainstream distributed systems thinking. Dynamo is a highly available key-value store that allows concurrent writes to the same key from different replicas. It uses vector clocks to detect concurrent writes and surfaces them as "siblings" to the application.
+
+The shopping cart example: if you add an item on your phone and add a different item on your laptop while offline, Dynamo will surface both carts as siblings. The application is responsible for merging them — in practice, by unioning the items. This is exactly an OR-Set, though Dynamo predates the formal CRDT definition.
+
+Dynamo's lesson: you can build highly available systems with concurrent writes, but you must choose your merge semantics deliberately. "Last write wins" was Dynamo's default and caused real data loss. Sibling-based merge was the correction, but pushed complexity to the application layer.
+
+### Riak
+
+Riak (built on Dynamo's architecture) went further by building first-class CRDT support into the database: G-Counters, PN-Counters, Sets, Maps, Registers, and Flags — all with automatic convergence. You declare a bucket as CRDT-typed, and the database handles merge semantics. No sibling resolution in application code.
+
+Riak's CRDTs demonstrated that general-purpose CRDT infrastructure was viable in a production database. The limitation: Riak's CRDTs did not support complex document structures or text sequences. Counters, sets, and simple maps cover a real but limited set of use cases.
+
+### Redis CRDT (Redis Enterprise)
+
+Redis Enterprise's active-active geo-distribution uses CRDTs to allow concurrent writes to the same dataset across geographic regions. String appends, counter increments, set operations, and sorted set updates are all CRDT-friendly. Hash fields use LWW semantics.
+
+The lesson from Redis Enterprise: you can layer CRDT semantics onto existing data structures, but you must define merge semantics for every operation type. Some operations (DEL, EXPIRE, certain SET variants) require special handling. The result is a system where most Redis operations "just work" in a multi-primary topology, with documented exceptions where the semantics differ from single-node Redis.
+
+### Collaborative editing tools
+
+Yjs (2019–present) and Automerge (2018–present) are the two dominant CRDT libraries for collaborative document editing.
+
+**Yjs** uses the YATA algorithm for sequences and optimizes heavily for performance. It uses binary encoding, incremental sync (state vectors), and awareness (presence) as a built-in concept. It integrates with most rich text editors (Quill, ProseMirror, CodeMirror, TipTap, Remirror) and supports multiple sync providers (WebSocket, WebRTC, IndexedDB). Performance-oriented: a fresh Yjs document processes many thousands of operations per second.
+
+**Automerge** uses a more functional, immutable approach inspired by academic CRDT research. Every change produces a new document version; the old version is preserved. It uses a variant of RGA for sequences. Automerge 2.0 rewrote the internals in Rust (compiled to WebAssembly) for dramatically better performance. Its model is closer to "apply changes, get new document state" — similar to using an immutable data structure library.
+
+**The choice between them** is largely a matter of ecosystem fit, performance requirements, and whether you need specific document features. Neither is universally better. Both are actively maintained and production-ready.
+
+---
+
+## Part 11: When CRDTs Are Not the Answer
+
+The CRDT model makes a fundamental tradeoff: it gives up strong consistency (every node sees the same state at the same instant) and some expressiveness (cross-node invariants) in exchange for availability and partition tolerance. This is not always the right tradeoff.
+
+### When you need strong consistency
+
+**Financial transactions.** "Account balance must not go negative" is a cross-node invariant. You cannot enforce it with a PN-Counter. If node A and node B both see a balance of $10 and each allow a $10 withdrawal, the merged balance is -$10. You need coordination — a distributed transaction, a single authoritative node, or a protocol like Paxos/Raft that provides strong consistency.
+
+**Sequential identifiers.** "Invoice numbers must be unique and sequential." A CRDT can give you unique IDs, but not sequential ones without coordination.
+
+**Seat reservations.** "At most 100 tickets can be sold." This requires knowing the global count before allowing a new sale. CRDTs cannot express this without coordination.
+
+The general pattern: **if your correctness requirement includes "exactly N" or "at most N" or "must be unique across all nodes" or "must reflect the latest global state," you need strong consistency.** CRDTs are for systems where "eventually the same" is sufficient.
+
+### The metadata overhead problem
+
+Every CRDT element carries metadata: a unique ID, a logical timestamp, possibly vector clock information. For a counter or a flag, this overhead is trivial relative to the value. For a sequence CRDT representing text, each character carries multiple times its own weight in metadata.
+
+A Yjs document representing a 10KB plain text file might have an internal representation of 50–100KB. A document with extensive edit history (many tombstones) grows further. This is manageable in memory; it becomes an issue when you persist thousands of documents to disk or transmit them over metered connections.
+
+Compaction strategies (converting old tombstoned regions to snapshots) help, but they require coordination — to safely compact tombstones, you need to know that all replicas have integrated the tombstoned operations. This reintroduces a form of distributed coordination for what looks like a local operation.
+
+### The garbage collection problem
+
+Tombstones must be retained until all replicas have integrated the deletion. In a system with offline replicas, this means tombstones might need to persist for days, weeks, or indefinitely. You cannot safely garbage-collect a tombstone without knowing the state of all replicas — a globally coordinated operation.
+
+For systems with bounded replica sets (known, limited set of users), this is tractable: track acknowledgments per replica, compact once all replicas have acked. For open peer-to-peer systems with unknown replicas, it is an open problem. Some systems choose not to garbage-collect tombstones at all, accepting the growth. Others define a "minimum session age" — tombstones older than X days are compacted, and replicas that have been offline longer than X days must re-sync from a full snapshot.
+
+### When OT is simpler
+
+OT has a bad reputation due to the complexity of correct implementations. But for a constrained problem — simple text editing with a small number of known collaborators, always mediated through a central server — OT is often simpler to reason about than a full sequence CRDT.
+
+If you control the server and can guarantee that all operations flow through it, the server can provide a total order for operations. OT in this setting (server-side ordering) sidesteps most of the hard cases. This is what Google Docs did for years, and it worked. The complexity of OT only fully manifests in truly peer-to-peer settings where there is no central coordinator to provide ordering.
+
+If your collaboration requirement is: "up to 10 users, always online, always syncing through your server" — OT (or simply database-level serialization with operational transforms) may be less infrastructure than a full CRDT system.
+
+---
+
+## Part 12: Building CRDT-Aware Systems — A Design Checklist
+
+Before choosing a CRDT approach, walk through these questions. They are not a recipe; they are forcing functions to surface the tradeoffs before you have committed to an architecture.
+
+**1. What is the data model?**
+
+Counters and flags: trivial CRDTs (G-Counter, PN-Counter, flag = LWW-Register). Sets of items: OR-Set. Ordered text or rich documents: sequence CRDT (reach for a library). Hierarchical structures with moves: significant complexity, specialized library required.
+
+**2. What are the consistency requirements?**
+
+"Eventually the same" → CRDT is appropriate. "Must always agree" or "must enforce a global invariant" → CRDT alone is not sufficient; add coordination at the invariant enforcement point.
+
+**3. How many replicas? Are they bounded?**
+
+Bounded, known replicas (a user's 5 devices): simpler garbage collection, simpler vector clocks. Open, unbounded peers (public P2P): harder garbage collection, larger clock metadata.
+
+**4. What is the offline duration?**
+
+Minutes of offline: simpler anti-entropy sufficient. Days or weeks offline: consider maximum session age, snapshot-on-reconnect, and tombstone compaction policy.
+
+**5. What is the merge conflict UX?**
+
+If conflicts surface to users as MV-Register siblings: design the conflict resolution UI. If merges are supposed to be invisible: choose CRDT semantics carefully so the merge result always makes sense without user intervention.
+
+**6. What is the storage budget?**
+
+For small documents or ephemeral sessions: in-memory CRDT state is fine. For large documents with long history: plan for snapshot compaction. For mobile devices with limited storage: delta sync and aggressive pruning of non-live state.
+
+**7. Do you need interoperability?**
+
+If multiple systems need to collaborate on the same documents, the CRDT format must be standardized across them. Yjs has a binary format with strong interop guarantees. Automerge has a format too, but Yjs and Automerge documents are not interchangeable. Choose your format at the start; changing it later is a migration project.
+
+---
+
+## A Note on Libraries
+
+This post has intentionally avoided being a tutorial for any specific library. The concepts — semilattices, state vectors, tombstones, YATA integration rules, delta sync — are the same regardless of which library you use. Understanding them means you can evaluate a library's correctness claims, diagnose convergence bugs, and make principled architectural decisions.
+
+If you are building collaborative text editing, **Yjs** and **Automerge** are the two serious options in the JavaScript ecosystem. Yjs is generally faster and has a larger editor ecosystem. Automerge has a cleaner API and stronger academic roots. Both have production deployments. Try both with your actual document model before committing.
+
+For backend CRDT infrastructure — counters, sets, registers in a distributed database — **Riak** and **Redis Enterprise** provide managed CRDT semantics. If you are building on Postgres, **electric-sql** is an emerging project that brings CRDT semantics to Postgres replication.
+
+For research and deeper reading, the academic papers that matter most: Shapiro et al. "A Comprehensive Study of CRDTs" (2011) for the formal taxonomy; Kleppmann et al. "A Conflict-Free Replicated JSON Datatype" (2017) for JSON CRDTs; Nedelec et al. "LSEQ" (2013) for sequence identifiers; Almedia et al. "Delta State Replicated Data Types" (2018) for delta CRDTs. These papers are dense but worth reading at least once to understand what the library authors are implementing.
+
+---
+
+## Where CRDTs Are Going
+
+CRDTs are not a solved problem. Active research areas in 2026:
+
+**Richer invariants.** Combining CRDTs with escrow and reservations to support bounded invariants (at most N) without full coordination. Early work exists; production-ready solutions are sparse.
+
+**Formal verification.** CRDTs' convergence proofs are mathematical, but implementations have bugs. Tools like TLA+ and Isabelle/HOL are being used to formally verify CRDT implementations — particularly important for sequence CRDTs where the integration rules are complex.
+
+**Privacy-preserving sync.** End-to-end encrypted collaborative documents where the server syncs CRDT state without being able to read it. Requires CRDTs to operate on encrypted representations, which is an active research area.
+
+**CRDT databases.** First-class CRDT query languages and storage engines, rather than CRDTs as a library layer on top of existing databases. Projects like **Electric SQL** and **Riffle** are exploring this space.
+
+The fundamental insight — that you can design data structures whose merge function is provably convergent — remains one of the cleanest ideas in distributed systems. The math is 30 years old. The engineering practice is still maturing.
+
+---
+
+The two engineers on the plane, offline for three hours, making changes to the same document: when they land and sync, the document converges. Not by luck. Not by a complex conflict resolution UI. Because someone, before either of them opened that document, made the right architectural decision: to represent the document's state as a CRDT.
+
+That decision moved the problem of concurrent writes from "how do we resolve conflicts" to "how do we design data structures." From a UX problem to a math problem. And the math, once you understand it, has a clean answer.
+
+---
+
+*What CRDT problems are you working on? The garbage collection problem, the move operation, and invariant enforcement are the three areas I find most genuinely unsolved for general-purpose production systems. Reach out if you've found approaches that work.*

@@ -11,7 +11,6 @@ readingTime: 12
 tags: [javascript, promises, event-loop, js-interview]
 ---
 import Note from '../../../components/astro/Note.astro'
-import { RunDemo } from '../../../components/react/sandpack/RunDemo'
 
 ---
 
@@ -98,8 +97,6 @@ printSquare(5);
 printSquare(6);
 ```
 
-<RunDemo client:visible id="before-promises/call-stack" label="Run: Call Stack Trace" />
-
 ## Blocking the Thread
 
 Because there is only one thread, any code that takes a long time to run will hold up *everything* else. No other JavaScript can execute, no UI updates can be painted, no click handlers can fire — the entire page is frozen until that code finishes.
@@ -138,9 +135,7 @@ document.getElementById('btn').addEventListener('click', doHeavyWork);
 // <button id="btn">Start Heavy Work</button>
 ```
 
-<RunDemo client:visible id="before-promises/blocking-thread" label="Run: Blocking Demo" />
-
-Click the button and watch the counter freeze mid-tick. The `while` loop monopolises the thread. The interval timer fires, but its callback is queued and cannot run until the stack is clear — which doesn't happen until the loop finishes.
+The `while` loop monopolises the thread. The interval timer fires, but its callback is queued and cannot run until the stack is clear — which doesn't happen until the loop finishes.
 
 This is why you should never do heavy computation synchronously on the main thread.
 
@@ -328,8 +323,6 @@ Promise.resolve()
 
 console.log('script end');         // (2)
 ```
-
-<RunDemo client:visible id="before-promises/event-loop-trace" label="Run: Event Loop Trace" />
 
 Step-by-step trace:
 

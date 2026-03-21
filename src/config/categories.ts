@@ -105,3 +105,23 @@ export function buildFilterCategories(categoriesInContent: string[]): string[] {
   const unknown = unique.filter((n) => !KNOWN_CATEGORY_NAMES.includes(n)).sort();
   return ['All', ...known, ...unknown];
 }
+
+/**
+ * Converts a category name to a URL-safe slug used in static JSON API paths.
+ * Must be the single source of truth — used by both the endpoint generator
+ * (build time) and the PostsGrid fetch calls (runtime).
+ *
+ * Examples:
+ *   "All"             → "all"
+ *   "Deep Dive"       → "deep-dive"
+ *   "AI & Automation" → "ai-and-automation"
+ */
+export function slugifyCategory(category: string): string {
+  return category
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+}
