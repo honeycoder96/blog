@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { lerp } from '../../../lib/animation';
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 function usePrefersReducedMotion(): boolean {
   if (typeof window === 'undefined') return false;
