@@ -29,6 +29,11 @@ export async function getStaticPaths() {
 const { post } = Astro.props;
 const { Content, headings } = await render(post);
 
+// Compute reading time from raw body if the remark plugin didn't inject it
+const readingTime =
+  post.data.readingTime ??
+  Math.max(1, Math.ceil(post.body.trim().split(/\s+/).filter(Boolean).length / 200));
+
 const allPosts = await getCollection('blog');
 
 // Prev / Next posts
@@ -54,7 +59,7 @@ const relatedPosts = post.data.relatedPosts.length
   pubDate={post.data.pubDate}
   category={post.data.category}
   author={post.data.author}
-  readingTime={post.data.readingTime}
+  readingTime={readingTime}
   tags={post.data.tags}
   isVisible={post.data.isVisible}
   headings={headings}

@@ -42,6 +42,10 @@ export async function getStaticPaths() {
 const { entry, seriesTitle, part, total, prevPost, nextPost } = Astro.props;
 const { seriesSlug } = Astro.params;
 const { Content, headings } = await render(entry);
+
+const readingTime =
+  entry.data.readingTime ??
+  Math.max(1, Math.ceil(entry.body.trim().split(/\s+/).filter(Boolean).length / 200));
 ---
 
 <BlogLayout
@@ -51,7 +55,7 @@ const { Content, headings } = await render(entry);
   pubDate={entry.data.pubDate}
   category={entry.data.category}
   author={entry.data.author}
-  readingTime={entry.data.readingTime}
+  readingTime={readingTime}
   tags={entry.data.tags}
   headings={headings}
   prevPost={prevPost}
