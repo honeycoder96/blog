@@ -159,6 +159,7 @@ export const ContactForm: React.FC = () => {
                 value={formData[fieldName]}
                 onChange={handleInputChange}
                 disabled={formState !== 'idle'}
+                autoComplete={fieldName === 'email' ? 'email' : 'name'}
                 className={`w-full bg-transparent py-4 outline-none transition-opacity peer text-fg ${
                   isBusy(formState) ? 'opacity-0' : 'opacity-50 focus:opacity-100'
                 }`}

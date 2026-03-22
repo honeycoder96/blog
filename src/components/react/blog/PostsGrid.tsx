@@ -92,7 +92,7 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
       setPage(pageNum);
       prefetchInBackground(pageNum + 1);
     } catch (e) {
-      if ((e as Error).name === 'AbortError') return;
+      if (e instanceof Error && e.name === 'AbortError') return;
       setError('Failed to load posts. Please try again.');
     } finally {
       setIsLoading(false);

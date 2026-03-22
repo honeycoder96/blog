@@ -88,7 +88,10 @@ export function countByCategory(categories: string[]): Record<string, number> {
  * Splits the series collection into index entries and post entries.
  * Use this when you need raw entries (e.g. prev/next navigation, OG images).
  */
-export async function splitSeriesEntries() {
+export async function splitSeriesEntries(): Promise<{
+  indexEntries: CollectionEntry<'series'>[];
+  postEntries: CollectionEntry<'series'>[];
+}> {
   const all = await getCollection('series');
   return {
     indexEntries: all.filter((e) => e.id.endsWith('/index.md')),

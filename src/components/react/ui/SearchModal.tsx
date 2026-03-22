@@ -35,6 +35,7 @@ export const SearchModal: React.FC = () => {
   const [hasSearched, setHasSearched] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -83,6 +84,29 @@ export const SearchModal: React.FC = () => {
     if (!isOpen) return;
     const t = setTimeout(() => inputRef.current?.focus(), 200);
     return () => clearTimeout(t);
+  }, [isOpen]);
+
+  // Focus trap — keep Tab/Shift+Tab within the modal when open
+  useEffect(() => {
+    if (!isOpen) return;
+    const onTab = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || !modalRef.current) return;
+      const focusable = Array.from(
+        modalRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input, textarea, select, [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => !el.closest('[aria-hidden="true"]'));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener('keydown', onTab);
+    return () => document.removeEventListener('keydown', onTab);
   }, [isOpen]);
 
   const doSearch = useCallback(async (q: string) => {
@@ -160,6 +184,10 @@ export const SearchModal: React.FC = () => {
 
       {/* ── Modal panel ── */}
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search"
         className="fixed inset-0 z-[101] flex flex-col"
         style={{
           opacity: isOpen ? 1 : 0,

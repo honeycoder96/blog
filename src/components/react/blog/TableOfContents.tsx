@@ -30,7 +30,11 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({ headings }) =>
     );
     filtered.forEach(({ slug }) => {
       const el = document.getElementById(slug);
-      if (el) observer.observe(el);
+      if (el) {
+        observer.observe(el);
+      } else if (import.meta.env.DEV) {
+        console.warn(`[TableOfContents] heading element not found in DOM: #${slug}`);
+      }
     });
     return () => observer.disconnect();
   }, [filtered]);
