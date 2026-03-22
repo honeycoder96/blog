@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Check } from 'lucide-react';
 import { useScrambleText } from '../hooks/useScrambleText';
 import { delay } from '../../../lib/utils';

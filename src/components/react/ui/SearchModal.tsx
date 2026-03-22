@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Search, ArrowRight } from 'lucide-react';
 
 /** Maximum number of search results to render. */

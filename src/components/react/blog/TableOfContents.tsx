@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { MAX_TOC_DEPTH, scrollToHeading } from '../../../lib/toc';
 
 /** IntersectionObserver rootMargin: fires when heading enters top 20% of viewport. */

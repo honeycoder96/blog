@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { AnimatedTitle } from '../ui/AnimatedTitle';
 import { siteConfig } from '../../../config/site';
 

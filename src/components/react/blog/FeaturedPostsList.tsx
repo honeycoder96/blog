@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ArrowRight, Terminal } from 'lucide-react';
 import { lerp } from '../../../lib/animation';
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';

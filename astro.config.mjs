@@ -1,5 +1,5 @@
 import { defineConfig } from 'astro/config';
-import react from '@astrojs/react';
+import preact from '@astrojs/preact';
 import tailwindcss from '@tailwindcss/vite';
 import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
@@ -19,7 +19,7 @@ export default defineConfig({
     inlineStylesheets: 'auto',
   },
   integrations: [
-    react(),
+    preact({ compat: true }),
     mdx(),
     // Forward gtag and dataLayer to the Partytown web worker so GA4 runs
     // completely off the main thread, eliminating its render-blocking impact.
@@ -50,10 +50,26 @@ export default defineConfig({
   vite: {
     plugins: [tailwindcss()],
     resolve: {
-      dedupe: ['react', 'react-dom'],
+      // Dedupe both preact and its react-compat aliases so all packages share
+      // one instance, avoiding symbol mismatches (e.g. forwardRef $$typeof).
+      dedupe: ['preact', 'preact/compat', 'react', 'react-dom'],
+    },
+    // Process lucide-react through Vite during SSR so the react→preact/compat
+    // alias is applied when lucide-react imports react (forwardRef etc.).
+    // Without this, Vite treats it as an external and the alias is skipped,
+    // causing forwardRef components to appear as [object Object] in SSR output.
+    ssr: {
+      noExternal: ['lucide-react'],
     },
     optimizeDeps: {
-      include: ['react', 'react-dom'],
+      // Pre-bundle at dev-server startup so Vite does not re-transform these
+      // on every navigation request (which caused the dev-mode nav delay).
+      include: [
+        'preact',
+        'preact/compat',
+        'preact/jsx-runtime',
+        'lucide-react',
+      ],
     },
     build: {
       // Threshold that Astro's inlineStylesheets:'auto' uses.

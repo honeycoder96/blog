@@ -1,4 +1,4 @@
-import React from 'react';
+
 
 /**
  * A single animated skeleton row matching the two-column post/series list layout.

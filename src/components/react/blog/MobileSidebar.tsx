@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { MAX_TOC_DEPTH, scrollToHeading } from '../../../lib/toc';
 
 interface Heading {
