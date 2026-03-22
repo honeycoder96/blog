@@ -10,6 +10,13 @@ export default defineConfig({
   site: siteConfig.siteUrl,
   output: 'static',
   prefetch: true,
+  build: {
+    // Inline stylesheets smaller than 12 KiB directly into the HTML response.
+    // This eliminates the render-blocking <link rel="stylesheet"> round-trip
+    // for page-specific CSS chunks (e.g. _slug_.css at ~9.6 KiB).
+    // The global CSS (Tailwind) is larger and stays as a separate cached file.
+    inlineStylesheets: 'auto',
+  },
   integrations: [
     react(),
     mdx(),
@@ -41,6 +48,9 @@ export default defineConfig({
       include: ['react', 'react-dom'],
     },
     build: {
+      // Threshold that Astro's inlineStylesheets:'auto' uses.
+      // 12288 = 12 KiB — covers _slug_.css (~9.6 KiB) but not the global bundle.
+      assetsInlineLimit: 12288,
       rollupOptions: {
         // pagefind.js is generated post-build and does not exist during Vite's
         // bundle phase — mark it external so Rollup skips resolution entirely.
