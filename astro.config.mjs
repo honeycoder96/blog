@@ -3,6 +3,7 @@ import react from '@astrojs/react';
 import tailwindcss from '@tailwindcss/vite';
 import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
+import partytown from '@astrojs/partytown';
 import { remarkReadingTime } from './src/lib/remark-reading-time.ts';
 import { siteConfig } from './src/config/site.ts';
 
@@ -20,6 +21,13 @@ export default defineConfig({
   integrations: [
     react(),
     mdx(),
+    // Forward gtag and dataLayer to the Partytown web worker so GA4 runs
+    // completely off the main thread, eliminating its render-blocking impact.
+    partytown({
+      config: {
+        forward: ['dataLayer.push', 'gtag'],
+      },
+    }),
     sitemap({
       filter: (page) => !page.includes('/blog/hidden/'),
       serialize(item) {

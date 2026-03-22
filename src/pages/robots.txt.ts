@@ -6,6 +6,31 @@ export const GET: APIRoute = () => {
 Allow: /
 Disallow: /og/
 
+# Block AI training crawlers
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: PerplexityBot
+Disallow: /
+
+User-agent: Claude-Web
+Disallow: /
+
+User-agent: Amazonbot
+Disallow: /
+
+User-agent: FacebookBot
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
 Sitemap: ${siteConfig.siteUrl}/sitemap-index.xml
 `;
 

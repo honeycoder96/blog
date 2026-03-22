@@ -93,23 +93,28 @@ const gaMeasurementId = siteConfig.analytics.gaMeasurementId;
     <link rel="preload" as="font" type="font/woff2" href="/fonts/inter-400.woff2" crossorigin />
     <link rel="preload" as="font" type="font/woff2" href="/fonts/inter-700.woff2" crossorigin />
 
-    <!-- Google Analytics 4 -->
+    <!-- Google Analytics 4 via Partytown — runs in a web worker, not the main thread -->
     {gaMeasurementId && (
       <>
-        <script async src={`https://www.googletagmanager.com/gtag/js?id=${gaMeasurementId}`}></script>
-        <script is:inline define:vars={{ gaMeasurementId }}>
+        {/* gtag library — Partytown intercepts type="text/partytown" and moves it to a worker */}
+        <script type="text/partytown" async src={`https://www.googletagmanager.com/gtag/js?id=${gaMeasurementId}`}></script>
+        {/* gtag initialisation — also runs in the worker */}
+        <script type="text/partytown" is:inline define:vars={{ gaMeasurementId }}>
           window.dataLayer = window.dataLayer || [];
           function gtag(){ dataLayer.push(arguments); }
           gtag('js', new Date());
-          // send_page_view: false — fired manually on astro:page-load so every
-          // View Transition navigation is tracked, not just hard page loads.
           gtag('config', gaMeasurementId, { send_page_view: false });
-
+        </script>
+        {/* Page-view tracking stays on the main thread.
+            Partytown proxies window.gtag so calls here are forwarded to the worker. */}
+        <script is:inline define:vars={{ gaMeasurementId }}>
           document.addEventListener('astro:page-load', function () {
-            gtag('event', 'page_view', {
-              page_location: window.location.href,
-              page_title: document.title,
-            });
+            if (typeof window.gtag === 'function') {
+              window.gtag('event', 'page_view', {
+                page_location: window.location.href,
+                page_title: document.title,
+              });
+            }
           });
         </script>
       </>
@@ -117,7 +122,7 @@ const gaMeasurementId = siteConfig.analytics.gaMeasurementId;
   </head>
   <body class="bg-surface text-fg font-sans overflow-x-hidden">
     <CustomCursor client:idle />
-    <SearchModal client:load />
+    <SearchModal client:idle />
     <slot />
   </body>
 </html>
