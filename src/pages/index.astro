@@ -63,7 +63,7 @@ const jsonLd = JSON.stringify([
   <div class="px-8 lg:px-24">
     <div class="max-w-7xl mx-auto">
       <!-- Hero -->
-      <HeroSection client:load />
+      <HeroSection />
 
       <!-- Featured post card -->
       {featuredPost && (
@@ -122,8 +122,8 @@ const jsonLd = JSON.stringify([
         </a>
       </div>
 
-      <!-- FeaturedPostsList: client:visible — below fold, lazy hydrate -->
-      <FeaturedPostsList posts={featuredPosts} client:idle />
+      <!-- FeaturedPostsList: client:visible — below fold, hydrate on scroll -->
+      <FeaturedPostsList posts={featuredPosts} client:visible />
     </div>
   </section>
 

@@ -1,6 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import { lerp } from '../../../lib/animation';
-import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
+
+function usePrefersReducedMotion(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
 
 export const CustomCursor: React.FC = () => {
   const cursorRef = useRef<HTMLDivElement>(null);
