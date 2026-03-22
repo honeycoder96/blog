@@ -98,5 +98,9 @@ const featuredPosts = sorted
   <CategoriesSection categories={HOMEPAGE_CATEGORIES} categoryCounts={categoryCounts} client:visible />
 
   <!-- Newsletter: client:visible -->
-  <NewsletterSection client:visible />
+  <NewsletterSection
+    endpoint={siteConfig.newsletter.endpoint}
+    source={siteConfig.newsletter.source}
+    client:visible
+  />
 </PageLayout>
