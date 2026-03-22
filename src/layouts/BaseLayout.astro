@@ -99,28 +99,20 @@ const gaMeasurementId = siteConfig.analytics.gaMeasurementId;
     <link rel="preload" as="font" type="font/woff2" href="/fonts/inter-500.woff2" crossorigin />
     <link rel="preload" as="font" type="font/woff2" href="/fonts/inter-700.woff2" crossorigin />
 
-    <!-- Google Analytics 4 via Partytown — runs in a web worker, not the main thread -->
+    <!-- Google Analytics 4 — async, non-blocking -->
     {gaMeasurementId && (
       <>
-        {/* gtag library — Partytown intercepts type="text/partytown" and moves it to a worker */}
-        <script type="text/partytown" async src={`https://www.googletagmanager.com/gtag/js?id=${gaMeasurementId}`}></script>
-        {/* gtag initialisation — also runs in the worker */}
-        <script type="text/partytown" is:inline define:vars={{ gaMeasurementId }}>
+        <script async src={`https://www.googletagmanager.com/gtag/js?id=${gaMeasurementId}`}></script>
+        <script is:inline define:vars={{ gaMeasurementId }}>
           window.dataLayer = window.dataLayer || [];
           function gtag(){ dataLayer.push(arguments); }
           gtag('js', new Date());
           gtag('config', gaMeasurementId, { send_page_view: false });
-        </script>
-        {/* Page-view tracking stays on the main thread.
-            Partytown proxies window.gtag so calls here are forwarded to the worker. */}
-        <script is:inline define:vars={{ gaMeasurementId }}>
           document.addEventListener('astro:page-load', function () {
-            if (typeof window.gtag === 'function') {
-              window.gtag('event', 'page_view', {
-                page_location: window.location.href,
-                page_title: document.title,
-              });
-            }
+            gtag('event', 'page_view', {
+              page_location: window.location.href,
+              page_title: document.title,
+            });
           });
         </script>
       </>
