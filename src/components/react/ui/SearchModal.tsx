@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Search, ArrowRight } from 'lucide-react';
+import { X, Search, ArrowRight } from './Icons';
 
 /** Maximum number of search results to render. */
 const MAX_SEARCH_RESULTS = 8;

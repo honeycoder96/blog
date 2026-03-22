@@ -1,5 +1,5 @@
 
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight } from '../ui/Icons';
 import { slugifyCategory } from '../../../config/categories';
 
 export interface CategoryCardData {

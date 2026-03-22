@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight } from '../ui/Icons';
 import { CATEGORY_COLOR_MAP, slugifyCategory } from '../../../config/categories';
 import { ListSkeleton } from '../ui/ListSkeleton';
 import { ErrorRetry } from '../ui/ErrorRetry';

@@ -25,38 +25,39 @@ const featuredPosts = sorted
     },
   }));
 
-const jsonLd = JSON.stringify([
-  {
-    '@context': 'https://schema.org',
-    '@type': 'WebSite',
-    name: siteConfig.siteName,
-    url: siteConfig.siteUrl,
-    description: siteConfig.description,
-    author: { '@type': 'Person', name: siteConfig.author },
-    potentialAction: {
-      '@type': 'SearchAction',
-      target: {
-        '@type': 'EntryPoint',
-        urlTemplate: `${siteConfig.siteUrl}/blog?q={search_term_string}`,
+const jsonLd = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'WebSite',
+      name: siteConfig.siteName,
+      url: siteConfig.siteUrl,
+      description: siteConfig.description,
+      author: { '@type': 'Person', name: siteConfig.author },
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: {
+          '@type': 'EntryPoint',
+          urlTemplate: `${siteConfig.siteUrl}/blog?q={search_term_string}`,
+        },
+        'query-input': 'required name=search_term_string',
       },
-      'query-input': 'required name=search_term_string',
     },
-  },
-  {
-    '@context': 'https://schema.org',
-    '@type': 'Person',
-    name: siteConfig.author,
-    url: siteConfig.social.website,
-    sameAs: [
-      siteConfig.social.github,
-      siteConfig.social.linkedin,
-      `https://twitter.com/${siteConfig.social.twitter.replace('@', '')}`,
-    ],
-    jobTitle: 'Software Engineer',
-    description: siteConfig.bio,
-    email: siteConfig.social.email,
-  },
-]);
+    {
+      '@type': 'Person',
+      name: siteConfig.author,
+      url: siteConfig.social.website,
+      sameAs: [
+        siteConfig.social.github,
+        siteConfig.social.linkedin,
+        `https://twitter.com/${siteConfig.social.twitter.replace('@', '')}`,
+      ],
+      jobTitle: 'Software Engineer',
+      description: siteConfig.bio,
+      email: siteConfig.social.email,
+    },
+  ],
+});
 ---
 
 <PageLayout title={siteConfig.siteTitle} jsonLd={jsonLd}>

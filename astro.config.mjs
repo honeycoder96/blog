@@ -54,21 +54,13 @@ export default defineConfig({
       // one instance, avoiding symbol mismatches (e.g. forwardRef $$typeof).
       dedupe: ['preact', 'preact/compat', 'react', 'react-dom'],
     },
-    // Process lucide-react through Vite during SSR so the react→preact/compat
-    // alias is applied when lucide-react imports react (forwardRef etc.).
-    // Without this, Vite treats it as an external and the alias is skipped,
-    // causing forwardRef components to appear as [object Object] in SSR output.
-    ssr: {
-      noExternal: ['lucide-react'],
-    },
     optimizeDeps: {
       // Pre-bundle at dev-server startup so Vite does not re-transform these
-      // on every navigation request (which caused the dev-mode nav delay).
+      // on every navigation request.
       include: [
         'preact',
         'preact/compat',
         'preact/jsx-runtime',
-        'lucide-react',
       ],
     },
     build: {

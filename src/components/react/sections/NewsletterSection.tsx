@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, AlertCircle, Loader2 } from 'lucide-react';
+import { Check, AlertCircle, Loader2 } from '../ui/Icons';
 
 interface Props {
   endpoint: string;

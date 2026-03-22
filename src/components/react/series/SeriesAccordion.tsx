@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronDown, BookOpen, Clock } from 'lucide-react';
+import { ChevronDown, BookOpen, Clock } from '../ui/Icons';
 import { CATEGORY_COLOR_MAP, slugifyCategory } from '../../../config/categories';
 import { ListSkeleton } from '../ui/ListSkeleton';
 import { ErrorRetry } from '../ui/ErrorRetry';
