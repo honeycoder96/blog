@@ -4,19 +4,12 @@ import { HeroSection } from '../components/react/sections/HeroSection';
 import { FeaturedPostsList } from '../components/react/blog/FeaturedPostsList';
 import { CategoriesSection } from '../components/react/sections/CategoriesSection';
 import { NewsletterSection } from '../components/react/sections/NewsletterSection';
-import { getCollection } from 'astro:content';
 import { HOMEPAGE_CATEGORIES } from '../config/categories';
 import { siteConfig } from '../config/site';
+import { getPublishedPosts, countByCategory } from '../lib/content';
 
-const allPosts = await getCollection('blog');
-const sorted = allPosts
-  .filter((p) => !p.data.draft && p.data.isVisible !== false)
-  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
-
-const categoryCounts = sorted.reduce<Record<string, number>>((acc, p) => {
-  acc[p.data.category] = (acc[p.data.category] ?? 0) + 1;
-  return acc;
-}, {});
+const sorted = await getPublishedPosts();
+const categoryCounts = countByCategory(sorted.map((p) => p.data.category));
 const featuredPost = sorted.find((p) => p.data.featured);
 const featuredPosts = sorted
   .filter((p) => p.data.featured)

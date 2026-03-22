@@ -1,11 +1,14 @@
 import React, { useEffect, useRef } from 'react';
+import { lerp } from '../../../lib/animation';
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 
 export const CustomCursor: React.FC = () => {
   const cursorRef = useRef<HTMLDivElement>(null);
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
     // Skip animation loop for users who prefer reduced motion
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (prefersReducedMotion) return;
 
     const el = cursorRef.current;
     if (!el) return;
@@ -18,8 +21,6 @@ export const CustomCursor: React.FC = () => {
     let hovering = false;
     let rafId: number;
     let started = false;
-
-    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
     const animate = () => {
       pos.x = lerp(pos.x, target.x, 0.15);
@@ -57,7 +58,7 @@ export const CustomCursor: React.FC = () => {
       window.removeEventListener('mouseover', onMouseOver);
       cancelAnimationFrame(rafId);
     };
-  }, []);
+  }, [prefersReducedMotion]);
 
   return (
     <div

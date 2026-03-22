@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { MAX_TOC_DEPTH, scrollToHeading } from '../../../lib/toc';
 
 interface Heading {
   depth: number;
@@ -12,7 +13,7 @@ interface TableOfContentsProps {
 
 export const TableOfContents: React.FC<TableOfContentsProps> = ({ headings }) => {
   const [activeSlug, setActiveSlug] = useState<string>('');
-  const filtered = headings.filter((h) => h.depth <= 2);
+  const filtered = headings.filter((h) => h.depth <= MAX_TOC_DEPTH);
   const indicatorRef = useRef<HTMLSpanElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
@@ -84,7 +85,7 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({ headings }) =>
                   data-slug={heading.slug}
                   onClick={(e) => {
                     e.preventDefault();
-                    document.getElementById(heading.slug)?.scrollIntoView({ behavior: 'smooth' });
+                    scrollToHeading(heading.slug);
                   }}
                   className={`block text-sm leading-relaxed transition-colors duration-200 py-0.5 ${
                     heading.depth === 2 ? 'pl-6' : 'pl-3'

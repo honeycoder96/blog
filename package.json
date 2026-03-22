@@ -6,10 +6,16 @@
     "dev": "astro dev",
     "build": "astro build && npx pagefind --site dist",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\"",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "framer-motion": "^12.34.4",
     "lucide-react": "^0.575.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
@@ -25,7 +31,13 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "astro": "^5.17.1",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "prettier": "^3.8.1",
     "satori": "^0.26.0",
-    "tailwindcss": "^4.2.1"
+    "tailwindcss": "^4.2.1",
+    "typescript-eslint": "^8.57.1",
+    "vitest": "^4.1.0"
   }
 }

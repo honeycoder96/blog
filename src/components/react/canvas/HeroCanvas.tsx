@@ -1,21 +1,78 @@
 import React, { useRef, useEffect } from 'react';
 import { useTheme } from '../hooks/useTheme';
-
-function usePrefersReducedMotion() {
-  if (typeof window === 'undefined') return false;
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 
 const THEME_COLORS: Record<string, { bg: string; particle: string; lineRgb: string }> = {
   dark: { bg: 'rgba(10,10,10,1)', particle: 'rgba(255,255,255,0.2)', lineRgb: '255,255,255' },
   light: { bg: 'rgba(255,255,255,1)', particle: 'rgba(0,0,0,0.15)', lineRgb: '0,0,0' },
 };
 
+// Extracted to module scope so the react-hooks linter can analyse it correctly.
+// Receives context (canvas, ctx, themeRef, mouse) as method parameters instead of closure.
+class Particle {
+  x: number; y: number;
+  directionX: number; directionY: number;
+  size: number;
+  baseX: number; baseY: number;
+  density: number;
+
+  constructor(x: number, y: number, directionX: number, directionY: number, size: number) {
+    this.x = x; this.y = y;
+    this.directionX = directionX; this.directionY = directionY;
+    this.size = size;
+    this.baseX = x; this.baseY = y;
+    this.density = Math.random() * 30 + 1;
+  }
+
+  draw(ctx: CanvasRenderingContext2D, theme: string) {
+    const colors = THEME_COLORS[theme] || THEME_COLORS.dark;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2, false);
+    ctx.fillStyle = colors.particle;
+    ctx.fill();
+  }
+
+  update(
+    canvas: HTMLCanvasElement,
+    ctx: CanvasRenderingContext2D,
+    theme: string,
+    mouse: { x: number | null; y: number | null; radius: number },
+  ) {
+    if (this.x > canvas.width || this.x < 0) this.directionX = -this.directionX;
+    if (this.y > canvas.height || this.y < 0) this.directionY = -this.directionY;
+
+    if (mouse.x !== null && mouse.y !== null) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const forceX = dx / distance;
+      const forceY = dy / distance;
+      const maxDist = mouse.radius;
+      const force = (maxDist - distance) / maxDist;
+
+      if (distance < mouse.radius) {
+        this.x -= forceX * force * this.density;
+        this.y -= forceY * force * this.density;
+      } else {
+        if (this.x !== this.baseX) this.x -= (this.x - this.baseX) / 10;
+        if (this.y !== this.baseY) this.y -= (this.y - this.baseY) / 10;
+      }
+    }
+
+    this.x += this.directionX;
+    this.y += this.directionY;
+    this.draw(ctx, theme);
+  }
+}
+
 export const HeroCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const prefersReducedMotion = usePrefersReducedMotion();
   const theme = useTheme();
   const themeRef = useRef(theme);
+  // Intentionally update during render so the RAF callback always reads the latest
+  // theme without needing to cancel/restart the animation loop on every theme change.
+  // eslint-disable-next-line react-hooks/refs
   themeRef.current = theme;
 
   useEffect(() => {
@@ -35,57 +92,6 @@ export const HeroCanvas: React.FC = () => {
     };
 
     window.addEventListener('mousemove', handleMouseMove);
-
-    class Particle {
-      x: number; y: number;
-      directionX: number; directionY: number;
-      size: number;
-      baseX: number; baseY: number;
-      density: number;
-
-      constructor(x: number, y: number, directionX: number, directionY: number, size: number) {
-        this.x = x; this.y = y;
-        this.directionX = directionX; this.directionY = directionY;
-        this.size = size;
-        this.baseX = x; this.baseY = y;
-        this.density = Math.random() * 30 + 1;
-      }
-
-      draw() {
-        const colors = THEME_COLORS[themeRef.current] || THEME_COLORS.dark;
-        ctx!.beginPath();
-        ctx!.arc(this.x, this.y, this.size, 0, Math.PI * 2, false);
-        ctx!.fillStyle = colors.particle;
-        ctx!.fill();
-      }
-
-      update() {
-        if (this.x > canvas!.width || this.x < 0) this.directionX = -this.directionX;
-        if (this.y > canvas!.height || this.y < 0) this.directionY = -this.directionY;
-
-        if (mouse.x !== null && mouse.y !== null) {
-          const dx = mouse.x - this.x;
-          const dy = mouse.y - this.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          const forceX = dx / distance;
-          const forceY = dy / distance;
-          const maxDist = mouse.radius;
-          const force = (maxDist - distance) / maxDist;
-
-          if (distance < mouse.radius) {
-            this.x -= forceX * force * this.density;
-            this.y -= forceY * force * this.density;
-          } else {
-            if (this.x !== this.baseX) this.x -= (this.x - this.baseX) / 10;
-            if (this.y !== this.baseY) this.y -= (this.y - this.baseY) / 10;
-          }
-        }
-
-        this.x += this.directionX;
-        this.y += this.directionY;
-        this.draw();
-      }
-    }
 
     const init = () => {
       particles = [];
@@ -127,7 +133,7 @@ export const HeroCanvas: React.FC = () => {
       const colors = THEME_COLORS[themeRef.current] || THEME_COLORS.dark;
       ctx!.fillStyle = colors.bg;
       ctx!.fillRect(0, 0, canvas!.width, canvas!.height);
-      particles.forEach(p => p.update());
+      particles.forEach(p => p.update(canvas!, ctx!, themeRef.current, mouse));
       connect();
     };
 

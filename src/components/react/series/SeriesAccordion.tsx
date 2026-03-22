@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronDown, BookOpen, Clock } from 'lucide-react';
-import { CATEGORY_COLOR_MAP, slugifyCategory } from '../../../config/categories.client';
+import { CATEGORY_COLOR_MAP, slugifyCategory } from '../../../config/categories';
+import { ListSkeleton } from '../ui/ListSkeleton';
+import { ErrorRetry } from '../ui/ErrorRetry';
 
 interface SeriesPost {
   slug: string;
@@ -22,7 +24,7 @@ interface CachedPage {
   total: number;
 }
 
-interface Props {
+interface SeriesAccordionProps {
   initialSeries: Series[];
   initialTotal: number;
   categories: string[];
@@ -145,7 +147,7 @@ const AccordionItem: React.FC<AccordionItemProps> = ({ s, isOpen, onToggle, isNe
 // Main component
 // ---------------------------------------------------------------------------
 
-export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, categories, categoryCounts }) => {
+export const SeriesAccordion: React.FC<SeriesAccordionProps> = ({ initialSeries, initialTotal, categories, categoryCounts }) => {
   const [activeCategory, setActiveCategory] = useState<string>(() => {
     if (typeof window === 'undefined') return 'All';
     const param = new URLSearchParams(window.location.search).get('category');
@@ -241,6 +243,9 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
     if (param && categories.includes(param) && param !== 'All') {
       fetchPage(param, 1, false);
     }
+    // Intentionally empty deps: runs once on hydration only. prefetchInBackground
+    // and fetchPage are stable (wrapped in useCallback) but including them would
+    // re-run this effect on every render cycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -326,49 +331,19 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
         </div>
       )}
 
-      {/* Loading skeleton — full replace */}
+      {/* Loading skeleton — full replace (category switch) */}
       {isLoading && series.length === 0 && (
         <div className="w-full flex flex-col border-t border-line">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="border-b border-line py-8 md:py-10 flex flex-col md:flex-row gap-4 animate-pulse">
-              <div className="md:w-1/4 flex flex-col gap-3">
-                <div className="h-5 w-24 rounded-full bg-line" />
-                <div className="h-3 w-16 rounded bg-line" />
-              </div>
-              <div className="md:w-2/4 flex flex-col gap-2">
-                <div className="h-6 w-3/4 rounded bg-line" />
-                <div className="h-4 w-full rounded bg-line" />
-              </div>
-            </div>
-          ))}
+          {[...Array(3)].map((_, i) => <ListSkeleton key={i} />)}
         </div>
       )}
 
       {/* Append skeleton — Load More in progress */}
-      {isLoading && series.length > 0 && (
-        <div className="border-b border-line py-8 md:py-10 flex flex-col md:flex-row gap-4 animate-pulse">
-          <div className="md:w-1/4 flex flex-col gap-3">
-            <div className="h-5 w-24 rounded-full bg-line" />
-            <div className="h-3 w-16 rounded bg-line" />
-          </div>
-          <div className="md:w-2/4 flex flex-col gap-2">
-            <div className="h-6 w-3/4 rounded bg-line" />
-            <div className="h-4 w-full rounded bg-line" />
-          </div>
-        </div>
-      )}
+      {isLoading && series.length > 0 && <ListSkeleton />}
 
       {/* Error state */}
       {error && !isLoading && (
-        <div className="flex flex-col items-center gap-4 py-12 text-center">
-          <p className="font-mono text-sm text-fg-muted">{error}</p>
-          <button
-            onClick={() => fetchPage(activeCategory, page, false)}
-            className="px-6 py-2 rounded-full border border-line text-fg-muted hover:border-line-strong hover:text-fg font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer"
-          >
-            Retry
-          </button>
-        </div>
+        <ErrorRetry message={error} onRetry={() => fetchPage(activeCategory, page, false)} />
       )}
 
       {hasMore && (

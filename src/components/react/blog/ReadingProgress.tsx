@@ -1,18 +1,19 @@
 import React, { useEffect, useRef } from 'react';
+import { lerp } from '../../../lib/animation';
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 
 export const ReadingProgress: React.FC = () => {
   const barRef = useRef<HTMLDivElement>(null);
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (prefersReducedMotion) return;
 
     const bar = barRef.current;
     if (!bar) return;
 
     let rafId: number;
     let current = 0;
-
-    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
     const update = () => {
       const scrolled = window.scrollY;
@@ -29,7 +30,7 @@ export const ReadingProgress: React.FC = () => {
     rafId = requestAnimationFrame(update);
 
     return () => cancelAnimationFrame(rafId);
-  }, []);
+  }, [prefersReducedMotion]);
 
   return (
     <div

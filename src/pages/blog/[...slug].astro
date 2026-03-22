@@ -1,6 +1,7 @@
 ---
 import { getCollection, render } from 'astro:content';
 import BlogLayout from '../../layouts/BlogLayout.astro';
+import { resolveReadingTime, getRelatedPosts } from '../../lib/content';
 
 export async function getStaticPaths() {
   const posts = await getCollection('blog');
@@ -29,10 +30,7 @@ export async function getStaticPaths() {
 const { post } = Astro.props;
 const { Content, headings } = await render(post);
 
-// Compute reading time from raw body if the remark plugin didn't inject it
-const readingTime =
-  post.data.readingTime ??
-  Math.max(1, Math.ceil(post.body.trim().split(/\s+/).filter(Boolean).length / 200));
+const readingTime = resolveReadingTime(post.data.readingTime, post.body);
 
 const allPosts = await getCollection('blog');
 
@@ -44,12 +42,8 @@ const nextPost = post.data.nextPost
   ? allPosts.find((p) => p.slug === post.data.nextPost)
   : undefined;
 
-// Related posts
-const relatedPosts = post.data.relatedPosts.length
-  ? allPosts.filter((p) => post.data.relatedPosts.includes(p.slug)).slice(0, 2)
-  : allPosts
-      .filter((p) => p.slug !== post.slug && p.data.category === post.data.category)
-      .slice(0, 2);
+// Related posts — scores by tag overlap + category, prefers manual frontmatter
+const relatedPosts = getRelatedPosts(post, allPosts);
 ---
 
 <BlogLayout

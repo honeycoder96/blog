@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 
 const CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+';
 
-export const useScrambleText = (initialText = '') => {
+export function useScrambleText(initialText = '') {
   const [displayText, setDisplayText] = useState(initialText);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -41,4 +41,4 @@ export const useScrambleText = (initialText = '') => {
   }, []);
 
   return { displayText, scramble, setDisplayText };
-};
+}

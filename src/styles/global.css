@@ -362,6 +362,38 @@ body {
   font-weight: 600;
 }
 
+/* ── Search modal — results container entrance ────────────────── */
+
+@keyframes searchResultsIn {
+  from { opacity: 0; transform: translateY(32px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-results-in {
+  animation: searchResultsIn 0.35s 0.06s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-results-in { animation: none; }
+}
+
+/* ── ContactForm animations ───────────────────────────────────── */
+
+/* Success checkmark pop */
+@keyframes popIn {
+  0%   { transform: scale(0); }
+  65%  { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+.animate-pop-in {
+  animation: popIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pop-in { animation: none; }
+}
+
 /* ── Scrollbar ────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar { width: 6px; }

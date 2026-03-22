@@ -3,17 +3,15 @@ import PageLayout from '../../../layouts/PageLayout.astro';
 import { PostsGrid } from '../../../components/react/blog/PostsGrid';
 import { AnimatedTitle } from '../../../components/react/ui/AnimatedTitle';
 import CategoryFilterNav from '../../../components/astro/CategoryFilterNav.astro';
-import { getCollection } from 'astro:content';
 import { buildFilterCategories, slugifyCategory } from '../../../config/categories';
 import { siteConfig } from '../../../config/site';
+import { getPublishedPosts, mapPostToDisplay, countByCategory } from '../../../lib/content';
 
 const PAGE_SIZE = 10;
 
 export async function getStaticPaths() {
-  const allPosts = await getCollection('blog');
-  const visible = allPosts.filter((p) => !p.data.draft && p.data.isVisible !== false);
-  const uniqueCategories = [...new Set(visible.map((p) => p.data.category))];
-
+  const allVisible = await getPublishedPosts();
+  const uniqueCategories = [...new Set(allVisible.map((p) => p.data.category))];
   return uniqueCategories.map((category) => ({
     params: { slug: slugifyCategory(category) },
     props: { category },
@@ -22,34 +20,15 @@ export async function getStaticPaths() {
 
 const { category } = Astro.props;
 
-const allPosts = await getCollection('blog');
-const allVisible = allPosts
-  .filter((p) => !p.data.draft && p.data.isVisible !== false)
-  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
-
+const allVisible = await getPublishedPosts();
 const categoryPosts = allVisible
   .filter((p) => p.data.category === category)
-  .map((p) => ({
-    slug: p.slug,
-    data: {
-      title: p.data.title,
-      date: p.data.date,
-      category: p.data.category,
-      summary: p.data.summary,
-      readingTime: p.data.readingTime,
-      tags: p.data.tags,
-    },
-  }));
+  .map(mapPostToDisplay);
 
 const initialPosts = categoryPosts.slice(0, PAGE_SIZE);
 const totalPosts = categoryPosts.length;
-
 const categories = buildFilterCategories(allVisible.map((p) => p.data.category));
-
-const categoryCounts: Record<string, number> = { All: allVisible.length };
-for (const p of allVisible) {
-  categoryCounts[p.data.category] = (categoryCounts[p.data.category] ?? 0) + 1;
-}
+const categoryCounts = countByCategory(allVisible.map((p) => p.data.category));
 ---
 
 <PageLayout

@@ -4,6 +4,7 @@ import { ReadingProgress } from '../components/react/blog/ReadingProgress';
 import { TableOfContents } from '../components/react/blog/TableOfContents';
 import { MobileSidebar } from '../components/react/blog/MobileSidebar';
 import CategoryBadge from '../components/astro/CategoryBadge.astro';
+import AuthorBio from '../components/astro/AuthorBio.astro';
 import { siteConfig } from '../config/site';
 
 interface PostLink {
@@ -188,6 +189,9 @@ const jsonLd = JSON.stringify({
         </aside>
       )}
     </div>
+
+    <!-- Author bio -->
+    <AuthorBio author={author} />
 
     <!-- Bottom prev/next cards -->
     {hasPostNav && (

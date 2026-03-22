@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ArrowRight } from 'lucide-react';
-import { CATEGORY_COLOR_MAP, slugifyCategory } from '../../../config/categories.client';
+import { CATEGORY_COLOR_MAP, slugifyCategory } from '../../../config/categories';
+import { ListSkeleton } from '../ui/ListSkeleton';
+import { ErrorRetry } from '../ui/ErrorRetry';
 
 interface Post {
   slug: string;
@@ -33,8 +35,6 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Slugs present on initial render — these don't get the enter animation
-  const initialSlugs = useRef<Set<string>>(new Set(initialPosts.map((p) => p.slug)));
   // Slugs added via Load More — get the CSS enter animation
   const newSlugs = useRef<Set<string>>(new Set());
 
@@ -105,6 +105,10 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
 
   useEffect(() => {
     prefetchInBackground(2);
+    // Intentionally empty deps: runs once on mount to warm the cache for page 2.
+    // prefetchInBackground is stable (useCallback with [category]) but including it
+    // would re-run this effect on every category change, which is not desired here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -208,31 +212,12 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
         </div>
       )}
 
-      {/* Append skeleton — Load More in progress (#20) */}
-      {isLoading && posts.length > 0 && (
-        <div className="border-b border-line py-8 md:py-10 flex flex-col md:flex-row gap-4 animate-pulse">
-          <div className="md:w-1/4 flex flex-col gap-3">
-            <div className="h-3 w-16 rounded bg-line" />
-            <div className="h-5 w-24 rounded-full bg-line" />
-          </div>
-          <div className="md:w-2/4 flex flex-col gap-2">
-            <div className="h-6 w-3/4 rounded bg-line" />
-            <div className="h-4 w-full rounded bg-line" />
-          </div>
-        </div>
-      )}
+      {/* Append skeleton — Load More in progress */}
+      {isLoading && posts.length > 0 && <ListSkeleton />}
 
-      {/* Error state (#19) */}
+      {/* Error state */}
       {error && !isLoading && (
-        <div className="flex flex-col items-center gap-4 py-12 text-center">
-          <p className="font-mono text-sm text-fg-muted">{error}</p>
-          <button
-            onClick={() => fetchPage(page + 1)}
-            className="px-6 py-2 rounded-full border border-line text-fg-muted hover:border-line-strong hover:text-fg font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer"
-          >
-            Retry
-          </button>
-        </div>
+        <ErrorRetry message={error} onRetry={() => fetchPage(page + 1)} />
       )}
 
       {/* Load More */}

@@ -1,11 +1,10 @@
 import type { GetStaticPaths, APIRoute } from 'astro';
-import { getCollection } from 'astro:content';
 import { generateOgImage } from '../../../../lib/og';
+import { splitSeriesEntries } from '../../../../lib/content';
+import { IMMUTABLE_CACHE_HEADERS } from '../../../../lib/http';
 
 export const getStaticPaths: GetStaticPaths = async () => {
-  const allEntries = await getCollection('series');
-  const indexEntries = allEntries.filter((e) => e.id.endsWith('/index.md'));
-  const postEntries = allEntries.filter((e) => !e.id.endsWith('/index.md'));
+  const { indexEntries, postEntries } = await splitSeriesEntries();
 
   return indexEntries.flatMap((index) => {
     const seriesSlug = index.slug.replace('/index', '');
@@ -29,10 +28,7 @@ export const getStaticPaths: GetStaticPaths = async () => {
 
 export const GET: APIRoute = async ({ props }) => {
   const png = await generateOgImage(props as Parameters<typeof generateOgImage>[0]);
-  return new Response(png, {
-    headers: {
-      'Content-Type': 'image/png',
-      'Cache-Control': 'public, max-age=31536000, immutable',
-    },
+  return new Response(new Uint8Array(png), {
+    headers: { 'Content-Type': 'image/png', ...IMMUTABLE_CACHE_HEADERS },
   });
 };

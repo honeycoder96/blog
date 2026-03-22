@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Check } from 'lucide-react';
+import { delay } from '../../../lib/utils';
 
 export const NewsletterSection: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -9,7 +10,7 @@ export const NewsletterSection: React.FC = () => {
     e.preventDefault();
     if (!email || state !== 'idle') return;
     setState('loading');
-    await new Promise((r) => setTimeout(r, 1200));
+    await delay(1200);
     setState('success');
   };
 

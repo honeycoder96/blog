@@ -3,36 +3,17 @@ import PageLayout from '../../layouts/PageLayout.astro';
 import { PostsGrid } from '../../components/react/blog/PostsGrid';
 import { AnimatedTitle } from '../../components/react/ui/AnimatedTitle';
 import CategoryFilterNav from '../../components/astro/CategoryFilterNav.astro';
-import { getCollection } from 'astro:content';
 import { buildFilterCategories } from '../../config/categories';
 import { siteConfig } from '../../config/site';
+import { getPublishedPosts, mapPostToDisplay, countByCategory } from '../../lib/content';
 
 const PAGE_SIZE = 10;
 
-const allPosts = await getCollection('blog');
-const posts = allPosts
-  .filter((p) => !p.data.draft && p.data.isVisible !== false)
-  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
-  .map((p) => ({
-    slug: p.slug,
-    data: {
-      title: p.data.title,
-      date: p.data.date,
-      category: p.data.category,
-      summary: p.data.summary,
-      readingTime: p.data.readingTime,
-      tags: p.data.tags,
-    },
-  }));
-
+const posts = (await getPublishedPosts()).map(mapPostToDisplay);
 const initialPosts = posts.slice(0, PAGE_SIZE);
 const totalPosts = posts.length;
 const categories = buildFilterCategories(posts.map((p) => p.data.category));
-
-const categoryCounts: Record<string, number> = { All: posts.length };
-for (const p of posts) {
-  categoryCounts[p.data.category] = (categoryCounts[p.data.category] ?? 0) + 1;
-}
+const categoryCounts = countByCategory(posts.map((p) => p.data.category));
 ---
 
 <PageLayout

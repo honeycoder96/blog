@@ -12,6 +12,9 @@ export const siteConfig = {
   /** Your full name — used in meta tags, RSS feed title, and default post author */
   author: 'Honey Sharma',
 
+  /** Short author bio shown at the bottom of every post */
+  bio: 'Software engineer focused on web engineering, TypeScript, and distributed systems.',
+
   // ── Site URL & branding ───────────────────────────────────────────────────
 
   /** Canonical URL of your deployed site — no trailing slash */

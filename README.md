@@ -20,6 +20,9 @@ A minimal, fast, dark-mode-first engineering blog built with Astro 5, React, Tai
 
 ## Quick start
 
+> Want to contribute? See the [Contributing Guide](./CONTRIBUTING.md) and [Coding Guidelines](./CODING_GUIDELINES.md).
+
+
 ```bash
 git clone https://github.com/your-username/astro-cody-blog.git
 cd astro-cody-blog
@@ -186,6 +189,10 @@ src/
 | Search | Pagefind |
 | OG images | Satori + @resvg/resvg-js |
 | Icons | Lucide React |
+
+## Contributing
+
+Contributions are welcome. Please read the [Contributing Guide](./CONTRIBUTING.md) for the development workflow and pull request process, and the [Coding Guidelines](./CODING_GUIDELINES.md) for code style, naming conventions, and architectural rules.
 
 ## License
 

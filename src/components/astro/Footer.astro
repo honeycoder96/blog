@@ -3,13 +3,14 @@ import { siteConfig } from '../../config/site';
 
 const year = new Date().getFullYear();
 const links = [
-  ...(siteConfig.social.github ? [{ label: 'Github', href: siteConfig.social.github }] : []),
-  ...(siteConfig.social.linkedin ? [{ label: 'LinkedIn', href: siteConfig.social.linkedin }] : []),
-  ...(siteConfig.social.email ? [{ label: 'Email', href: `mailto:${siteConfig.social.email}` }] : []),
+  ...(siteConfig.social.github ? [{ label: 'GitHub', href: siteConfig.social.github, external: true }] : []),
+  ...(siteConfig.social.linkedin ? [{ label: 'LinkedIn', href: siteConfig.social.linkedin, external: true }] : []),
+  ...(siteConfig.social.email ? [{ label: 'Email', href: `mailto:${siteConfig.social.email}`, external: false }] : []),
+  { label: 'RSS', href: '/rss.xml', external: false },
 ];
 ---
 
-<footer class="border-t border-line-faint px-8 lg:px-24 py-12 mt-auto">
+<footer class="border-t border-line-faint px-8 lg:px-24 py-4 mt-auto">
   <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
     <div>
       <a href="/" class="font-display font-bold text-xl tracking-tight text-fg">
@@ -20,17 +21,35 @@ const links = [
       </p>
     </div>
 
-    <div class="flex gap-8">
-      {links.map(link => (
+    <div class="flex items-center gap-8">
+      {links.map((link) => (
         <a
           href={link.href}
-          target="_blank"
-          rel="noopener noreferrer"
-          class="group relative overflow-hidden inline-flex h-5 font-mono text-sm tracking-widest uppercase text-fg-muted hover:text-fg transition-colors"
+          {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+          class="font-mono text-sm tracking-widest uppercase text-fg-muted hover:text-fg transition-colors"
         >
           {link.label}
         </a>
       ))}
+
+      <!-- Back to top — respects prefers-reduced-motion -->
+      <button
+        id="back-to-top"
+        aria-label="Back to top"
+        class="font-mono text-sm tracking-widest uppercase text-fg-muted hover:text-fg transition-colors cursor-pointer"
+      >
+        ↑ Top
+      </button>
     </div>
   </div>
 </footer>
+
+<script>
+  const btn = document.getElementById('back-to-top');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.scrollTo({ top: 0, behavior: prefersReducedMotion ? 'instant' : 'smooth' });
+    });
+  }
+</script>

@@ -10,24 +10,16 @@
  */
 
 import type { GetStaticPaths, APIRoute } from 'astro';
-import { getCollection } from 'astro:content';
 import { slugifyCategory } from '../../../../config/categories';
+import { parseSeriesCollection } from '../../../../lib/content';
+import type { SeriesItem } from '../../../../lib/content';
+import { IMMUTABLE_CACHE_HEADERS } from '../../../../lib/http';
 
 const PAGE_SIZE = 5;
 
 export interface SeriesPagePayload {
-  series: {
-    seriesSlug: string;
-    title: string;
-    description?: string;
-    category: string;
-    posts: {
-      slug: string;
-      title: string;
-      summary?: string;
-      readingTime?: number;
-    }[];
-  }[];
+  [key: string]: unknown;
+  series: SeriesItem[];
   total: number;
   totalPages: number;
   page: number;
@@ -35,31 +27,7 @@ export interface SeriesPagePayload {
 }
 
 export const getStaticPaths: GetStaticPaths = async () => {
-  const allEntries = await getCollection('series');
-  const indexEntries = allEntries.filter((e) => e.id.endsWith('/index.md'));
-  const postEntries = allEntries.filter((e) => !e.id.endsWith('/index.md'));
-
-  const allSeries = indexEntries.map((index) => {
-    const seriesSlug = index.slug.replace('/index', '');
-    const postOrder: string[] = index.data.postOrder ?? [];
-    const posts = postOrder.flatMap((postSlug) => {
-      const entry = postEntries.find((e) => e.slug === `${seriesSlug}/${postSlug}`);
-      if (!entry) return [];
-      return [{
-        slug: postSlug,
-        title: entry.data.title,
-        summary: entry.data.summary,
-        readingTime: entry.data.readingTime,
-      }];
-    });
-    return {
-      seriesSlug,
-      title: index.data.title,
-      description: index.data.description,
-      category: index.data.category,
-      posts,
-    };
-  });
+  const allSeries = await parseSeriesCollection();
 
   const uniqueCategories = [...new Set(allSeries.map((s) => s.category))];
 
@@ -96,10 +64,6 @@ export const getStaticPaths: GetStaticPaths = async () => {
 
 export const GET: APIRoute = ({ props }) => {
   return new Response(JSON.stringify(props as SeriesPagePayload), {
-    headers: {
-      'Content-Type': 'application/json',
-      // #10 — content-addressed static files; safe to cache at edge indefinitely
-      'Cache-Control': 'public, max-age=31536000, immutable',
-    },
+    headers: { 'Content-Type': 'application/json', ...IMMUTABLE_CACHE_HEADERS },
   });
 };

@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ArrowRight, Terminal } from 'lucide-react';
+import { lerp } from '../../../lib/animation';
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 
 interface Post {
   slug: string;
@@ -19,18 +21,14 @@ interface FeaturedPostsListProps {
 
 export const FeaturedPostsList: React.FC<FeaturedPostsListProps> = ({ posts }) => {
   const [hoveredPost, setHoveredPost] = useState<string | null>(null);
-  const [reducedMotion, setReducedMotion] = useState(false);
+  const reducedMotion = usePrefersReducedMotion();
   const containerRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const pos = useRef({ x: 0, y: 0 });
   const target = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setReducedMotion(mq.matches);
-    if (mq.matches) return;
-
-    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+    if (reducedMotion) return;
 
     const animate = () => {
       pos.current.x = lerp(pos.current.x, target.current.x, 0.12);
@@ -46,7 +44,7 @@ export const FeaturedPostsList: React.FC<FeaturedPostsListProps> = ({ posts }) =
 
     const rafId = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(rafId);
-  }, []);
+  }, [reducedMotion]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current || reducedMotion) return;

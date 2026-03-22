@@ -1,11 +1,10 @@
 ---
-import { getCollection, render } from 'astro:content';
+import { render } from 'astro:content';
 import BlogLayout from '../../../layouts/BlogLayout.astro';
+import { splitSeriesEntries, resolveReadingTime } from '../../../lib/content';
 
 export async function getStaticPaths() {
-  const allEntries = await getCollection('series');
-  const indexEntries = allEntries.filter(e => e.id.endsWith('/index.md'));
-  const postEntries  = allEntries.filter(e => !e.id.endsWith('/index.md'));
+  const { indexEntries, postEntries } = await splitSeriesEntries();
 
   return indexEntries.flatMap(index => {
     const seriesSlug = index.slug.replace('/index', '');
@@ -43,9 +42,7 @@ const { entry, seriesTitle, part, total, prevPost, nextPost } = Astro.props;
 const { seriesSlug } = Astro.params;
 const { Content, headings } = await render(entry);
 
-const readingTime =
-  entry.data.readingTime ??
-  Math.max(1, Math.ceil(entry.body.trim().split(/\s+/).filter(Boolean).length / 200));
+const readingTime = resolveReadingTime(entry.data.readingTime, entry.body);
 ---
 
 <BlogLayout

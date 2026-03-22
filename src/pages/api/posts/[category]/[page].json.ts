@@ -13,23 +13,16 @@
  */
 
 import type { GetStaticPaths, APIRoute } from 'astro';
-import { getCollection } from 'astro:content';
 import { slugifyCategory } from '../../../../config/categories';
+import { getPublishedPosts, mapPostToDisplay } from '../../../../lib/content';
+import type { PostDisplayItem } from '../../../../lib/content';
+import { IMMUTABLE_CACHE_HEADERS } from '../../../../lib/http';
 
 const PAGE_SIZE = 10;
 
 export interface PostsPagePayload {
-  posts: {
-    slug: string;
-    data: {
-      title: string;
-      date: string;
-      category: string;
-      summary: string;
-      readingTime: number | null;
-      tags: string[];
-    };
-  }[];
+  [key: string]: unknown;
+  posts: PostDisplayItem[];
   total: number;
   totalPages: number;
   page: number;
@@ -37,22 +30,7 @@ export interface PostsPagePayload {
 }
 
 export const getStaticPaths: GetStaticPaths = async () => {
-  const allPosts = await getCollection('blog');
-
-  const posts = allPosts
-    .filter((p) => !p.data.draft && p.data.isVisible !== false)
-    .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
-    .map((p) => ({
-      slug: p.slug,
-      data: {
-        title: p.data.title,
-        date: p.data.date,
-        category: p.data.category,
-        summary: p.data.summary,
-        readingTime: p.data.readingTime ?? null,
-        tags: p.data.tags,
-      },
-    }));
+  const posts = (await getPublishedPosts()).map(mapPostToDisplay);
 
   const uniqueCategories = [...new Set(posts.map((p) => p.data.category))];
 
@@ -90,10 +68,6 @@ export const getStaticPaths: GetStaticPaths = async () => {
 
 export const GET: APIRoute = ({ props }) => {
   return new Response(JSON.stringify(props as PostsPagePayload), {
-    headers: {
-      'Content-Type': 'application/json',
-      // #10 — content-addressed static files; safe to cache at edge indefinitely
-      'Cache-Control': 'public, max-age=31536000, immutable',
-    },
+    headers: { 'Content-Type': 'application/json', ...IMMUTABLE_CACHE_HEADERS },
   });
 };

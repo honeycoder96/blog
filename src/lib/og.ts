@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { siteConfig } from '../config/site';
 
+/** Input data for Open Graph image generation. */
 export interface OgData {
   title: string;
   category: string;
@@ -31,10 +32,12 @@ async function getFonts() {
   return { interRegular, interBold };
 }
 
+/** Generates a 1200×630 PNG Open Graph image for a blog or series post. */
 export async function generateOgImage(data: OgData): Promise<Buffer> {
   const { interRegular, interBold } = await getFonts();
 
   const svg = await satori(
+    // satori accepts a plain object tree; cast to avoid ReactNode type mismatch
     {
       type: 'div',
       props: {
@@ -146,7 +149,8 @@ export async function generateOgImage(data: OgData): Promise<Buffer> {
           },
         ],
       },
-    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- satori first arg is a plain object, not ReactNode
+    } as any,
     {
       width: 1200,
       height: 630,

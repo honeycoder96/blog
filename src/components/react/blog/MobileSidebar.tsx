@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { MAX_TOC_DEPTH, scrollToHeading } from '../../../lib/toc';
 
 interface Heading {
   depth: number;
@@ -12,14 +13,14 @@ interface RelatedPost {
   category: string;
 }
 
-interface Props {
+interface MobileSidebarProps {
   headings: Heading[];
   relatedPosts: RelatedPost[];
 }
 
-export const MobileSidebar: React.FC<Props> = ({ headings, relatedPosts }) => {
+export const MobileSidebar: React.FC<MobileSidebarProps> = ({ headings, relatedPosts }) => {
   const [open, setOpen] = useState(false);
-  const filtered = headings.filter((h) => h.depth <= 2);
+  const filtered = headings.filter((h) => h.depth <= MAX_TOC_DEPTH);
 
   useEffect(() => {
     if (open) {
@@ -33,7 +34,7 @@ export const MobileSidebar: React.FC<Props> = ({ headings, relatedPosts }) => {
   const handleLinkClick = (slug: string) => {
     setOpen(false);
     setTimeout(() => {
-      document.getElementById(slug)?.scrollIntoView({ behavior: 'smooth' });
+      scrollToHeading(slug);
     }, 150);
   };
 

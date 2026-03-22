@@ -1,0 +1,79 @@
+---
+import { siteConfig } from '../../config/site';
+
+interface Props {
+  author: string;
+}
+
+const { author } = Astro.props;
+const { social, bio } = siteConfig;
+
+// Build Twitter URL from handle (strip leading @ if present)
+const twitterUrl = social.twitter
+  ? `https://twitter.com/${social.twitter.replace(/^@/, '')}`
+  : null;
+
+// Initials for the avatar placeholder
+const initials = author
+  .split(' ')
+  .map((n) => n[0])
+  .join('');
+---
+
+<div class="max-w-3xl mt-16 pt-10 border-t border-line-faint flex flex-col sm:flex-row gap-6 items-start">
+  <!-- Avatar — initials fallback (no image dependency) -->
+  <div
+    class="shrink-0 w-14 h-14 rounded-full bg-surface-raised border border-line flex items-center justify-center font-display font-bold text-xl text-fg select-none"
+    aria-hidden="true"
+  >
+    {initials}
+  </div>
+
+  <div class="flex-1 min-w-0">
+    <p class="font-display font-bold text-fg text-lg mb-1">{author}</p>
+    {bio && (
+      <p class="text-sm text-fg-muted leading-relaxed mb-4">{bio}</p>
+    )}
+
+    <div class="flex flex-wrap gap-5">
+      {social.github && (
+        <a
+          href={social.github}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="font-mono text-xs uppercase tracking-widest text-fg-faint hover:text-fg transition-colors"
+        >
+          GitHub
+        </a>
+      )}
+      {twitterUrl && (
+        <a
+          href={twitterUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="font-mono text-xs uppercase tracking-widest text-fg-faint hover:text-fg transition-colors"
+        >
+          Twitter
+        </a>
+      )}
+      {social.linkedin && (
+        <a
+          href={social.linkedin}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="font-mono text-xs uppercase tracking-widest text-fg-faint hover:text-fg transition-colors"
+        >
+          LinkedIn
+        </a>
+      )}
+      {social.email && (
+        <a
+          href={`mailto:${social.email}`}
+          class="font-mono text-xs uppercase tracking-widest text-fg-faint hover:text-fg transition-colors"
+        >
+          Email
+        </a>
+      )}
+    </div>
+  </div>
+</div>

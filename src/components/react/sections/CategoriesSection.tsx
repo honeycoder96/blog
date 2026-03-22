@@ -1,6 +1,6 @@
 import React from 'react';
 import { ArrowRight } from 'lucide-react';
-import { slugifyCategory } from '../../../config/categories.client';
+import { slugifyCategory } from '../../../config/categories';
 
 export interface CategoryCardData {
   name: string;
@@ -10,12 +10,12 @@ export interface CategoryCardData {
   accent: string;
 }
 
-interface Props {
+interface CategoriesSectionProps {
   categories: CategoryCardData[];
   categoryCounts: Record<string, number>;
 }
 
-export const CategoriesSection: React.FC<Props> = ({ categories, categoryCounts }) => {
+export const CategoriesSection: React.FC<CategoriesSectionProps> = ({ categories, categoryCounts }) => {
   const cats = categories.map((cat) => ({
     ...cat,
     count: categoryCounts[cat.name] ?? 0,
