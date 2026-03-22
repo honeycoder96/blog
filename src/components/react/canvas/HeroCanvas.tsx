@@ -1,6 +1,10 @@
 import React, { useRef, useEffect } from 'react';
-import { useReducedMotion } from 'framer-motion';
 import { useTheme } from '../hooks/useTheme';
+
+function usePrefersReducedMotion() {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
 
 const THEME_COLORS: Record<string, { bg: string; particle: string; lineRgb: string }> = {
   dark: { bg: 'rgba(10,10,10,1)', particle: 'rgba(255,255,255,0.2)', lineRgb: '255,255,255' },
@@ -9,7 +13,7 @@ const THEME_COLORS: Record<string, { bg: string; particle: string; lineRgb: stri
 
 export const HeroCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const prefersReducedMotion = useReducedMotion();
+  const prefersReducedMotion = usePrefersReducedMotion();
   const theme = useTheme();
   const themeRef = useRef(theme);
   themeRef.current = theme;

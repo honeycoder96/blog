@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /og/
+
+Sitemap: https://blog.honeyhimself.com/sitemap-index.xml

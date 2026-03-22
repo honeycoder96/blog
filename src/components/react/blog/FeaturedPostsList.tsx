@@ -96,6 +96,7 @@ export const FeaturedPostsList: React.FC<FeaturedPostsListProps> = ({ posts }) =
           <a
             key={post.slug}
             href={`/blog/${post.slug}`}
+            data-astro-prefetch
             onMouseEnter={() => setHoveredPost(post.slug)}
             className="group magnetic relative border-b border-line py-10 flex flex-col md:flex-row justify-between md:items-center gap-6 hover:border-fg-muted transition-colors z-10"
           >

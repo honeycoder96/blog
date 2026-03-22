@@ -4,7 +4,23 @@ import BlogLayout from '../../layouts/BlogLayout.astro';
 
 export async function getStaticPaths() {
   const posts = await getCollection('blog');
-  return posts.map((post) => ({
+  const publishedPosts = posts.filter((post) => !post.data.draft);
+
+  // #23 — validate relatedPosts slug references at build time
+  const validSlugs = new Set(publishedPosts.map((p) => p.slug));
+  const errors: string[] = [];
+  for (const post of publishedPosts) {
+    for (const ref of post.data.relatedPosts) {
+      if (!validSlugs.has(ref)) {
+        errors.push(`  "${post.slug}" → relatedPosts references unknown slug: "${ref}"`);
+      }
+    }
+  }
+  if (errors.length > 0) {
+    throw new Error(`Build failed — broken relatedPosts references:\n${errors.join('\n')}`);
+  }
+
+  return publishedPosts.map((post) => ({
     params: { slug: post.slug },
     props: { post },
   }));
@@ -35,13 +51,17 @@ const relatedPosts = post.data.relatedPosts.length
   title={post.data.title}
   description={post.data.summary}
   date={post.data.date}
+  pubDate={post.data.pubDate}
   category={post.data.category}
   author={post.data.author}
   readingTime={post.data.readingTime}
+  tags={post.data.tags}
+  isVisible={post.data.isVisible}
   headings={headings}
   prevPost={prevPost ? { slug: prevPost.slug, title: prevPost.data.title } : undefined}
   nextPost={nextPost ? { slug: nextPost.slug, title: nextPost.data.title } : undefined}
   relatedPosts={relatedPosts.map((r) => ({ slug: r.slug, title: r.data.title, category: r.data.category }))}
+  ogImage={`/og/blog/${post.slug}.png`}
 >
   <Content />
 </BlogLayout>

@@ -35,6 +35,11 @@ const initialSeries = allSeries.slice(0, PAGE_SIZE);
 const initialTotal = allSeries.length;
 const categories = buildFilterCategories(allSeries.map(s => s.category));
 
+const categoryCounts: Record<string, number> = { All: allSeries.length };
+for (const s of allSeries) {
+  categoryCounts[s.category] = (categoryCounts[s.category] ?? 0) + 1;
+}
+
 const totalPosts = allSeries.reduce((sum, s) => sum + s.posts.length, 0);
 ---
 
@@ -58,6 +63,7 @@ const totalPosts = allSeries.reduce((sum, s) => sum + s.posts.length, 0);
       initialSeries={initialSeries}
       initialTotal={initialTotal}
       categories={categories}
+      categoryCounts={categoryCounts}
       client:idle
     />
   </div>

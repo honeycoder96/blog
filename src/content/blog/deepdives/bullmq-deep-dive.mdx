@@ -6,9 +6,8 @@ category: "Deep Dive"
 author: "Honey Sharma"
 summary: "A ground-up engineering guide to BullMQ — why job queues exist, how BullMQ uses Redis as its backbone, the full job lifecycle, concurrency models, reliability patterns, and when to reach for something else entirely."
 featured: false
-readingTime: 22
 tags: [bullmq, redis, job-queues, system-design, backend, distributed-systems, node]
-relatedPosts: ["uptime-monitor-architecture"]
+relatedPosts: ["engineering/uptime-monitor-architecture"]
 ---
 
 It was Black Friday. A user places an order. Your API endpoint accepts the request, tries to send a confirmation email, resize the uploaded product image, notify the warehouse system, update inventory counts, and trigger a fraud check — all synchronously, all inside a single HTTP request handler. Response time: 14 seconds. The load balancer times out at 30. Users see a blank page. The order goes through anyway, but the email never sends because the process died halfway through.

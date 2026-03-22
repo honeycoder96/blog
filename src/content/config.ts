@@ -11,6 +11,7 @@ const blogCollection = defineCollection({
     summary: z.string(),
     featured: z.boolean().default(false),
     isVisible: z.boolean().default(true),
+    draft: z.boolean().default(false),
     readingTime: z.number().optional(),
     tags: z.array(z.string()).default([]),
     relatedPosts: z.array(z.string()).default([]),

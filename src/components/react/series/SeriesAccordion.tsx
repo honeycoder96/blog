@@ -27,6 +27,7 @@ interface Props {
   initialSeries: Series[];
   initialTotal: number;
   categories: string[];
+  categoryCounts?: Record<string, number>;
 }
 
 const cardVariants = {
@@ -35,7 +36,7 @@ const cardVariants = {
   exit: { opacity: 0, y: -10, transition: { duration: 0.15 } },
 };
 
-export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, categories }) => {
+export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, categories, categoryCounts }) => {
   const [activeCategory, setActiveCategory] = useState<string>(() => {
     if (typeof window === 'undefined') return 'All';
     const param = new URLSearchParams(window.location.search).get('category');
@@ -46,6 +47,7 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
   const [total, setTotal] = useState<number>(initialTotal);
   const [page, setPage] = useState<number>(1);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
   const [openIndex, setOpenIndex] = useState<number | null>(0);
   const prefersReducedMotion = useReducedMotion();
 
@@ -89,10 +91,11 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
     }
 
     setIsLoading(true);
+    setError(null);
     try {
       const slug = slugifyCategory(category);
       const res = await fetch(`/api/series/${slug}/${pageNum}.json`, { signal: controller.signal });
-      if (!res.ok) return;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       prefetchCache.current.set(cacheKey, data);
       setSeries((prev) => (append ? [...prev, ...data.series] : data.series));
@@ -101,6 +104,7 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
       prefetchInBackground(category, pageNum + 1);
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
+      setError('Failed to load series. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -176,7 +180,7 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
                 : 'border-line text-fg-muted hover:border-line-strong hover:text-fg-default'
             }`}
           >
-            {cat}
+            {cat}{categoryCounts?.[cat] !== undefined ? ` (${categoryCounts[cat]})` : ''}
           </button>
         ))}
       </div>
@@ -252,6 +256,7 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
                           <li key={post.slug}>
                             <a
                               href={`/series/${s.seriesSlug}/${post.slug}`}
+                              data-astro-prefetch
                               className="group flex items-start gap-4 py-3 px-4 rounded-xl hover:bg-surface-raised/50 transition-colors"
                             >
                               <span className="shrink-0 mt-0.5 w-6 h-6 rounded-full border border-line flex items-center justify-center font-mono text-xs text-fg-faint group-hover:border-fg-muted group-hover:text-fg transition-colors">
@@ -292,7 +297,7 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
         </div>
       )}
 
-      {/* Loading skeleton */}
+      {/* Loading skeleton — full replace */}
       {isLoading && series.length === 0 && (
         <div className="w-full flex flex-col border-t border-line">
           {[...Array(3)].map((_, i) => (
@@ -307,6 +312,33 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Append skeleton — Load More in progress (#20) */}
+      {isLoading && series.length > 0 && (
+        <div className="border-b border-line py-8 md:py-10 flex flex-col md:flex-row gap-4 animate-pulse">
+          <div className="md:w-1/4 flex flex-col gap-3">
+            <div className="h-5 w-24 rounded-full bg-line" />
+            <div className="h-3 w-16 rounded bg-line" />
+          </div>
+          <div className="md:w-2/4 flex flex-col gap-2">
+            <div className="h-6 w-3/4 rounded bg-line" />
+            <div className="h-4 w-full rounded bg-line" />
+          </div>
+        </div>
+      )}
+
+      {/* Error state (#19) */}
+      {error && !isLoading && (
+        <div className="flex flex-col items-center gap-4 py-12 text-center">
+          <p className="font-mono text-sm text-fg-muted">{error}</p>
+          <button
+            onClick={() => fetchPage(activeCategory, page, false)}
+            className="px-6 py-2 rounded-full border border-line text-fg-muted hover:border-line-strong hover:text-fg font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer"
+          >
+            Retry
+          </button>
         </div>
       )}
 

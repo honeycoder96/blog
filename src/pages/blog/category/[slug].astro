@@ -1,0 +1,83 @@
+---
+import PageLayout from '../../../layouts/PageLayout.astro';
+import { PostsGrid } from '../../../components/react/blog/PostsGrid';
+import { AnimatedTitle } from '../../../components/react/ui/AnimatedTitle';
+import CategoryFilterNav from '../../../components/astro/CategoryFilterNav.astro';
+import { getCollection } from 'astro:content';
+import { buildFilterCategories, slugifyCategory } from '../../../config/categories';
+
+const PAGE_SIZE = 10;
+
+export async function getStaticPaths() {
+  const allPosts = await getCollection('blog');
+  const visible = allPosts.filter((p) => !p.data.draft && p.data.isVisible !== false);
+  const uniqueCategories = [...new Set(visible.map((p) => p.data.category))];
+
+  return uniqueCategories.map((category) => ({
+    params: { slug: slugifyCategory(category) },
+    props: { category },
+  }));
+}
+
+const { category } = Astro.props;
+
+const allPosts = await getCollection('blog');
+const allVisible = allPosts
+  .filter((p) => !p.data.draft && p.data.isVisible !== false)
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+const categoryPosts = allVisible
+  .filter((p) => p.data.category === category)
+  .map((p) => ({
+    slug: p.slug,
+    data: {
+      title: p.data.title,
+      date: p.data.date,
+      category: p.data.category,
+      summary: p.data.summary,
+      readingTime: p.data.readingTime,
+      tags: p.data.tags,
+    },
+  }));
+
+const initialPosts = categoryPosts.slice(0, PAGE_SIZE);
+const totalPosts = categoryPosts.length;
+
+const categories = buildFilterCategories(allVisible.map((p) => p.data.category));
+
+const categoryCounts: Record<string, number> = { All: allVisible.length };
+for (const p of allVisible) {
+  categoryCounts[p.data.category] = (categoryCounts[p.data.category] ?? 0) + 1;
+}
+---
+
+<PageLayout
+  title={`${category} — Honey Sharma`}
+  description={`All ${category} posts on web engineering, architecture, and the craft of software.`}
+>
+  <div class="max-w-7xl mx-auto px-8 lg:px-24 py-16">
+    <header class="mb-16">
+      <AnimatedTitle
+        text={category}
+        className="text-5xl md:text-7xl font-display font-bold tracking-tighter text-fg mb-6"
+        client:visible
+      />
+      <p class="text-xl text-fg-muted max-w-2xl">
+        {totalPosts} {totalPosts === 1 ? 'article' : 'articles'} in this category.
+      </p>
+    </header>
+
+    <CategoryFilterNav
+      categories={categories}
+      categoryCounts={categoryCounts}
+      activeCategory={category}
+    />
+
+    <PostsGrid
+      initialPosts={initialPosts}
+      initialTotal={totalPosts}
+      category={category}
+      client:idle
+    />
+  </div>
+</PageLayout>

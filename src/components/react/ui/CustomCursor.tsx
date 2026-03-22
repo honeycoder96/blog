@@ -1,48 +1,70 @@
-import React, { useState, useEffect } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import React, { useEffect, useRef } from 'react';
 
 export const CustomCursor: React.FC = () => {
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
-  const [isHovering, setIsHovering] = useState(false);
-  const prefersReducedMotion = useReducedMotion();
+  const cursorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (prefersReducedMotion) return;
+    // Skip animation loop for users who prefer reduced motion
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
-    const updateMousePosition = (e: MouseEvent) => {
-      setMousePosition({ x: e.clientX, y: e.clientY });
+    const el = cursorRef.current;
+    if (!el) return;
+
+    // Current smoothed position and scale (lerped each frame)
+    const pos = { x: 0, y: 0 };
+    const scale = { current: 1 };
+    const bgOpacity = { current: 0 };
+    let target = { x: 0, y: 0 };
+    let hovering = false;
+    let rafId: number;
+    let started = false;
+
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+    const animate = () => {
+      pos.x = lerp(pos.x, target.x, 0.15);
+      pos.y = lerp(pos.y, target.y, 0.15);
+      scale.current = lerp(scale.current, hovering ? 1.5 : 1, 0.15);
+      bgOpacity.current = lerp(bgOpacity.current, hovering ? 1 : 0, 0.15);
+
+      el.style.transform = `translate(calc(${pos.x}px - 50%), calc(${pos.y}px - 50%)) scale(${scale.current})`;
+      el.style.backgroundColor = `rgba(255,255,255,${bgOpacity.current})`;
+
+      rafId = requestAnimationFrame(animate);
     };
 
-    const handleMouseOver = (e: MouseEvent) => {
-      if ((e.target as Element).closest('button, a, .magnetic, input, textarea')) {
-        setIsHovering(true);
-      } else {
-        setIsHovering(false);
+    const onMouseMove = (e: MouseEvent) => {
+      target = { x: e.clientX, y: e.clientY };
+      if (!started) {
+        // Snap to position on first move so cursor doesn't fly in from (0,0)
+        pos.x = e.clientX;
+        pos.y = e.clientY;
+        el.style.opacity = '1';
+        started = true;
       }
     };
 
-    window.addEventListener('mousemove', updateMousePosition);
-    window.addEventListener('mouseover', handleMouseOver);
+    const onMouseOver = (e: MouseEvent) => {
+      hovering = !!(e.target as Element).closest('button, a, .magnetic, input, textarea');
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseover', onMouseOver);
+    rafId = requestAnimationFrame(animate);
 
     return () => {
-      window.removeEventListener('mousemove', updateMousePosition);
-      window.removeEventListener('mouseover', handleMouseOver);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseover', onMouseOver);
+      cancelAnimationFrame(rafId);
     };
-  }, [prefersReducedMotion]);
-
-  if (prefersReducedMotion) return null;
+  }, []);
 
   return (
-    <motion.div
-      className="fixed top-0 left-0 w-8 h-8 rounded-full border-2 border-white pointer-events-none z-[200] mix-blend-difference flex items-center justify-center"
-      style={{ translateX: '-50%', translateY: '-50%' }}
-      animate={{
-        x: mousePosition.x,
-        y: mousePosition.y,
-        scale: isHovering ? 1.5 : 1,
-        backgroundColor: isHovering ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0)',
-      }}
-      transition={{ type: 'spring', stiffness: 500, damping: 28, mass: 0.5 }}
+    <div
+      ref={cursorRef}
+      // Hidden until first mousemove (opacity set to 1 in handler)
+      // CSS media query hides it entirely for reduced-motion users
+      className="custom-cursor fixed top-0 left-0 w-8 h-8 rounded-full border-2 border-white pointer-events-none z-[200] mix-blend-difference opacity-0"
     />
   );
 };

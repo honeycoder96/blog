@@ -43,12 +43,32 @@ const currentPath = Astro.url.pathname;
       All posts
     </a>
 
+    <!-- Search -->
+    <button
+      id="search-open-desktop"
+      aria-label="Search"
+      class="text-fg-muted hover:text-fg transition-colors cursor-pointer"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+      </svg>
+    </button>
+
     <ThemeToggle />
   </div>
 
   <!-- Mobile menu button -->
-  <div class="md:hidden flex items-center gap-4">
+  <div class="md:hidden flex items-center gap-6">
     <ThemeToggle />
+    <button
+      id="search-open-mobile"
+      aria-label="Search"
+      class="text-fg-muted hover:text-fg transition-colors cursor-pointer"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+      </svg>
+    </button>
     <button
       id="mobile-menu-btn"
       class="flex flex-col gap-1.5 p-2"
@@ -76,6 +96,7 @@ const currentPath = Astro.url.pathname;
       {link.label}
     </a>
   ))}
+
 </div>
 
 <!-- Theme toggle — runs once after both toggle instances are in the DOM -->
@@ -134,4 +155,13 @@ const currentPath = Astro.url.pathname;
       menu.classList.remove('translate-x-0');
     });
   });
+
+  // Search triggers — dispatch custom event picked up by SearchModal React component
+  function openSearch() {
+    document.dispatchEvent(new CustomEvent('search:open'));
+  }
+
+  document.getElementById('search-open-desktop')?.addEventListener('click', openSearch);
+
+  document.getElementById('search-open-mobile')?.addEventListener('click', openSearch);
 </script>

@@ -1,0 +1,32 @@
+---
+import { slugifyCategory } from '../../config/categories.client';
+
+interface Props {
+  categories: string[];
+  categoryCounts: Record<string, number>;
+  activeCategory: string;
+}
+
+const { categories, categoryCounts, activeCategory } = Astro.props;
+---
+
+<div class="flex flex-wrap gap-3 mb-12">
+  {categories.map((cat) => {
+    const isActive = cat === activeCategory;
+    const href = cat === 'All' ? '/blog' : `/blog/category/${slugifyCategory(cat)}`;
+    const count = categoryCounts[cat];
+    return (
+      <a
+        href={href}
+        data-astro-prefetch
+        class={`px-5 py-2 rounded-full border font-mono text-xs uppercase tracking-widest transition-all duration-200 ${
+          isActive
+            ? 'bg-fg text-surface border-fg'
+            : 'border-line text-fg-muted hover:border-line-strong hover:text-fg-default'
+        }`}
+      >
+        {cat}{count !== undefined ? ` (${count})` : ''}
+      </a>
+    );
+  })}
+</div>

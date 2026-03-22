@@ -28,22 +28,60 @@ interface Props {
   title: string;
   description?: string;
   date: string;
+  pubDate?: Date;
   category: string;
   author: string;
   readingTime?: number;
+  tags?: string[];
+  isVisible?: boolean;
   headings: { depth: number; slug: string; text: string }[];
   prevPost?: PostLink;
   nextPost?: PostLink;
   relatedPosts?: RelatedPost[];
   seriesContext?: SeriesContext;
+  ogImage?: string;
 }
 
-const { title, description, date, category, author, readingTime, headings, prevPost, nextPost, relatedPosts = [], seriesContext } = Astro.props;
+const {
+  title, description, date, pubDate, category, author, readingTime,
+  tags = [], isVisible = true, headings, prevPost, nextPost,
+  relatedPosts = [], seriesContext, ogImage,
+} = Astro.props;
 const hasPostNav = prevPost || nextPost;
+
+const canonicalURL = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : undefined;
+const ogImageURL = ogImage && Astro.site ? new URL(ogImage, Astro.site).href : undefined;
+
+const jsonLd = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: title,
+  description: description ?? '',
+  author: { '@type': 'Person', name: author },
+  datePublished: pubDate?.toISOString() ?? '',
+  ...(ogImageURL ? { image: ogImageURL } : {}),
+  ...(canonicalURL ? { url: canonicalURL } : {}),
+  ...(readingTime ? { timeRequired: `PT${readingTime}M` } : {}),
+  keywords: [category, ...tags].join(', '),
+  publisher: {
+    '@type': 'Person',
+    name: 'Honey Sharma',
+    url: Astro.site?.href ?? '',
+  },
+});
 ---
 
-<PageLayout title={`${title} — Honey Sharma`} description={description}>
-  <ReadingProgress client:load />
+<PageLayout
+  title={`${title} — Honey Sharma`}
+  description={description}
+  ogImage={ogImage}
+  ogType="article"
+  publishedTime={pubDate?.toISOString()}
+  articleTags={[category, ...tags]}
+  noindex={!isVisible}
+  jsonLd={jsonLd}
+>
+  <ReadingProgress client:idle />
   <MobileSidebar headings={headings} relatedPosts={relatedPosts} client:idle />
 
   <div class="max-w-7xl mx-auto px-8 lg:px-24 py-16 w-full">
@@ -92,7 +130,7 @@ const hasPostNav = prevPost || nextPost;
           <span class="text-fg-faint font-mono text-xs">{readingTime} min read</span>
         )}
       </div>
-      <h1 class="text-4xl md:text-6xl font-display font-bold tracking-tight text-fg leading-tight mb-6">
+      <h1 data-pagefind-meta="title" class="text-4xl md:text-6xl font-display font-bold tracking-tight text-fg leading-tight mb-6">
         {title}
       </h1>
       {description && (
@@ -101,20 +139,21 @@ const hasPostNav = prevPost || nextPost;
       <div class="flex items-center gap-6 text-sm font-mono text-fg-faint uppercase tracking-widest">
         <span>{author}</span>
         <span class="w-px h-4 bg-line"></span>
-        <time>{date}</time>
+        <time data-pagefind-meta="date">{date}</time>
       </div>
+      <span data-pagefind-filter={`category[${category}]`} class="hidden" />
     </header>
 
     <!-- Content + TOC layout -->
     <div class="flex gap-20 relative">
       <!-- Main content -->
-      <article class="flex-1 min-w-0 prose-invert max-w-3xl">
+      <article data-pagefind-body class="flex-1 min-w-0 prose-invert max-w-3xl">
         <slot />
       </article>
 
       <!-- Sticky sidebar: TOC + Related -->
       {(headings.filter(h => h.depth <= 2).length > 0 || relatedPosts.length > 0) && (
-        <aside class="hidden xl:block w-64 shrink-0">
+        <aside data-pagefind-ignore class="hidden xl:block w-64 shrink-0">
           <div class="sticky top-32">
             {headings.filter(h => h.depth <= 2).length > 0 && (
               <TableOfContents headings={headings} client:idle />

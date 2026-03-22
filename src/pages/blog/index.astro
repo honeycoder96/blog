@@ -2,6 +2,7 @@
 import PageLayout from '../../layouts/PageLayout.astro';
 import { PostsGrid } from '../../components/react/blog/PostsGrid';
 import { AnimatedTitle } from '../../components/react/ui/AnimatedTitle';
+import CategoryFilterNav from '../../components/astro/CategoryFilterNav.astro';
 import { getCollection } from 'astro:content';
 import { buildFilterCategories } from '../../config/categories';
 
@@ -9,7 +10,7 @@ const PAGE_SIZE = 10;
 
 const allPosts = await getCollection('blog');
 const posts = allPosts
-  .filter((post) => post.data.isVisible !== false)
+  .filter((p) => !p.data.draft && p.data.isVisible !== false)
   .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
   .map((p) => ({
     slug: p.slug,
@@ -23,11 +24,14 @@ const posts = allPosts
     },
   }));
 
-// Only the first page is baked into the HTML.
-// Everything after that is fetched from /api/posts/[category]/[page].json
 const initialPosts = posts.slice(0, PAGE_SIZE);
 const totalPosts = posts.length;
 const categories = buildFilterCategories(posts.map((p) => p.data.category));
+
+const categoryCounts: Record<string, number> = { All: posts.length };
+for (const p of posts) {
+  categoryCounts[p.data.category] = (categoryCounts[p.data.category] ?? 0) + 1;
+}
 ---
 
 <PageLayout
@@ -46,10 +50,16 @@ const categories = buildFilterCategories(posts.map((p) => p.data.category));
       </p>
     </header>
 
+    <CategoryFilterNav
+      categories={categories}
+      categoryCounts={categoryCounts}
+      activeCategory="All"
+    />
+
     <PostsGrid
       initialPosts={initialPosts}
       initialTotal={totalPosts}
-      categories={categories}
+      category="All"
       client:idle
     />
   </div>

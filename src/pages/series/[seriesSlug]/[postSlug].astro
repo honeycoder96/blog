@@ -48,13 +48,16 @@ const { Content, headings } = await render(entry);
   title={entry.data.title}
   description={entry.data.summary}
   date={entry.data.date ?? ''}
+  pubDate={entry.data.pubDate}
   category={entry.data.category}
   author={entry.data.author}
   readingTime={entry.data.readingTime}
+  tags={entry.data.tags}
   headings={headings}
   prevPost={prevPost}
   nextPost={nextPost}
   seriesContext={{ seriesSlug, seriesTitle, part, total }}
+  ogImage={`/og/series/${seriesSlug}/${Astro.params.postSlug}.png`}
 >
   <Content />
 </BlogLayout>

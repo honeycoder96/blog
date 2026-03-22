@@ -1,0 +1,33 @@
+---
+import PageLayout from '../layouts/PageLayout.astro';
+---
+
+<PageLayout
+  title="404 — Page Not Found | Honey Sharma"
+  description="This page doesn't exist."
+  noindex={true}
+>
+  <div class="max-w-7xl mx-auto px-8 lg:px-24 py-32 flex flex-col items-start gap-8">
+    <p class="font-mono text-xs uppercase tracking-widest text-fg-faint">404</p>
+    <h1 class="text-5xl md:text-7xl font-display font-bold tracking-tighter text-fg leading-tight">
+      Page not found.
+    </h1>
+    <p class="text-xl text-fg-muted max-w-lg leading-relaxed">
+      The URL you followed doesn't exist or has been moved. It might have been a broken link or a mistyped address.
+    </p>
+    <div class="flex flex-wrap gap-4 mt-4">
+      <a
+        href="/blog"
+        class="px-6 py-3 rounded-full bg-fg text-surface font-mono text-xs uppercase tracking-widest hover:bg-fg/90 transition-colors"
+      >
+        Browse all posts
+      </a>
+      <a
+        href="/"
+        class="px-6 py-3 rounded-full border border-line text-fg-muted font-mono text-xs uppercase tracking-widest hover:border-line-strong hover:text-fg transition-colors"
+      >
+        Go home
+      </a>
+    </div>
+  </div>
+</PageLayout>

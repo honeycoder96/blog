@@ -6,12 +6,27 @@ import Footer from '../components/astro/Footer.astro';
 interface Props {
   title: string;
   description?: string;
+  ogImage?: string;
+  ogType?: 'website' | 'article';
+  publishedTime?: string;
+  articleTags?: string[];
+  noindex?: boolean;
+  jsonLd?: string;
 }
 
-const { title, description } = Astro.props;
+const { title, description, ogImage, ogType, publishedTime, articleTags, noindex, jsonLd } = Astro.props;
 ---
 
-<BaseLayout title={title} description={description}>
+<BaseLayout
+  title={title}
+  description={description}
+  ogImage={ogImage}
+  ogType={ogType}
+  publishedTime={publishedTime}
+  articleTags={articleTags}
+  noindex={noindex}
+  jsonLd={jsonLd}
+>
   <Navbar />
   <main class="pt-24 min-h-screen flex flex-col">
     <slot />

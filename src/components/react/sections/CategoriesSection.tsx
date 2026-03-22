@@ -1,6 +1,6 @@
 import React from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
+import { slugifyCategory } from '../../../config/categories.client';
 
 export interface CategoryCardData {
   name: string;
@@ -16,8 +16,6 @@ interface Props {
 }
 
 export const CategoriesSection: React.FC<Props> = ({ categories, categoryCounts }) => {
-  const prefersReducedMotion = useReducedMotion();
-
   const cats = categories.map((cat) => ({
     ...cat,
     count: categoryCounts[cat.name] ?? 0,
@@ -35,12 +33,10 @@ export const CategoriesSection: React.FC<Props> = ({ categories, categoryCounts 
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {cats.map((cat) => (
-            <motion.a
+            <a
               key={cat.name}
-              href={`/blog?category=${cat.name}`}
-              whileHover={prefersReducedMotion ? undefined : { y: -4 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-              className={`group p-8 rounded-2xl border bg-surface-raised ${cat.border} ${cat.borderHover} transition-colors duration-300`}
+              href={`/blog/category/${slugifyCategory(cat.name)}`}
+              className={`group p-8 rounded-2xl border bg-surface-raised ${cat.border} ${cat.borderHover} transition-all duration-300 hover:-translate-y-1 motion-reduce:hover:translate-y-0`}
             >
               <div className="flex items-start justify-between mb-6">
                 <span className={`font-mono text-xs uppercase tracking-widest ${cat.accent}`}>
@@ -53,7 +49,7 @@ export const CategoriesSection: React.FC<Props> = ({ categories, categoryCounts 
               </div>
               <h3 className="text-2xl font-display font-bold text-fg mb-3">{cat.name}</h3>
               <p className="text-sm text-fg-muted leading-relaxed">{cat.description}</p>
-            </motion.a>
+            </a>
           ))}
         </div>
       </div>

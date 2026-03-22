@@ -9,7 +9,7 @@ import { HOMEPAGE_CATEGORIES } from '../config/categories';
 
 const allPosts = await getCollection('blog');
 const sorted = allPosts
-  .filter((p) => p.data.isVisible !== false)
+  .filter((p) => !p.data.draft && p.data.isVisible !== false)
   .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
 
 const categoryCounts = sorted.reduce<Record<string, number>>((acc, p) => {
@@ -96,7 +96,7 @@ const featuredPosts = sorted
       </div>
 
       <!-- FeaturedPostsList: client:visible — below fold, lazy hydrate -->
-      <FeaturedPostsList posts={featuredPosts} client:load />
+      <FeaturedPostsList posts={featuredPosts} client:idle />
     </div>
   </section>
 

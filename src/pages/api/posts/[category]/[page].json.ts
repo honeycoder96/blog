@@ -40,7 +40,7 @@ export const getStaticPaths: GetStaticPaths = async () => {
   const allPosts = await getCollection('blog');
 
   const posts = allPosts
-    .filter((p) => p.data.isVisible !== false)
+    .filter((p) => !p.data.draft && p.data.isVisible !== false)
     .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
     .map((p) => ({
       slug: p.slug,
