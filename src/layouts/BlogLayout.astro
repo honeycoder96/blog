@@ -50,6 +50,7 @@ const {
   relatedPosts = [], seriesContext, ogImage,
 } = Astro.props;
 const hasPostNav = prevPost || nextPost;
+const { themeDark, themeLight } = siteConfig.comments.giscus;
 
 const canonicalURL = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : undefined;
 const ogImageURL = ogImage && Astro.site ? new URL(ogImage, Astro.site).href : undefined;
@@ -224,5 +225,64 @@ const jsonLd = JSON.stringify({
         ) : <span />}
       </nav>
     )}
+
+    <!-- Comments (Giscus) — configured via siteConfig.comments.giscus -->
+    <div class="max-w-3xl mt-16 pt-12 border-t border-line-faint">
+      <!--
+        Setup script runs before Giscus initialises (lazy-loaded on scroll).
+        1. Reads the current blog theme from <html data-theme> and sets the
+           correct Giscus theme on the script tag before Giscus boots.
+        2. Watches for theme changes via MutationObserver and forwards them
+           to the already-loaded Giscus iframe via postMessage.
+      -->
+      <script is:inline id="giscus-script"
+        src="https://giscus.app/client.js"
+        data-repo={siteConfig.comments.giscus.repo}
+        data-repo-id={siteConfig.comments.giscus.repoId}
+        data-category={siteConfig.comments.giscus.category}
+        data-category-id={siteConfig.comments.giscus.categoryId}
+        data-mapping={siteConfig.comments.giscus.mapping}
+        data-strict={siteConfig.comments.giscus.strict ? '1' : '0'}
+        data-reactions-enabled={siteConfig.comments.giscus.reactionsEnabled ? '1' : '0'}
+        data-emit-metadata="0"
+        data-input-position={siteConfig.comments.giscus.inputPosition}
+        data-theme="dark"
+        data-lang={siteConfig.comments.giscus.lang}
+        data-loading="lazy"
+        crossorigin="anonymous"
+        async
+      ></script>
+
+      <script is:inline define:vars={{ themeDark, themeLight }}>
+        (function () {
+          var script = document.getElementById('giscus-script');
+
+          function resolveTheme() {
+            return document.documentElement.getAttribute('data-theme') === 'light'
+              ? themeLight
+              : themeDark;
+          }
+
+          // Set the correct theme before Giscus lazy-loads
+          if (script) script.setAttribute('data-theme', resolveTheme());
+
+          // Forward theme changes to the Giscus iframe after it has loaded
+          new MutationObserver(function () {
+            var iframe = document.querySelector('iframe.giscus-frame');
+            if (iframe) {
+              iframe.contentWindow.postMessage(
+                { giscus: { setConfig: { theme: resolveTheme() } } },
+                'https://giscus.app',
+              );
+            }
+          }).observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['data-theme'],
+          });
+        })();
+      </script>
+
+      <div class="giscus" />
+    </div>
   </div>
 </PageLayout>

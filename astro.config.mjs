@@ -49,7 +49,12 @@ export default defineConfig({
     },
   },
   markdown: {
-    shikiConfig: { theme: 'github-dark', wrap: true },
+    shikiConfig: {
+      // Dual-theme: Shiki emits --shiki-dark / --shiki-light CSS vars per token.
+      // global.css switches between them based on [data-theme] on <html>.
+      themes: { dark: 'github-dark', light: 'github-light' },
+      wrap: true,
+    },
     remarkPlugins: [remarkReadingTime],
   },
 });

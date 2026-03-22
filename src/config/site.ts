@@ -31,6 +31,9 @@ export const siteConfig = {
 
   // ── Social links ──────────────────────────────────────────────────────────
 
+  /** URL of this blog's source code repository — shown as GitHub icon in navbar */
+  repoUrl: 'https://github.com/honeycoder96/blog',
+
   social: {
     /** Full GitHub profile URL */
     github: 'https://github.com/honeycoder96',
@@ -62,10 +65,67 @@ export const siteConfig = {
     responseTime: '6-12h',
   },
 
+  // ── Analytics ─────────────────────────────────────────────────────────────
+
+  analytics: {
+    /** Google Analytics 4 Measurement ID — set to '' to disable */
+    gaMeasurementId: 'G-TWCRF7WF92',
+  },
+
   // ── RSS feed ──────────────────────────────────────────────────────────────
 
   rss: {
     title: 'Honey Sharma — Blog',
     description: 'In-depth writing on web engineering, JavaScript, architecture, and the craft of building software.',
+  },
+
+  // ── Comments (Giscus) ─────────────────────────────────────────────────────
+  // Generate your values at https://giscus.app — enable Discussions on your
+  // GitHub repo first, then paste the values here.
+
+  comments: {
+    giscus: {
+      /** GitHub repo in "owner/repo" format */
+      repo: 'honeycoder96/blog',
+
+      /** Repo ID — shown on giscus.app after you configure your repo */
+      repoId: 'R_kgDOL9ylkQ',
+
+      /** Discussion category to post comments in */
+      category: 'Q&A',
+
+      /** Category ID — shown on giscus.app */
+      categoryId: 'DIC_kwDOL9ylkc4C5AqS',
+
+      /**
+       * How each page is mapped to a GitHub Discussion.
+       * 'url' | 'pathname' | 'title' | 'og:title'
+       */
+      mapping: 'url',
+
+      /** Enable strict title matching to avoid false Discussion matches */
+      strict: true,
+
+      /** Show emoji reactions on the top-level comment */
+      reactionsEnabled: true,
+
+      /** Where the comment input box appears: 'top' | 'bottom' */
+      inputPosition: 'top',
+
+      /**
+       * Giscus theme to use when the blog is in dark mode.
+       * Any value from https://giscus.app/themes e.g. 'dark', 'dark_dimmed', 'dark_tritanopia'
+       */
+      themeDark: 'dark_tritanopia',
+
+      /**
+       * Giscus theme to use when the blog is in light mode.
+       * Any value from https://giscus.app/themes e.g. 'light', 'light_protanopia'
+       */
+      themeLight: 'light_tritanopia',
+
+      /** Widget UI language, e.g. 'en', 'fr', 'de' */
+      lang: 'en',
+    },
   },
 } as const;

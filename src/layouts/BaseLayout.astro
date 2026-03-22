@@ -34,6 +34,7 @@ const {
 
 const canonicalURL = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : undefined;
 const ogImageURL = ogImage && Astro.site ? new URL(ogImage, Astro.site).href : undefined;
+const gaMeasurementId = siteConfig.analytics.gaMeasurementId;
 ---
 
 <!doctype html>
@@ -91,6 +92,28 @@ const ogImageURL = ogImage && Astro.site ? new URL(ogImage, Astro.site).href : u
     <link rel="preload" as="font" type="font/woff2" href="/fonts/clash-display-700.woff2" crossorigin />
     <link rel="preload" as="font" type="font/woff2" href="/fonts/inter-400.woff2" crossorigin />
     <link rel="preload" as="font" type="font/woff2" href="/fonts/inter-700.woff2" crossorigin />
+
+    <!-- Google Analytics 4 -->
+    {gaMeasurementId && (
+      <>
+        <script async src={`https://www.googletagmanager.com/gtag/js?id=${gaMeasurementId}`}></script>
+        <script is:inline define:vars={{ gaMeasurementId }}>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){ dataLayer.push(arguments); }
+          gtag('js', new Date());
+          // send_page_view: false — fired manually on astro:page-load so every
+          // View Transition navigation is tracked, not just hard page loads.
+          gtag('config', gaMeasurementId, { send_page_view: false });
+
+          document.addEventListener('astro:page-load', function () {
+            gtag('event', 'page_view', {
+              page_location: window.location.href,
+              page_title: document.title,
+            });
+          });
+        </script>
+      </>
+    )}
   </head>
   <body class="bg-surface text-fg font-sans overflow-x-hidden">
     <CustomCursor client:idle />
