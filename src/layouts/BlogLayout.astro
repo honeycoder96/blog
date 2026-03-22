@@ -4,6 +4,7 @@ import { ReadingProgress } from '../components/react/blog/ReadingProgress';
 import { TableOfContents } from '../components/react/blog/TableOfContents';
 import { MobileSidebar } from '../components/react/blog/MobileSidebar';
 import CategoryBadge from '../components/astro/CategoryBadge.astro';
+import { siteConfig } from '../config/site';
 
 interface PostLink {
   slug: string;
@@ -65,14 +66,14 @@ const jsonLd = JSON.stringify({
   keywords: [category, ...tags].join(', '),
   publisher: {
     '@type': 'Person',
-    name: 'Honey Sharma',
+    name: siteConfig.author,
     url: Astro.site?.href ?? '',
   },
 });
 ---
 
 <PageLayout
-  title={`${title} — Honey Sharma`}
+  title={`${title} — ${siteConfig.author}`}
   description={description}
   ogImage={ogImage}
   ogType="article"

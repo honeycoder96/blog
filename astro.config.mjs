@@ -5,9 +5,10 @@ import tailwindcss from '@tailwindcss/vite';
 import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
 import { remarkReadingTime } from './src/lib/remark-reading-time.ts';
+import { siteConfig } from './src/config/site.ts';
 
 export default defineConfig({
-  site: 'https://blog.honeyhimself.com',
+  site: siteConfig.siteUrl,
   output: 'static',
   prefetch: true,
   integrations: [
@@ -17,7 +18,7 @@ export default defineConfig({
       filter: (page) => !page.includes('/blog/hidden/'),
       serialize(item) {
         // Homepage and listing pages — checked more frequently
-        if (item.url === 'https://blog.honeyhimself.com/' ||
+        if (item.url === `${siteConfig.siteUrl}/` ||
             item.url.endsWith('/blog/') ||
             item.url.endsWith('/series/')) {
           item.changefreq = 'weekly';

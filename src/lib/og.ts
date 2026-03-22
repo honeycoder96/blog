@@ -2,6 +2,7 @@ import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { siteConfig } from '../config/site';
 
 export interface OgData {
   title: string;
@@ -64,7 +65,7 @@ export async function generateOgImage(data: OgData): Promise<Buffer> {
                       textTransform: 'uppercase',
                       fontWeight: 400,
                     },
-                    children: 'blog.honeyhimself.com',
+                    children: siteConfig.siteUrl.replace(/^https?:\/\//, ''),
                   },
                 },
               ],

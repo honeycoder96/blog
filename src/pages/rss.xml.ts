@@ -1,6 +1,7 @@
 import rss from '@astrojs/rss';
 import { getCollection } from 'astro:content';
 import type { APIContext } from 'astro';
+import { siteConfig } from '../config/site';
 
 export async function GET(context: APIContext) {
   const posts = await getCollection('blog');
@@ -16,8 +17,8 @@ export async function GET(context: APIContext) {
     }));
 
   return rss({
-    title: 'Honey Sharma — Blog',
-    description: 'In-depth writing on web engineering, JavaScript, architecture, and the craft of building software.',
+    title: siteConfig.rss.title,
+    description: siteConfig.rss.description,
     site: context.site!,
     items,
     customData: `<language>en-us</language>`,

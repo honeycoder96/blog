@@ -5,6 +5,7 @@ import { AnimatedTitle } from '../../components/react/ui/AnimatedTitle';
 import CategoryFilterNav from '../../components/astro/CategoryFilterNav.astro';
 import { getCollection } from 'astro:content';
 import { buildFilterCategories } from '../../config/categories';
+import { siteConfig } from '../../config/site';
 
 const PAGE_SIZE = 10;
 
@@ -35,7 +36,7 @@ for (const p of posts) {
 ---
 
 <PageLayout
-  title="All Posts — Honey Sharma"
+  title={`All Posts — ${siteConfig.author}`}
   description="All articles about web architecture, engineering, and the craft of software."
 >
   <div class="max-w-7xl mx-auto px-8 lg:px-24 py-16">

@@ -1,9 +1,10 @@
 ---
 import PageLayout from '../layouts/PageLayout.astro';
+import { siteConfig } from '../config/site';
 ---
 
 <PageLayout
-  title="404 — Page Not Found | Honey Sharma"
+  title={`404 — Page Not Found | ${siteConfig.author}`}
   description="This page doesn't exist."
   noindex={true}
 >

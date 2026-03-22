@@ -6,6 +6,7 @@ import { CategoriesSection } from '../components/react/sections/CategoriesSectio
 import { NewsletterSection } from '../components/react/sections/NewsletterSection';
 import { getCollection } from 'astro:content';
 import { HOMEPAGE_CATEGORIES } from '../config/categories';
+import { siteConfig } from '../config/site';
 
 const allPosts = await getCollection('blog');
 const sorted = allPosts
@@ -32,7 +33,7 @@ const featuredPosts = sorted
   }));
 ---
 
-<PageLayout title="blog.honeyhimself — Engineering Blog">
+<PageLayout title={siteConfig.siteTitle}>
   <div class="px-8 lg:px-24">
     <div class="max-w-7xl mx-auto">
       <!-- Hero -->

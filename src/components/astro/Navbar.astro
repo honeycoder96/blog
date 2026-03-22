@@ -1,8 +1,9 @@
 ---
 import ThemeToggle from './ThemeToggle.astro';
+import { siteConfig } from '../../config/site';
 
 const navLinks = [
-  { href: 'https://honeyhimself.com/', label: 'About', external: true },
+  ...(siteConfig.social.website ? [{ href: siteConfig.social.website, label: 'About', external: true }] : []),
   { href: '/series', label: 'Series', external: false },
   { href: '/contact', label: 'Contact', external: false },
 ];
@@ -12,7 +13,7 @@ const currentPath = Astro.url.pathname;
 
 <nav class="fixed top-0 left-0 right-0 z-50 px-8 lg:px-24 py-5 flex items-center justify-between backdrop-blur-sm bg-overlay border-b border-line-faint">
   <a href="/" class="font-display font-bold text-lg tracking-tight text-fg hover:text-fg-default transition-colors">
-    blog<span class="text-fg-muted">.honeyhimself</span>
+    {siteConfig.siteName}
   </a>
 
   <div class="hidden md:flex items-center gap-8">

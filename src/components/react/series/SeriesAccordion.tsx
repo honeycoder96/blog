@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronDown, BookOpen, Clock } from 'lucide-react';
 import { CATEGORY_COLOR_MAP, slugifyCategory } from '../../../config/categories.client';
 
@@ -30,11 +29,121 @@ interface Props {
   categoryCounts?: Record<string, number>;
 }
 
-const cardVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0, transition: { type: 'spring' as const, stiffness: 200, damping: 20 } },
-  exit: { opacity: 0, y: -10, transition: { duration: 0.15 } },
+// ---------------------------------------------------------------------------
+// Accordion item — isolated so each has its own contentRef for height measurement
+// ---------------------------------------------------------------------------
+
+interface AccordionItemProps {
+  s: Series;
+  isOpen: boolean;
+  onToggle: () => void;
+  isNew: boolean;
+}
+
+const AccordionItem: React.FC<AccordionItemProps> = ({ s, isOpen, onToggle, isNew }) => {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [contentHeight, setContentHeight] = useState(0);
+
+  // Measure after mount and whenever posts change
+  useEffect(() => {
+    if (contentRef.current) {
+      setContentHeight(contentRef.current.scrollHeight);
+    }
+  }, [s.posts.length]);
+
+  return (
+    <div className={`border-b border-line w-full${isNew ? ' animate-fade-slide-up' : ''}`}>
+      {/* Accordion header */}
+      <button
+        onClick={onToggle}
+        className="w-full group py-8 md:py-10 flex flex-col md:flex-row justify-between md:items-center gap-4 text-left hover:border-fg-muted transition-colors"
+        aria-expanded={isOpen}
+      >
+        <div className="md:w-1/4 flex flex-col gap-3">
+          <span
+            className={`self-start px-3 py-1 rounded-full border text-xs font-mono uppercase tracking-wider ${
+              CATEGORY_COLOR_MAP[s.category] ?? 'text-fg-muted border-line'
+            }`}
+          >
+            {s.category}
+          </span>
+          <span className="flex items-center gap-1.5 text-xs font-mono text-fg-faint">
+            <BookOpen size={11} />
+            {s.posts.length} {s.posts.length === 1 ? 'post' : 'posts'}
+          </span>
+        </div>
+
+        <div className="md:w-2/4 flex flex-col gap-2">
+          <h3 className="text-xl md:text-2xl font-display font-bold text-fg-default group-hover:text-fg transition-colors duration-300">
+            {s.title}
+          </h3>
+          {s.description && (
+            <p className="text-sm text-fg-faint line-clamp-2 leading-relaxed">
+              {s.description}
+            </p>
+          )}
+        </div>
+
+        <div className="md:w-1/4 flex justify-end items-center gap-3">
+          <div
+            className="transition-transform duration-200"
+            style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+          >
+            <ChevronDown size={20} className="text-fg-ghost group-hover:text-fg transition-colors duration-300" />
+          </div>
+        </div>
+      </button>
+
+      {/* Expanded post list — always in DOM, height animated via max-height */}
+      <div
+        style={{
+          maxHeight: isOpen ? `${contentHeight || 2000}px` : '0px',
+          overflow: 'hidden',
+          opacity: isOpen ? 1 : 0,
+          transition: 'max-height 0.28s ease-in-out, opacity 0.2s ease-in-out',
+        }}
+      >
+        <div ref={contentRef}>
+          <ol className="flex flex-col gap-1 pb-8">
+            {s.posts.map((post, postIdx) => (
+              <li key={post.slug}>
+                <a
+                  href={`/series/${s.seriesSlug}/${post.slug}`}
+                  data-astro-prefetch
+                  className="group flex items-start gap-4 py-3 px-4 rounded-xl hover:bg-surface-raised/50 transition-colors"
+                >
+                  <span className="shrink-0 mt-0.5 w-6 h-6 rounded-full border border-line flex items-center justify-center font-mono text-xs text-fg-faint group-hover:border-fg-muted group-hover:text-fg transition-colors">
+                    {postIdx + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-display font-semibold text-fg-default group-hover:text-fg transition-colors leading-snug">
+                      {post.title}
+                    </p>
+                    {post.summary && (
+                      <p className="text-xs text-fg-faint mt-1 line-clamp-2 leading-relaxed">
+                        {post.summary}
+                      </p>
+                    )}
+                  </div>
+                  {post.readingTime && (
+                    <span className="shrink-0 flex items-center gap-1 text-xs font-mono text-fg-ghost mt-0.5">
+                      <Clock size={10} />
+                      {post.readingTime}m
+                    </span>
+                  )}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
 };
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
 
 export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, categories, categoryCounts }) => {
   const [activeCategory, setActiveCategory] = useState<string>(() => {
@@ -49,7 +158,10 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [openIndex, setOpenIndex] = useState<number | null>(0);
-  const prefersReducedMotion = useReducedMotion();
+
+  // Track initial slugs so Load More items get the enter animation
+  const initialSlugs = useRef<Set<string>>(new Set(initialSeries.map((s) => s.seriesSlug)));
+  const newSlugs = useRef<Set<string>>(new Set());
 
   const prefetchCache = useRef<Map<string, CachedPage>>(new Map());
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -83,6 +195,8 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
     const cacheKey = `${category}::${pageNum}`;
     const cached = prefetchCache.current.get(cacheKey);
     if (cached) {
+      if (append) cached.series.forEach((s) => newSlugs.current.add(s.seriesSlug));
+      else { newSlugs.current.clear(); initialSlugs.current = new Set(cached.series.map((s) => s.seriesSlug)); }
       setSeries((prev) => (append ? [...prev, ...cached.series] : cached.series));
       setTotal(cached.total);
       setPage(pageNum);
@@ -98,6 +212,12 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       prefetchCache.current.set(cacheKey, data);
+      if (append) {
+        data.series.forEach((s: Series) => newSlugs.current.add(s.seriesSlug));
+      } else {
+        newSlugs.current.clear();
+        initialSlugs.current = new Set(data.series.map((s: Series) => s.seriesSlug));
+      }
       setSeries((prev) => (append ? [...prev, ...data.series] : data.series));
       setTotal(data.total);
       setPage(pageNum);
@@ -134,6 +254,8 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
     setOpenIndex(0);
     if (cat === 'All') {
       abortControllerRef.current?.abort();
+      newSlugs.current.clear();
+      initialSlugs.current = new Set(initialSeries.map((s) => s.seriesSlug));
       setSeries(initialSeries);
       setTotal(initialTotal);
       setPage(1);
@@ -187,108 +309,15 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
 
       {/* Series accordion list */}
       <div className="w-full flex flex-col border-t border-line">
-        <AnimatePresence mode="popLayout">
-          {series.map((s, idx) => {
-            const isOpen = openIndex === idx;
-            return (
-              <motion.div
-                key={s.seriesSlug}
-                variants={prefersReducedMotion ? undefined : cardVariants}
-                initial={prefersReducedMotion ? undefined : 'hidden'}
-                animate={prefersReducedMotion ? undefined : 'visible'}
-                exit={prefersReducedMotion ? undefined : 'exit'}
-                className="border-b border-line w-full"
-              >
-                {/* Accordion header */}
-                <button
-                  onClick={() => setOpenIndex(isOpen ? null : idx)}
-                  className="w-full group py-8 md:py-10 flex flex-col md:flex-row justify-between md:items-center gap-4 text-left hover:border-fg-muted transition-colors"
-                  aria-expanded={isOpen}
-                >
-                  <div className="md:w-1/4 flex flex-col gap-3">
-                    <span
-                      className={`self-start px-3 py-1 rounded-full border text-xs font-mono uppercase tracking-wider ${
-                        CATEGORY_COLOR_MAP[s.category] ?? 'text-fg-muted border-line'
-                      }`}
-                    >
-                      {s.category}
-                    </span>
-                    <span className="flex items-center gap-1.5 text-xs font-mono text-fg-faint">
-                      <BookOpen size={11} />
-                      {s.posts.length} {s.posts.length === 1 ? 'post' : 'posts'}
-                    </span>
-                  </div>
-
-                  <div className="md:w-2/4 flex flex-col gap-2">
-                    <h3 className="text-xl md:text-2xl font-display font-bold text-fg-default group-hover:text-fg transition-colors duration-300">
-                      {s.title}
-                    </h3>
-                    {s.description && (
-                      <p className="text-sm text-fg-faint line-clamp-2 leading-relaxed">
-                        {s.description}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="md:w-1/4 flex justify-end items-center gap-3">
-                    <motion.div
-                      animate={{ rotate: isOpen ? 180 : 0 }}
-                      transition={{ duration: prefersReducedMotion ? 0 : 0.2 }}
-                    >
-                      <ChevronDown size={20} className="text-fg-ghost group-hover:text-fg transition-all duration-300" />
-                    </motion.div>
-                  </div>
-                </button>
-
-                {/* Expanded post list */}
-                <AnimatePresence initial={false}>
-                  {isOpen && (
-                    <motion.div
-                      key="content"
-                      initial={prefersReducedMotion ? undefined : { height: 0, opacity: 0 }}
-                      animate={prefersReducedMotion ? undefined : { height: 'auto', opacity: 1 }}
-                      exit={prefersReducedMotion ? undefined : { height: 0, opacity: 0 }}
-                      transition={{ duration: 0.25, ease: 'easeInOut' }}
-                      style={{ overflow: 'hidden' }}
-                    >
-                      <ol className="flex flex-col gap-1 pb-8">
-                        {s.posts.map((post, postIdx) => (
-                          <li key={post.slug}>
-                            <a
-                              href={`/series/${s.seriesSlug}/${post.slug}`}
-                              data-astro-prefetch
-                              className="group flex items-start gap-4 py-3 px-4 rounded-xl hover:bg-surface-raised/50 transition-colors"
-                            >
-                              <span className="shrink-0 mt-0.5 w-6 h-6 rounded-full border border-line flex items-center justify-center font-mono text-xs text-fg-faint group-hover:border-fg-muted group-hover:text-fg transition-colors">
-                                {postIdx + 1}
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <p className="font-display font-semibold text-fg-default group-hover:text-fg transition-colors leading-snug">
-                                  {post.title}
-                                </p>
-                                {post.summary && (
-                                  <p className="text-xs text-fg-faint mt-1 line-clamp-2 leading-relaxed">
-                                    {post.summary}
-                                  </p>
-                                )}
-                              </div>
-                              {post.readingTime && (
-                                <span className="shrink-0 flex items-center gap-1 text-xs font-mono text-fg-ghost mt-0.5">
-                                  <Clock size={10} />
-                                  {post.readingTime}m
-                                </span>
-                              )}
-                            </a>
-                          </li>
-                        ))}
-                      </ol>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
+        {series.map((s, idx) => (
+          <AccordionItem
+            key={s.seriesSlug}
+            s={s}
+            isOpen={openIndex === idx}
+            onToggle={() => setOpenIndex(openIndex === idx ? null : idx)}
+            isNew={newSlugs.current.has(s.seriesSlug)}
+          />
+        ))}
       </div>
 
       {series.length === 0 && !isLoading && (
@@ -315,7 +344,7 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
         </div>
       )}
 
-      {/* Append skeleton — Load More in progress (#20) */}
+      {/* Append skeleton — Load More in progress */}
       {isLoading && series.length > 0 && (
         <div className="border-b border-line py-8 md:py-10 flex flex-col md:flex-row gap-4 animate-pulse">
           <div className="md:w-1/4 flex flex-col gap-3">
@@ -329,7 +358,7 @@ export const SeriesAccordion: React.FC<Props> = ({ initialSeries, initialTotal, 
         </div>
       )}
 
-      {/* Error state (#19) */}
+      {/* Error state */}
       {error && !isLoading && (
         <div className="flex flex-col items-center gap-4 py-12 text-center">
           <p className="font-mono text-sm text-fg-muted">{error}</p>

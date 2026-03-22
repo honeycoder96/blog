@@ -1,5 +1,6 @@
 import React from 'react';
 import { AnimatedTitle } from '../ui/AnimatedTitle';
+import { siteConfig } from '../../../config/site';
 
 export const HeroSection: React.FC = () => {
   return (
@@ -9,7 +10,7 @@ export const HeroSection: React.FC = () => {
         className="hero-fade-in font-mono text-xs text-fg-muted uppercase tracking-widest mb-10"
         style={{ animationDelay: '0s' }}
       >
-        blog.honeyhimself
+        {siteConfig.siteName}
       </p>
 
       {/* Title */}

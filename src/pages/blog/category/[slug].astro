@@ -5,6 +5,7 @@ import { AnimatedTitle } from '../../../components/react/ui/AnimatedTitle';
 import CategoryFilterNav from '../../../components/astro/CategoryFilterNav.astro';
 import { getCollection } from 'astro:content';
 import { buildFilterCategories, slugifyCategory } from '../../../config/categories';
+import { siteConfig } from '../../../config/site';
 
 const PAGE_SIZE = 10;
 
@@ -52,7 +53,7 @@ for (const p of allVisible) {
 ---
 
 <PageLayout
-  title={`${category} — Honey Sharma`}
+  title={`${category} — ${siteConfig.author}`}
   description={`All ${category} posts on web engineering, architecture, and the craft of software.`}
 >
   <div class="max-w-7xl mx-auto px-8 lg:px-24 py-16">

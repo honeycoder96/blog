@@ -1,9 +1,11 @@
 ---
+import { siteConfig } from '../../config/site';
+
 const year = new Date().getFullYear();
 const links = [
-  { label: 'Github', href: 'https://github.com/honeycoder96' },
-  { label: 'LinkedIn', href: 'https://www.linkedin.com/in/honeycoder96/' },
-  { label: 'Email', href: 'mailto:contact@honeyhimself.com' }
+  ...(siteConfig.social.github ? [{ label: 'Github', href: siteConfig.social.github }] : []),
+  ...(siteConfig.social.linkedin ? [{ label: 'LinkedIn', href: siteConfig.social.linkedin }] : []),
+  ...(siteConfig.social.email ? [{ label: 'Email', href: `mailto:${siteConfig.social.email}` }] : []),
 ];
 ---
 
@@ -11,7 +13,7 @@ const links = [
   <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
     <div>
       <a href="/" class="font-display font-bold text-xl tracking-tight text-fg">
-        blog.honeyhimself
+        {siteConfig.siteName}
       </a>
       <p class="text-fg-faint text-sm mt-1 font-mono">
         &copy; {year} — Writing about the craft

@@ -4,6 +4,7 @@ import { SeriesAccordion } from '../../components/react/series/SeriesAccordion';
 import { AnimatedTitle } from '../../components/react/ui/AnimatedTitle';
 import { getCollection } from 'astro:content';
 import { buildFilterCategories } from '../../config/categories';
+import { siteConfig } from '../../config/site';
 
 const PAGE_SIZE = 5;
 
@@ -44,7 +45,7 @@ const totalPosts = allSeries.reduce((sum, s) => sum + s.posts.length, 0);
 ---
 
 <PageLayout
-  title="Series — Honey Sharma"
+  title={`Series — ${siteConfig.author}`}
   description="In-depth reading tracks on JavaScript, architecture, and engineering — each a structured multi-part series."
 >
   <div class="max-w-7xl mx-auto px-8 lg:px-24 py-16">

@@ -13,8 +13,9 @@ yarn-error.log*
 pnpm-debug.log*
 
 
-# environment variables
+# environment variables — copy .env.example and fill in your values
 .env
+.env.development
 .env.production
 
 # macOS-specific files
