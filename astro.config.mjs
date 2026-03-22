@@ -21,7 +21,7 @@ export default defineConfig({
     preact({ compat: true }),
     mdx(),
     sitemap({
-      filter: (page) => !page.includes('/blog/hidden/'),
+      filter: (page) => !page.includes('/blog/hidden/') && !page.includes('/preview/'),
       serialize(item) {
         // Homepage and listing pages — checked more frequently
         if (item.url === `${siteConfig.siteUrl}/` ||

@@ -12,6 +12,8 @@ export const CustomCursor: React.FC = () => {
   const prefersReducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
+    // Skip on touch/pointer-coarse devices (mobile, tablets)
+    if (!window.matchMedia('(pointer: fine)').matches) return;
     // Skip animation loop for users who prefer reduced motion
     if (prefersReducedMotion) return;
 

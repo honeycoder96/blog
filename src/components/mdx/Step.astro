@@ -1,0 +1,102 @@
+---
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<li class="mdx-step">
+  <div class="mdx-step-indicator">
+    <div class="mdx-step-num"></div>
+    <div class="mdx-step-line"></div>
+  </div>
+  <div class="mdx-step-body">
+    <div class="mdx-step-title">{title}</div>
+    <div class="mdx-step-content">
+      <slot />
+    </div>
+  </div>
+</li>
+
+<style is:global>
+  .mdx-step {
+    display: flex;
+    gap: 1.25rem;
+    padding-bottom: 2rem;
+    counter-increment: mdx-step-counter;
+  }
+
+  .mdx-step:last-child {
+    padding-bottom: 0;
+  }
+
+  .mdx-step:last-child .mdx-step-line {
+    display: none;
+  }
+
+  .mdx-step-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .mdx-step-num {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: var(--theme-bg-raised);
+    border: 1px solid var(--theme-line-strong);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.78rem;
+    font-weight: 700;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    color: var(--theme-fg-default);
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .mdx-step-num::before {
+    content: counter(mdx-step-counter);
+    position: absolute;
+  }
+
+  .mdx-step-line {
+    width: 1px;
+    flex: 1;
+    background: var(--theme-line);
+    margin-top: 0.375rem;
+    min-height: 1.5rem;
+  }
+
+  .mdx-step-body {
+    padding-top: 0.25rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .mdx-step-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--theme-fg);
+    margin-bottom: 0.5rem;
+    font-family: "Clash Display", sans-serif;
+  }
+
+  .mdx-step-content p {
+    color: var(--theme-fg-muted);
+    line-height: 1.75;
+    margin: 0.5rem 0;
+  }
+
+  .mdx-step-content p:first-child {
+    margin-top: 0;
+  }
+
+  .mdx-step-content code {
+    font-size: 0.85em;
+  }
+</style>

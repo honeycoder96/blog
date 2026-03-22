@@ -1,0 +1,221 @@
+---
+interface State {
+  id: string;
+  label: string;
+  description?: string;
+  type?: 'normal' | 'terminal' | 'error';
+}
+
+interface Transition {
+  from: string;
+  to: string;
+  label?: string;
+}
+
+interface Props {
+  states: State[];
+  transitions: Transition[];
+  title?: string;
+}
+
+const { states, transitions, title } = Astro.props;
+
+// Group transitions by "from" state
+const transitionMap = new Map<string, Transition[]>();
+for (const t of transitions) {
+  if (!transitionMap.has(t.from)) transitionMap.set(t.from, []);
+  transitionMap.get(t.from)!.push(t);
+}
+---
+
+<div class="sm-block">
+  <div class="sm-header">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10"/>
+      <polyline points="12 6 12 12 16 14"/>
+    </svg>
+    <span>{title ?? 'State Machine'}</span>
+  </div>
+  <div class="sm-table-wrap">
+    <table class="sm-table">
+      <thead>
+        <tr>
+          <th>State</th>
+          <th>Description</th>
+          <th>Transitions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {states.map((state) => {
+          const outgoing = transitionMap.get(state.id) ?? [];
+          const typeCls = state.type === 'terminal' ? 'sm-terminal' : state.type === 'error' ? 'sm-error' : '';
+          return (
+            <tr>
+              <td>
+                <span class:list={['sm-state-pill', typeCls]}>{state.label}</span>
+              </td>
+              <td class="sm-desc">{state.description ?? '—'}</td>
+              <td>
+                {outgoing.length === 0 ? (
+                  <span class="sm-no-trans">—</span>
+                ) : (
+                  <ul class="sm-trans-list">
+                    {outgoing.map((t) => {
+                      const toState = states.find((s) => s.id === t.to);
+                      return (
+                        <li>
+                          <span class="sm-arrow">→</span>
+                          <span class="sm-to-state">{toState?.label ?? t.to}</span>
+                          {t.label && <span class="sm-trans-label">({t.label})</span>}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+  .sm-block {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .sm-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-fg-faint);
+  }
+
+  .sm-table-wrap {
+    overflow-x: auto;
+  }
+
+  .sm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+
+  .sm-table thead tr {
+    border-bottom: 2px solid var(--theme-line-strong);
+  }
+
+  .sm-table th {
+    padding: 0.625rem 1rem;
+    text-align: left;
+    color: var(--theme-fg-muted);
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .sm-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--theme-line);
+    vertical-align: top;
+    color: var(--theme-fg-muted);
+  }
+
+  .sm-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .sm-state-pill {
+    display: inline-block;
+    padding: 0.2rem 0.625rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    background: var(--theme-bg-raised);
+    border: 1px solid var(--theme-line-strong);
+    color: var(--theme-fg-default);
+    white-space: nowrap;
+  }
+
+  .sm-terminal {
+    background: rgba(34, 197, 94, 0.08);
+    border-color: rgba(34, 197, 94, 0.25);
+    color: #22c55e;
+  }
+
+  .sm-error {
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.25);
+    color: #ef4444;
+  }
+
+  .sm-desc {
+    color: var(--theme-fg-muted);
+    max-width: 20rem;
+    line-height: 1.5;
+    white-space: normal;
+  }
+
+  .sm-trans-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .sm-trans-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.375rem;
+    font-size: 0.83rem;
+  }
+
+  .sm-arrow {
+    color: var(--theme-fg-ghost);
+    font-size: 0.75rem;
+    flex-shrink: 0;
+  }
+
+  .sm-to-state {
+    color: var(--theme-fg-default);
+    font-weight: 600;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.78rem;
+  }
+
+  .sm-trans-label {
+    color: var(--theme-fg-faint);
+    font-size: 0.78rem;
+  }
+
+  .sm-no-trans {
+    color: var(--theme-fg-ghost);
+  }
+</style>

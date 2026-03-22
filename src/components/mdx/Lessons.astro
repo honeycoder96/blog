@@ -1,0 +1,86 @@
+---
+interface Props {
+  title?: string;
+  type?: 'learned' | 'reconsider' | 'recommendations';
+}
+
+const { title, type = 'learned' } = Astro.props;
+
+const config = {
+  learned: {
+    icon: '<path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm-1-5h2v2h-2zm0-8h2v6h-2z"/>',
+    defaultTitle: 'What We Learned',
+  },
+  reconsider: {
+    icon: '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+    defaultTitle: "What We'd Reconsider",
+  },
+  recommendations: {
+    icon: '<polyline points="20 6 9 17 4 12"/>',
+    defaultTitle: 'Recommendations',
+  },
+};
+
+const current = config[type];
+const displayTitle = title ?? current.defaultTitle;
+---
+
+<div class="lessons-block">
+  <div class="lessons-header">
+    <svg
+      class="lessons-icon"
+      xmlns="http://www.w3.org/2000/svg"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <Fragment set:html={current.icon} />
+    </svg>
+    <span class="lessons-title">{displayTitle}</span>
+  </div>
+  <div class="lessons-list">
+    <slot />
+  </div>
+</div>
+
+<style>
+  .lessons-block {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .lessons-header {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.75rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+  }
+
+  .lessons-icon {
+    color: var(--theme-fg-muted);
+    flex-shrink: 0;
+  }
+
+  .lessons-title {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--theme-fg-default);
+    font-family: "Clash Display", sans-serif;
+    letter-spacing: 0.01em;
+  }
+
+  .lessons-list {
+    display: flex;
+    flex-direction: column;
+  }
+</style>

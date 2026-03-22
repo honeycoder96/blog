@@ -143,6 +143,10 @@
 
 /* ── Base styles ──────────────────────────────────────────────── */
 
+html {
+  overflow-x: hidden;
+}
+
 body {
   background-color: var(--theme-bg);
   color: var(--theme-fg);
@@ -424,9 +428,65 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--theme-scrollbar-thumb); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--theme-scrollbar-hover); }
 
+/* ── MDX Tabs component ──────────────────────────────────────── */
+
+.mdx-tabs {
+  margin: 2rem 0;
+  border: 1px solid var(--theme-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.mdx-tabs-nav {
+  display: flex;
+  border-bottom: 1px solid var(--theme-line);
+  background: var(--theme-bg-raised);
+  overflow-x: auto;
+}
+
+.mdx-tab-btn {
+  padding: 0.6rem 1.25rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--theme-fg-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.mdx-tab-btn:hover {
+  color: var(--theme-fg);
+}
+
+.mdx-tab-btn--active {
+  color: var(--theme-fg);
+  border-bottom-color: var(--theme-fg);
+}
+
+.mdx-tab-panel {
+  background: var(--theme-bg-inset);
+}
+
+/* Code-only tab: extend code block edge-to-edge */
+.mdx-tab-pane > pre:only-child {
+  border-radius: 0 !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
+  margin: 0 !important;
+}
+
+.mdx-tab-pane > :not(pre) {
+  padding: 1.25rem;
+}
+
 /* ── Custom cursor ────────────────────────────────────────────── */
 
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce), (pointer: coarse) {
   .custom-cursor { display: none; }
 }
 

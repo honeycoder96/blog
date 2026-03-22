@@ -10,6 +10,15 @@ tags: [engineering, architecture]
 relatedPosts: []
 ---
 
+import Callout from '../../../components/mdx/Callout.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import ArchFlow from '../../../components/mdx/ArchFlow.astro';
+import FileTree from '../../../components/mdx/FileTree.astro';
+import MetricCard from '../../../components/mdx/MetricCard.astro';
+import Lessons from '../../../components/mdx/Lessons.astro';
+import Lesson from '../../../components/mdx/Lesson.astro';
+import BrowserSupport from '../../../components/mdx/BrowserSupport.astro';
+
 ## The Problem With Cloud-Hosted LLMs
 
 Every time you send code to a cloud AI API, you are making a series of implicit decisions: you accept the latency of a round-trip over the network, you accept that your code leaves your machine, and you accept an ongoing per-token cost. For many use cases — especially anything touching proprietary codebases, medical records, legal documents, or financial data — those trade-offs are non-starters.
@@ -43,14 +52,15 @@ This matters for machine learning because the core operation in every transforme
 
 WebGPU shipped in Chrome 113 (May 2023) behind no flag. As of early 2026:
 
-| Browser | Status |
-|---|---|
-| Chrome 113+ | ✅ Stable |
-| Edge 113+ | ✅ Stable |
-| Firefox | 🔬 Behind flag (`dom.webgpu.enabled`) |
-| Safari 18+ (macOS 15) | ✅ Stable |
-| Chrome on Android | ✅ Stable |
-| Safari on iOS 18+ | ✅ Stable |
+<BrowserSupport
+  feature="WebGPU"
+  data={[
+    { browser: "chrome", version: "113", status: "full", note: "Stable since May 2023" },
+    { browser: "edge", version: "113", status: "full" },
+    { browser: "firefox", status: "flag", note: "dom.webgpu.enabled" },
+    { browser: "safari", version: "18", status: "full", note: "macOS 15 / iOS 18" },
+  ]}
+/>
 
 ### Detecting WebGPU at Runtime
 
@@ -100,13 +110,16 @@ The result is a fully self-contained LLM that runs in a browser tab with zero Py
 
 WebLLM ships pre-compiled versions of several popular open models. Here is what the current catalogue looks like, including the practical constraints:
 
-| Model | Download Size | Min VRAM | Context Window | Best For |
-|---|---|---|---|---|
-| Phi-3.5 Mini Instruct (INT4) | 2.2 GB | 3 GB | 4K tokens | ✅ Default — fast, broad hardware support |
-| Llama 3.2 3B Instruct (INT4) | 1.8 GB | 2.5 GB | 4K tokens | Lightweight, fast responses |
-| Llama 3.1 8B Instruct (INT4) | 4.9 GB | 6 GB | 8K tokens | Longer context tasks |
-| Mistral 7B Instruct (INT4) | 4.1 GB | 5 GB | 8K tokens | General reasoning |
-| Qwen 2.5 Coder 7B (INT4) | 4.3 GB | 5.5 GB | 8K tokens | ⭐ Best code quality |
+<Comparison
+  headers={["Model", "Download", "Min VRAM", "Context", "Best For"]}
+  rows={[
+    ["Phi-3.5 Mini Instruct (INT4)", "2.2 GB", "3 GB", "4K tokens", "✅ Default — broad hardware support"],
+    ["Llama 3.2 3B Instruct (INT4)", "1.8 GB", "2.5 GB", "4K tokens", "Lightweight, fast responses"],
+    ["Llama 3.1 8B Instruct (INT4)", "4.9 GB", "6 GB", "8K tokens", "Longer context tasks"],
+    ["Mistral 7B Instruct (INT4)", "4.1 GB", "5 GB", "8K tokens", "General reasoning"],
+    ["Qwen 2.5 Coder 7B (INT4)", "4.3 GB", "5.5 GB", "8K tokens", "⭐ Best code quality"],
+  ]}
+/>
 
 The default in our app is **Phi-3.5 Mini** — it runs on a wider range of hardware (including entry-level discrete GPUs and Apple Silicon MBPs) and still produces high-quality results for focused, structured prompts.
 
@@ -161,19 +174,25 @@ for await (const chunk of stream) {
 
 The first time a user loads a model, WebLLM fetches the weight shards from a CDN (huggingface.co by default) and stores them in **IndexedDB**. On subsequent loads, the weights are read from IndexedDB — no network request.
 
-This is a critical UX detail. The first load for Phi-3.5 Mini takes roughly 2–4 minutes on a typical broadband connection (2.2 GB). Every load after that is under 10 seconds. Your onboarding UI must communicate this clearly.
+<Callout type="warning" title="First-load UX is the hardest problem">
+The first load for Phi-3.5 Mini takes roughly 2–4 minutes on a typical broadband connection (2.2 GB). Every load after that is under 10 seconds. Your onboarding UI must communicate this clearly — a progress bar showing bytes downloaded is the minimum. Without it, users assume the app is broken.
+</Callout>
 
 ### Transformers.js: The WASM Alternative
 
 [Transformers.js](https://huggingface.co/docs/transformers.js) (Hugging Face) is a different approach to browser-local inference. It runs models via WebAssembly and ONNX Runtime Web rather than WebGPU. The trade-off:
 
-| | WebLLM | Transformers.js |
-|---|---|---|
-| Compute target | WebGPU (GPU) | WASM / ONNX (CPU) |
-| Model sizes | 1.8–7B params | 50M–500M params |
-| Hardware requirement | Discrete or integrated GPU | Any device |
-| Inference speed | 2–10 tok/s (GPU-bound) | 3–15 tok/s (CPU-bound, smaller models) |
-| Use case | Large instruction-following models | Classification, embedding, small seq2seq |
+<Comparison
+  highlight={1}
+  headers={["", "WebLLM", "Transformers.js"]}
+  rows={[
+    ["Compute target", "WebGPU (GPU)", "WASM / ONNX (CPU)"],
+    ["Model sizes", "1.8–7B params", "50M–500M params"],
+    ["Hardware", "Discrete or integrated GPU", "Any device"],
+    ["Inference speed", "2–10 tok/s (GPU-bound)", "3–15 tok/s (CPU, smaller models)"],
+    ["Use case", "Instruction-following, code review, Q&A", "Classification, embedding, small seq2seq"],
+  ]}
+/>
 
 For tasks like sentiment analysis, named entity recognition, or embedding generation, Transformers.js is often the right choice. For instruction-following tasks (code review, summarisation, Q&A), WebLLM's larger models produce meaningfully better results.
 
@@ -228,12 +247,16 @@ The central insight: **one focused agent per concern beats one generic agent for
 
 We run four sequential agents per code chunk:
 
-```
-Chunk ──► Bug Reviewer ──► Security Auditor ──► Performance Reviewer ──► Summary Agent
-              │                   │                      │                      │
-         (streams)           (streams)               (streams)          (deduplicates,
-                                                                          ranks, scores)
-```
+<ArchFlow
+  title="Multi-Agent Review Pipeline"
+  nodes={[
+    { label: "Code Chunk", sublabel: "diff segment" },
+    { label: "Bug Reviewer", sublabel: "streams findings" },
+    { label: "Security Auditor", sublabel: "streams findings" },
+    { label: "Performance Reviewer", sublabel: "streams findings" },
+    { label: "Summary Agent", sublabel: "deduplicates · ranks · scores" },
+  ]}
+/>
 
 Each agent is a distinct system prompt targeting a single concern:
 
@@ -406,6 +429,25 @@ function getMaxTokens(chunk) {
 Parsing a large diff (thousands of lines) and chunking it synchronously on the main thread blocks the UI. We move both operations into Web Workers.
 
 Vite supports ES module workers natively — no bundler gymnastics required:
+
+<FileTree
+  title="Project structure"
+  tree={`src/
+  lib/
+    engine.js
+    agents.js
+    chunker.js
+    prompts.js
+    reviewer.js
+    diffParser.js
+  workers/
+    diffParser.worker.js
+    chunker.worker.js
+  components/
+    StreamingText.jsx
+  store/
+    useStore.js`}
+/>
 
 ```js
 // Spawning a module worker in Vite
@@ -596,46 +638,28 @@ VitePWA({
 
 ## Part 5: Engineering Trade-offs and Lessons Learned
 
-### 1. The First-Load Experience Is the Hardest Problem
+<Lessons title="Lessons Learned" type="learned">
+  <Lesson title="The first-load experience is the hardest problem">
+    Downloading 2.2 GB on first run is unavoidable. We mitigated it with a clear progress bar (bytes downloaded / total), a cache-hit badge on the model selector so returning users know they will skip the download, and setting Phi-3.5 Mini as default (smallest footprint, widest hardware support). There is no way to make a 2.2 GB download fast — you can only make it feel purposeful.
+  </Lesson>
+  <Lesson title="Context windows are finite — treat every token as expensive">
+    At 4K tokens, Phi-3.5's context window is small by modern standards. The discipline of writing focused, concise agent prompts paid dividends in two ways: lower token consumption, and better model outputs. The rule we adopted: a system prompt that exceeds 200 tokens is doing too much.
+  </Lesson>
+  <Lesson title="Sequential files, parallel chunks">
+    We process files sequentially but chunk them in parallel. Processing files in parallel would require holding multiple files' chunk results in VRAM simultaneously — a budget the model already occupies. Parallelising the CPU-bound chunking step (before inference) via `Promise.all` + workers does save wall-clock time.
+  </Lesson>
+  <Lesson title="Streaming is not optional">
+    Without streaming, the app showed a spinner for 15–30 seconds before anything appeared. With streaming, the first token appears at 1–2 seconds. The psychological difference is enormous — the user sees work happening. The token streaming loop is only ~8 lines of code. The UX improvement is disproportionate.
+  </Lesson>
+  <Lesson title="Vite module workers are a first-class feature">
+    Using `{"{"}{ type: 'module' }{"}"}` workers in Vite means the worker imports the same library code as the main thread, with no duplication and no CommonJS interop issues. One caveat: Vite's module worker support requires the worker URL to use `import.meta.url` — you cannot pass a bare string path.
+  </Lesson>
+  <Lesson title="LLM output parsing is always wrong the first time">
+    LLMs do not always return valid JSON — they add prose preamble, omit closing brackets, escape characters inconsistently. We spent more time on the `parseAgentResponse` function than on any single agent prompt. The robust pattern: try `JSON.parse`, then extract the first JSON array/object with a regex fallback, then apply a schema validator, then log and discard anything that still fails.
+  </Lesson>
+</Lessons>
 
-Downloading 2.2 GB on first run is unavoidable. We mitigated it with:
-- A clear progress bar (bytes downloaded / total)
-- A cache-hit badge on the model selector so returning users know they will skip the download
-- Setting Phi-3.5 Mini as default (smallest footprint, widest hardware support)
-
-There is no way to make a 2.2 GB download fast. You can only make it feel purposeful.
-
-### 2. Context Windows Are Finite — Treat Every Token as Expensive
-
-At 4K tokens, Phi-3.5's context window is small by modern standards. Our token budget leaves no room for verbose prompts. The discipline of writing focused, concise agent prompts paid dividends in two ways: lower token consumption, and better model outputs (focused prompts produce more focused responses).
-
-The rule we adopted: *a system prompt that exceeds 200 tokens is doing too much.*
-
-### 3. Sequential Files, Parallel Chunks
-
-We process files sequentially but chunk them in parallel. This was a deliberate choice.
-
-Processing files in parallel would require holding multiple files' chunk results in VRAM simultaneously — a VRAM budget the model already occupies. We had one GPU, one model, one inference queue.
-
-Processing chunks of a single file in parallel would require multiple simultaneous calls to the engine, which WebLLM serialises internally anyway. There is no concurrency benefit — but parallelising the CPU-bound chunking step (before inference) via `Promise.all` + workers *does* save wall-clock time.
-
-### 4. Streaming Is Not Optional
-
-Without streaming, the app showed a spinner for 15–30 seconds before anything appeared. With streaming, the first token appears at 1–2 seconds. The psychological difference is enormous — the user sees work happening.
-
-The token streaming loop is only ~8 lines of code. The UX improvement is disproportionate.
-
-### 5. Vite Module Workers Are a First-Class Feature
-
-Using `{ type: 'module' }` workers in Vite means the worker imports the same library code as the main thread, with no duplication and no CommonJS interop issues. The build output separates worker bundles correctly. This is significantly better DX than the legacy `importScripts`-based worker pattern.
-
-One caveat: Vite's module worker support requires the worker URL to use `import.meta.url` — you cannot pass a bare string path.
-
-### 6. LLM Output Parsing Is Always Wrong the First Time
-
-LLMs do not always return valid JSON. They add prose preamble ("Here are my findings:"), they omit closing brackets, they escape characters inconsistently. We spent more time on the `parseAgentResponse` function than on any single agent prompt.
-
-The robust pattern: try `JSON.parse`, then extract the first JSON array/object with a regex fallback, then apply a schema validator, then log and discard anything that still fails:
+### Parsing implementation
 
 ```js
 export function parseAgentResponse(raw) {

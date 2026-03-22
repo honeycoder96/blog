@@ -1,6 +1,7 @@
 ---
 import { render } from 'astro:content';
 import BlogLayout from '../../../layouts/BlogLayout.astro';
+import MdxImage from '../../../components/astro/MdxImage.astro';
 import { splitSeriesEntries, resolveReadingTime } from '../../../lib/content';
 
 export async function getStaticPaths() {
@@ -60,5 +61,5 @@ const readingTime = resolveReadingTime(entry.data.readingTime, entry.body);
   seriesContext={{ seriesSlug, seriesTitle, part, total }}
   ogImage={`/og/series/${seriesSlug}/${Astro.params.postSlug}.png`}
 >
-  <Content />
+  <Content components={{ img: MdxImage }} />
 </BlogLayout>

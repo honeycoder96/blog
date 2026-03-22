@@ -14,7 +14,7 @@ const navLinks = [
 const currentPath = Astro.url.pathname;
 ---
 
-<nav class="fixed top-0 left-0 right-0 z-50 px-8 lg:px-24 py-5 flex items-center justify-between backdrop-blur-sm bg-overlay border-b border-line-faint">
+<nav class="fixed top-0 left-0 right-0 z-[120] px-8 lg:px-24 py-5 flex items-center justify-between backdrop-blur-sm bg-overlay border-b border-line-faint">
   <a href="/" class="font-display font-bold text-lg tracking-tight text-fg hover:text-fg-default transition-colors">
     {siteConfig.siteName}
   </a>
@@ -108,7 +108,7 @@ const currentPath = Astro.url.pathname;
 <!-- Mobile menu -->
 <div
   id="mobile-menu"
-  class="fixed inset-0 z-40 bg-surface flex flex-col items-center justify-center gap-8 translate-x-full transition-transform duration-300 md:hidden"
+  class="fixed inset-0 z-[110] bg-surface flex flex-col items-center justify-center gap-8 translate-x-full transition-transform duration-300 md:hidden"
 >
   {navLinks.map(link => (
     <a
@@ -172,15 +172,16 @@ const currentPath = Astro.url.pathname;
     open = isOpen;
     menu?.classList.toggle('translate-x-full', !open);
     menu?.classList.toggle('translate-x-0', open);
+    document.body.style.overflow = open ? 'hidden' : '';
+    document.documentElement.style.overflow = open ? 'hidden' : '';
 
     // Animate hamburger → X
-    // gap-1.5 = 0.375rem between each bar; + 1px accounts for the bar's own 1px height
-    const BURGER_SHIFT = 'calc(0.375rem + 1px)';
+    // gap-1.5 = 6px between bars; each bar is 1px tall → 7px center-to-center
     if (burgerTop && burgerMiddle && burgerBottom) {
       if (open) {
-        burgerTop.style.transform    = `translateY(${BURGER_SHIFT}) rotate(45deg)`;
+        burgerTop.style.transform    = 'translateY(7px) rotate(45deg)';
         burgerMiddle.style.opacity   = '0';
-        burgerBottom.style.transform = `translateY(-${BURGER_SHIFT}) rotate(-45deg)`;
+        burgerBottom.style.transform = 'translateY(-7px) rotate(-45deg)';
       } else {
         burgerTop.style.transform    = '';
         burgerMiddle.style.opacity   = '';

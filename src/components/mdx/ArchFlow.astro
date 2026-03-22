@@ -1,0 +1,100 @@
+---
+interface Node {
+  label: string;
+  sublabel?: string;
+}
+
+interface Props {
+  nodes: Node[];
+  title?: string;
+  direction?: 'horizontal' | 'vertical';
+}
+
+const { nodes, title, direction = 'horizontal' } = Astro.props;
+---
+
+<div class="arch-flow">
+  {title && <div class="arch-flow-title">{title}</div>}
+  <div class:list={['arch-flow-nodes', direction === 'vertical' ? 'arch-flow--vert' : '']}>
+    {nodes.map((node, i) => (
+      <>
+        <div class="arch-node">
+          <div class="arch-node-label">{node.label}</div>
+          {node.sublabel && <div class="arch-node-sub">{node.sublabel}</div>}
+        </div>
+        {i < nodes.length - 1 && (
+          <div class="arch-arrow" aria-hidden="true">
+            {direction === 'vertical' ? '↓' : '→'}
+          </div>
+        )}
+      </>
+    ))}
+  </div>
+</div>
+
+<style>
+  .arch-flow {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .arch-flow-title {
+    padding: 0.625rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-fg-faint);
+  }
+
+  .arch-flow-nodes {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0;
+    padding: 1.5rem 1.25rem;
+    background: var(--theme-bg-inset);
+    row-gap: 0.75rem;
+  }
+
+  .arch-flow--vert {
+    flex-direction: column;
+  }
+
+  .arch-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: var(--theme-bg-raised);
+    border: 1px solid var(--theme-line-strong);
+    border-radius: 8px;
+    padding: 0.625rem 1.25rem;
+    min-width: 8rem;
+    text-align: center;
+  }
+
+  .arch-node-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--theme-fg-default);
+  }
+
+  .arch-node-sub {
+    font-size: 0.7rem;
+    color: var(--theme-fg-faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    margin-top: 0.2rem;
+  }
+
+  .arch-arrow {
+    font-size: 1.1rem;
+    color: var(--theme-fg-ghost);
+    padding: 0 0.625rem;
+    flex-shrink: 0;
+  }
+</style>

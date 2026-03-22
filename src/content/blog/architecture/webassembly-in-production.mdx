@@ -10,6 +10,11 @@ tags: [webassembly, wasm, performance, rust, video]
 relatedPosts: [architecture/webrtc-2026]
 ---
 
+import Callout from '../../../components/mdx/Callout.astro';
+import MetricCard from '../../../components/mdx/MetricCard.astro';
+import Lessons from '../../../components/mdx/Lessons.astro';
+import Lesson from '../../../components/mdx/Lesson.astro';
+
 We had a problem: real-time video effect processing in the browser. Frame rate requirements were 30fps minimum, effects pipeline included color grading, noise reduction, and background segmentation. JavaScript couldn't get there. WebAssembly could.
 
 This is what we learned after six months of production WASM.
@@ -20,8 +25,13 @@ The browser's main thread has to do too many things: parse/execute JS, layout, p
 
 WASM gives you near-native performance because it compiles ahead of time to a compact binary format with a well-defined memory model. The JIT uncertainty that makes JavaScript performance unpredictable doesn't exist in the same way.
 
-Our numbers before WASM: 12fps with CPU usage pinning at 90-100%.
-After: 29-31fps at 40-60% CPU. On the same hardware.
+<MetricCard
+  title="Video Processing — Same Hardware"
+  metrics={[
+    { label: "Frame rate", before: "12fps", after: "29–31fps", better: "higher" },
+    { label: "CPU usage", before: "90–100%", after: "40–60%", better: "lower" },
+  ]}
+/>
 
 ## The Rust-to-WASM Pipeline
 
@@ -85,6 +95,10 @@ processor.set_frame_buffer(frameView);
 // No memcpy — the data lives in WASM memory throughout
 ```
 
+<Callout type="danger" title="SharedArrayBuffer requires cross-origin isolation headers">
+`SharedArrayBuffer` requires `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` headers on your server. Without them, `SharedArrayBuffer` is unavailable — the constructor throws. Test this early; retrofitting the headers can break third-party embeds.
+</Callout>
+
 This is where WebWorkers become essential. `SharedArrayBuffer` requires cross-origin isolation headers (`COOP` and `COEP`), and the heavy processing should never block the main thread anyway.
 
 ## Debugging in WASM: The Part Nobody Talks About
@@ -95,6 +109,10 @@ What helps:
 1. Extensive logging at the Rust level using `web-sys::console::log_1`
 2. Aggressive boundary validation before passing data into WASM
 3. A debug build with full source maps for local development
+
+<Callout type="danger" title="WASM objects crossing the JS boundary must be manually freed">
+Rust drops automatically within Rust scope, but objects created from the JS side are managed by the JS GC — which doesn't know about WASM-internal allocations. If you create a WASM struct from JS and never call `.free()`, the Rust memory leaks while the JS wrapper gets garbage collected.
+</Callout>
 
 The hardest bug we hit: a memory leak from not calling `free()` on WASM-allocated objects. Rust drops automatically within Rust scope, but objects crossing the WASM/JS boundary are managed by the JS GC. If you create a WASM struct from JS and don't explicitly call `.free()`, it leaks.
 
@@ -109,12 +127,33 @@ processor.free(); // Critical — or you leak every allocation
 
 WASM SIMD allows operating on 128-bit vectors — processing 4 float values or 16 bytes simultaneously. For image processing, this is transformative.
 
+<MetricCard
+  title="SIMD — Noise Reduction Per Frame"
+  metrics={[{ label: "Noise reduction time", before: "12ms/frame", after: "3ms/frame", better: "lower" }]}
+/>
+
+<Callout type="tip" title="Safari SIMD support resolved as of mid-2025">
+WASM SIMD was behind a flag in Safari until mid-2025. It's now enabled by default across all major browsers. If you're targeting older Safari versions, add a SIMD capability check and fall back to the scalar implementation.
+</Callout>
+
 Our noise reduction went from 12ms/frame to 3ms/frame with SIMD. The browser support question (Safari SIMD support was spotty until mid-2025) is now resolved.
 
 ## Production Recommendations
 
-1. **Profile first**: WASM adds complexity. Prove JavaScript can't meet your requirements before reaching for it.
-2. **Use WebWorkers**: WASM should run off-main-thread. Always.
-3. **Manage memory explicitly**: Track every allocation that crosses the JS boundary.
-4. **Build monitoring in**: WASM errors are hard to surface. Custom error reporting from the WASM side is worth building.
-5. **Test in Safari**: The WASM implementation differences between V8, SpiderMonkey, and JavaScriptCore are real.
+<Lessons type="recommendations">
+  <Lesson title="Profile first">
+    WASM adds significant complexity — a new language, a new build pipeline, a new memory model. Prove JavaScript can't meet your requirements before reaching for it. `performance.now()` before and after is the bar.
+  </Lesson>
+  <Lesson title="Use WebWorkers — always">
+    WASM processing should never run on the main thread. WebWorkers give you an isolated thread with its own memory and event loop. The `SharedArrayBuffer` + COEP/COOP setup is worth the effort.
+  </Lesson>
+  <Lesson title="Manage memory explicitly">
+    Track every allocation that crosses the JS/WASM boundary. Every WASM struct you create from JS needs an explicit `.free()` call. Consider wrapping WASM objects in a `using` pattern (JavaScript explicit resource management) when it ships.
+  </Lesson>
+  <Lesson title="Build error monitoring into the WASM side">
+    WASM stack traces in production are bytecode addresses. Use `web-sys::console::log_1` liberally in Rust. Catch panics at the boundary and surface them as structured JS errors before they disappear.
+  </Lesson>
+  <Lesson title="Test in Safari">
+    The WASM implementation differences between V8, SpiderMonkey, and JavaScriptCore are real. SIMD behavior, memory limits, and error handling all differ. Safari is the last thing developers test and the first thing bugs appear in.
+  </Lesson>
+</Lessons>

@@ -1,0 +1,66 @@
+---
+/**
+ * MdxImage — drop-in replacement for <img> inside MDX content.
+ *
+ * Passed via <Content components={{ img: MdxImage }} />.
+ *
+ * Astro's MDX pipeline resolves local relative paths to ImageMetadata objects
+ * before this component runs, so:
+ *   - typeof src === 'object' → local image (width/height known, WebP auto)
+ *   - typeof src === 'string' && http(s) → remote image (inferSize at build time)
+ *   - other strings → absolute/data URIs, fall through to plain <img>
+ */
+import { Image } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+
+interface Props {
+  src: ImageMetadata | string;
+  alt?: string;
+  width?: number | string;
+  height?: number | string;
+  title?: string;
+}
+
+const { src, alt = '', width, height, title } = Astro.props;
+
+const isLocal  = src !== null && typeof src === 'object';
+const isRemote = typeof src === 'string' && /^https?:\/\//.test(src);
+---
+
+{isLocal ? (
+  <figure class="my-8">
+    <Image
+      src={src as ImageMetadata}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      class="rounded-lg w-full h-auto"
+    />
+    {title && <figcaption class="mt-2 text-center text-xs font-mono text-fg-faint">{title}</figcaption>}
+  </figure>
+) : isRemote ? (
+  <figure class="my-8">
+    <Image
+      src={src as string}
+      alt={alt}
+      inferSize
+      loading="lazy"
+      decoding="async"
+      class="rounded-lg w-full h-auto"
+    />
+    {title && <figcaption class="mt-2 text-center text-xs font-mono text-fg-faint">{title}</figcaption>}
+  </figure>
+) : (
+  <figure class="my-8">
+    <img
+      src={src as string}
+      alt={alt}
+      width={width}
+      height={height}
+      loading="lazy"
+      decoding="async"
+      class="rounded-lg w-full h-auto"
+    />
+    {title && <figcaption class="mt-2 text-center text-xs font-mono text-fg-faint">{title}</figcaption>}
+  </figure>
+)}

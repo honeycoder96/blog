@@ -10,6 +10,10 @@ tags: [react, renderer, reconciler, internals]
 relatedPosts: [hidden/art-of-micro-interactions]
 ---
 
+import Callout from '../../../components/mdx/Callout.astro';
+import Steps from '../../../components/mdx/Steps.astro';
+import Step from '../../../components/mdx/Step.astro';
+
 Most React developers have a mental model that looks like this: React → DOM. That's the happy path. But React's actual architecture is a two-layer system: the reconciler (which manages component trees and diffs) and the renderer (which applies those diffs to some host environment). The DOM is just one possible target.
 
 ## Why Build a Custom Renderer?
@@ -34,31 +38,31 @@ const hostConfig = {
   createInstance(type, props, rootContainer, hostContext, internalHandle) {
     return createElement(type, props);
   },
-  
+
   // Create text nodes
   createTextInstance(text, rootContainer, hostContext, internalHandle) {
     return createTextNode(text);
   },
-  
+
   // Append a child to a parent
   appendChildToContainer(container, child) {
     container.appendChild(child);
   },
-  
+
   // Called after all children are mounted
   finalizeInitialChildren(instance, type, props, rootContainer, hostContext) {
     return false; // return true to trigger commitMount
   },
-  
+
   // Required but can be empty for simple renderers
   prepareUpdate() { return null; },
   commitUpdate() {},
-  
+
   // Scheduler (use React's default)
   scheduleTimeout: setTimeout,
   cancelTimeout: clearTimeout,
   noTimeout: -1,
-  
+
   // Feature flags
   supportsMutation: true,
   supportsHydration: false,
@@ -85,7 +89,9 @@ interface TerminalBox {
 }
 ```
 
-The key insight: the reconciler doesn't care what your nodes are. It just calls your functions with the right arguments. Your job is to map React's mental model onto your target's mental model.
+<Callout type="tip" title="Key insight: the reconciler is host-agnostic">
+The reconciler doesn't care what your nodes are. It just calls your functions with the right arguments. Your job is to map React's mental model onto your target's mental model.
+</Callout>
 
 ## The Update Lifecycle
 
@@ -108,9 +114,11 @@ resetAfterCommit(container)
 
 ## Concurrent Mode Complications
 
+<Callout type="warning" title="Concurrent mode requires careful host config handling">
 Everything above works fine for legacy mode. Concurrent mode adds: time slicing, Suspense coordination, and the ability to abandon and restart work. Your host config needs to handle these correctly.
 
-The critical flag: `supportsMicrotasks`. If you set this to `true`, the reconciler will use microtasks for scheduling — which means your updates can be interrupted between microtask checkpoints.
+The critical flag: `supportsMicrotasks`. If you set this to `true`, the reconciler will use microtasks for scheduling — which means your updates can be interrupted between microtask checkpoints. Failing to handle interruption correctly can result in partial renders or inconsistent state in your host environment.
+</Callout>
 
 ## What I Learned
 
@@ -118,4 +126,19 @@ Building a custom renderer demystifies React's "magic" completely. The reconcile
 
 The fiber architecture becomes obvious when you're on this side: each fiber is a unit of work that can be paused, abandoned, or restarted. The "double buffering" (work-in-progress tree vs. current tree) is why React can show consistent UI while working in the background.
 
-If you want to go deeper: read the react-reconciler source and trace a single `setState` call through the entire pipeline. It's dense, but it's one of the most educational things you can do as a React developer.
+If you want to go deeper, here's a recommended learning path:
+
+<Steps>
+  <Step title="Read the react-reconciler source">
+    Start with the entry point and trace how the host config methods are invoked. The package is well-organized — each commit phase sub-phase lives in its own file.
+  </Step>
+  <Step title="Trace a single setState call end-to-end">
+    Follow one `setState` from the call site through scheduling, reconciliation, and commit. It's dense, but it's one of the most educational things you can do as a React developer.
+  </Step>
+  <Step title="Study an existing custom renderer">
+    Ink (terminal renderer) is well-maintained and has clean, readable host config code. Reading it alongside the reconciler source makes both much clearer.
+  </Step>
+  <Step title="Build your own minimal renderer">
+    Start with a renderer that targets a plain JavaScript object tree. No display logic — just prove you can mount, update, and unmount components. Add complexity incrementally.
+  </Step>
+</Steps>

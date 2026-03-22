@@ -1,0 +1,113 @@
+---
+interface Metric {
+  label: string;
+  before: string;
+  after: string;
+  better?: 'higher' | 'lower';
+}
+
+interface Props {
+  metrics: Metric[];
+  title?: string;
+}
+
+const { metrics, title } = Astro.props;
+---
+
+<div class="metric-card">
+  {title && <div class="metric-card-title">{title}</div>}
+  <div class="metric-rows">
+    {metrics.map((m) => (
+      <div class="metric-row">
+        <span class="metric-label">{m.label}</span>
+        <div class="metric-values">
+          <span class="metric-before">{m.before}</span>
+          <span class="metric-arrow" aria-hidden="true">→</span>
+          <span class="metric-after">{m.after}</span>
+          {m.better && (
+            <span class="metric-badge">{m.better === 'higher' ? '↑' : '↓'}</span>
+          )}
+        </div>
+      </div>
+    ))}
+  </div>
+</div>
+
+<style>
+  .metric-card {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .metric-card-title {
+    padding: 0.625rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-fg-faint);
+  }
+
+  .metric-rows {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .metric-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--theme-line);
+    flex-wrap: wrap;
+  }
+
+  .metric-row:last-child {
+    border-bottom: none;
+  }
+
+  .metric-label {
+    font-size: 0.875rem;
+    color: var(--theme-fg-muted);
+    font-weight: 500;
+  }
+
+  .metric-values {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.875rem;
+  }
+
+  .metric-before {
+    color: var(--theme-fg-ghost);
+    text-decoration: line-through;
+    text-decoration-color: rgba(239, 68, 68, 0.5);
+  }
+
+  .metric-arrow {
+    color: var(--theme-fg-ghost);
+    font-size: 0.75rem;
+  }
+
+  .metric-after {
+    color: #22c55e;
+    font-weight: 700;
+  }
+
+  .metric-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #22c55e;
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    border-radius: 4px;
+    padding: 0.1rem 0.35rem;
+  }
+</style>

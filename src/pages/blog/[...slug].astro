@@ -1,6 +1,7 @@
 ---
 import { getCollection, render } from 'astro:content';
 import BlogLayout from '../../layouts/BlogLayout.astro';
+import MdxImage from '../../components/astro/MdxImage.astro';
 import { resolveReadingTime, getRelatedPosts } from '../../lib/content';
 
 export async function getStaticPaths() {
@@ -62,5 +63,5 @@ const relatedPosts = getRelatedPosts(post, allPosts);
   relatedPosts={relatedPosts.map((r) => ({ slug: r.slug, title: r.data.title, category: r.data.category }))}
   ogImage={`/og/blog/${post.slug}.png`}
 >
-  <Content />
+  <Content components={{ img: MdxImage }} />
 </BlogLayout>

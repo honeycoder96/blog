@@ -1,0 +1,115 @@
+---
+interface Props {
+  /**
+   * Indented text tree. Use 2-space indentation per level.
+   * Folders end with /. Example:
+   *   src/
+   *     lib/
+   *       engine.js
+   *     workers/
+   *       parser.worker.js
+   */
+  tree: string;
+  title?: string;
+}
+
+interface TreeLine {
+  indent: number;
+  name: string;
+  isDir: boolean;
+}
+
+const { tree, title } = Astro.props;
+
+const lines: TreeLine[] = tree
+  .split('\n')
+  .map((raw) => {
+    const trimmed = raw.trimEnd();
+    if (!trimmed.trim()) return null;
+    const leading = trimmed.length - trimmed.trimStart().length;
+    const name = trimmed.trim();
+    return { indent: Math.floor(leading / 2), name, isDir: name.endsWith('/') };
+  })
+  .filter(Boolean) as TreeLine[];
+---
+
+<div class="ftree">
+  {title && <div class="ftree-title">{title}</div>}
+  <div class="ftree-body">
+    {lines.map((line) => (
+      <div class="ftree-row" style={`padding-left: calc(1rem + ${line.indent * 1.25}rem)`}>
+        <span class="ftree-icon" aria-hidden="true">
+          {line.isDir ? (
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+            </svg>
+          )}
+        </span>
+        <span class:list={['ftree-name', line.isDir ? 'ftree-dir' : 'ftree-file']}>
+          {line.name}
+        </span>
+      </div>
+    ))}
+  </div>
+</div>
+
+<style>
+  .ftree {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.875rem;
+  }
+
+  .ftree-title {
+    padding: 0.5rem 1rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-fg-faint);
+  }
+
+  .ftree-body {
+    padding: 0.75rem 0;
+    background: var(--theme-bg-inset);
+  }
+
+  .ftree-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-top: 0.2rem;
+    padding-bottom: 0.2rem;
+    padding-right: 1rem;
+  }
+
+  .ftree-icon {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: var(--theme-fg-ghost);
+  }
+
+  .ftree-dir {
+    color: var(--theme-fg-default);
+    font-weight: 600;
+  }
+
+  .ftree-dir .ftree-icon {
+    color: #f59e0b;
+  }
+
+  .ftree-file {
+    color: var(--theme-fg-muted);
+  }
+</style>

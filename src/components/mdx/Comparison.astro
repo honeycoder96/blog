@@ -1,0 +1,114 @@
+---
+interface Props {
+  headers: string[];
+  rows: string[][];
+  highlight?: number;
+  caption?: string;
+}
+
+const { headers, rows, highlight, caption } = Astro.props;
+---
+
+<div class="comp-wrap">
+  <table class="comp-table">
+    {caption && <caption class="comp-caption">{caption}</caption>}
+    <thead>
+      <tr>
+        {headers.map((h, i) => (
+          <th
+            scope="col"
+            class:list={[
+              i === 0 ? 'comp-row-hdr' : 'comp-col-hdr',
+              highlight !== undefined && i === highlight ? 'comp-hl' : '',
+            ]}
+          >
+            {h}
+          </th>
+        ))}
+      </tr>
+    </thead>
+    <tbody>
+      {rows.map((row) => (
+        <tr>
+          {row.map((cell, i) =>
+            i === 0 ? (
+              <th scope="row" class="comp-row-label">{cell}</th>
+            ) : (
+              <td class:list={[highlight !== undefined && i === highlight ? 'comp-hl' : '']}>{cell}</td>
+            )
+          )}
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
+
+<style>
+  .comp-wrap {
+    overflow-x: auto;
+    margin: 2rem 0;
+    border-radius: 12px;
+    border: 1px solid var(--theme-line);
+  }
+  .comp-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+    white-space: nowrap;
+  }
+  .comp-caption {
+    caption-side: bottom;
+    padding: 0.625rem 1rem;
+    color: var(--theme-fg-faint);
+    font-size: 0.75rem;
+    text-align: center;
+    font-style: italic;
+    white-space: normal;
+  }
+  .comp-table thead tr {
+    border-bottom: 2px solid var(--theme-line-strong);
+  }
+  .comp-col-hdr {
+    color: var(--theme-fg-muted);
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    text-align: center;
+    padding: 0.75rem 1rem;
+  }
+  .comp-row-hdr {
+    text-align: left;
+    color: var(--theme-fg-default);
+    font-weight: 700;
+    padding: 0.75rem 1rem;
+  }
+  .comp-row-label {
+    text-align: left;
+    color: var(--theme-fg-default);
+    font-weight: 600;
+    padding: 0.625rem 1rem;
+    border-bottom: 1px solid var(--theme-line);
+  }
+  .comp-table td {
+    padding: 0.625rem 1rem;
+    text-align: center;
+    color: var(--theme-fg-muted);
+    border-bottom: 1px solid var(--theme-line);
+  }
+  .comp-table tr:last-child td,
+  .comp-table tr:last-child .comp-row-label {
+    border-bottom: none;
+  }
+  .comp-table tbody tr:hover td,
+  .comp-table tbody tr:hover .comp-row-label {
+    background: var(--theme-bg-raised);
+  }
+  .comp-table .comp-hl {
+    background: rgba(99, 102, 241, 0.06);
+  }
+  .comp-table thead .comp-hl {
+    background: rgba(99, 102, 241, 0.12);
+    color: #818cf8;
+  }
+</style>

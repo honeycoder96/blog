@@ -2,6 +2,7 @@
 import '../styles/global.css';
 import { CustomCursor } from '../components/react/ui/CustomCursor';
 import { SearchModal } from '../components/react/ui/SearchModal';
+import { BackToTop } from '../components/react/ui/BackToTop';
 import { ViewTransitions } from 'astro:transitions';
 import { siteConfig } from '../config/site';
 
@@ -118,9 +119,10 @@ const gaMeasurementId = siteConfig.analytics.gaMeasurementId;
       </>
     )}
   </head>
-  <body class="bg-surface text-fg font-sans overflow-x-hidden">
+  <body class="bg-surface text-fg font-sans">
     <CustomCursor client:idle />
     <SearchModal client:idle />
+    <BackToTop client:idle />
     <slot />
   </body>
 </html>

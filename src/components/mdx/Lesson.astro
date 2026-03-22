@@ -1,0 +1,49 @@
+---
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<div class="lesson-item">
+  <div class="lesson-title">{title}</div>
+  <div class="lesson-body">
+    <slot />
+  </div>
+</div>
+
+<style>
+  .lesson-item {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--theme-line);
+  }
+
+  .lesson-item:last-child {
+    border-bottom: none;
+  }
+
+  .lesson-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--theme-fg-default);
+    margin-bottom: 0.375rem;
+  }
+
+  .lesson-body {
+    font-size: 0.875rem;
+    color: var(--theme-fg-muted);
+    line-height: 1.7;
+  }
+
+  .lesson-body :global(p) {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--theme-fg-muted);
+    line-height: 1.7;
+  }
+
+  .lesson-body :global(code) {
+    font-size: 0.8em;
+  }
+</style>

@@ -10,6 +10,11 @@ tags: [javascript, temporal, dates, tc39, web-standards]
 relatedPosts: []
 ---
 
+import Callout from '../../../components/mdx/Callout.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import BrowserSupport from '../../../components/mdx/BrowserSupport.astro';
+import { Tabs, Tab } from '../../../components/mdx/Tabs';
+
 It was a Thursday evening. A user filed a support ticket: their scheduled meeting had disappeared. Somewhere between a timezone conversion and a DST transition, a date calculation had gone wrong by exactly one hour — and taken the event with it. The `Date` object had struck again.
 
 If you've written JavaScript for any length of time, you've been here. The `Date` object is one of those APIs that *mostly* works until it spectacularly doesn't. It was famously copied from Java in about 10 days back in 1995 — and unlike most of the web platform, it has never been fundamentally rethought.
@@ -38,6 +43,9 @@ Let's be specific. Here are the seven most painful ways `Date` fails in real-wor
 
 ### 1. Parsing is a Trap
 
+<Callout type="danger" title="Date parsing behavior is implementation-defined">
+The same conceptual date can produce two different timestamps depending on the separator you use. This is implementation-defined behavior — results vary across browsers and Node.js versions. The spec essentially says "good luck."
+
 ```js
 // ISO string → parsed as UTC midnight
 new Date("2026-03-19")
@@ -48,9 +56,8 @@ new Date("2026/03/19")
 // Thu Mar 19 2026 00:00:00 GMT+0530 (India Standard Time) ← different instant!
 ```
 
-The same conceptual date produces two different timestamps depending on the separator you use. This is implementation-defined behavior — results vary across browsers and Node.js versions. The spec essentially says "good luck."
-
-> **The bug:** You store a date as `"2026-03-19"` and display it for a user in UTC+5:30. They see March 18th. Valid complaint.
+**The bug:** You store a date as `"2026-03-19"` and display it for a user in UTC+5:30. They see March 18th. Valid complaint.
+</Callout>
 
 ### 2. Months are 0-Indexed (Days are Not)
 
@@ -148,32 +155,48 @@ The Temporal proposal was years in the making, with deep involvement from expert
 
 This is critical to understand before you ship anything.
 
-| Environment | Status |
-|---|---|
-| Chrome 144+ | ✅ Shipped (January 2026) |
-| Firefox 139+ | ✅ Shipped (May 2025) |
-| Edge 144+ | ✅ Shipped |
-| **Safari** | **❌ Not yet** |
-| **Node.js** | **❌ Not yet** (v26 tentative) |
+<BrowserSupport
+  feature="Temporal API"
+  data={[
+    { browser: "chrome", version: "144+", status: "full", note: "Shipped January 2026" },
+    { browser: "firefox", version: "139+", status: "full", note: "Shipped May 2025" },
+    { browser: "edge", version: "144+", status: "full" },
+    { browser: "safari", version: "", status: "none", note: "Not yet implemented" },
+    { browser: "node", version: "v26 tentative", status: "none", note: "Not yet — use polyfill" }
+  ]}
+/>
 
+<Callout type="warning" title="Safari absence means you need a polyfill today">
 Safari's absence is significant — it means you cannot rely on native `Temporal` today without a polyfill, even in modern browsers. Similarly, any Node.js server-side code needs the polyfill until Node v26 ships with it built in.
+</Callout>
 
 ### Using the Polyfill Today
 
 The `temporal-polyfill` package is the recommended way to use Temporal right now:
 
-```bash
-npm install temporal-polyfill
-```
+<Tabs client:load>
+  <Tab label="Named import">
+    ```bash
+    npm install temporal-polyfill
+    ```
 
-```js
-// Option 1: named import (works alongside a future native Temporal)
-import { Temporal } from 'temporal-polyfill'
+    ```js
+    // Works alongside a future native Temporal — preferred for libraries
+    import { Temporal } from 'temporal-polyfill'
+    ```
+  </Tab>
+  <Tab label="Global polyfill">
+    ```bash
+    npm install temporal-polyfill
+    ```
 
-// Option 2: global polyfill (adds Temporal to globalThis)
-import 'temporal-polyfill/global'
-// Now `Temporal` is available everywhere without imports
-```
+    ```js
+    // Adds Temporal to globalThis — convenient for app-level usage
+    import 'temporal-polyfill/global'
+    // Now `Temporal` is available everywhere without imports
+    ```
+  </Tab>
+</Tabs>
 
 The polyfill is spec-compliant and passes the official TC39 test suite. Code you write against it today will work unchanged when browsers ship native support.
 
@@ -346,18 +369,22 @@ console.log(thisYear.toString()) // "2026-03-19"
 
 Here's a quick reference for the most common `Date` operations and their Temporal equivalents:
 
-| Task | `Date` | `Temporal` |
-|---|---|---|
-| Current moment | `new Date()` | `Temporal.Now.zonedDateTimeISO()` |
-| Current timestamp (ms) | `Date.now()` | `Temporal.Now.instant().epochMilliseconds` |
-| Parse a date string | `new Date("2026-03-19")` ⚠️ | `Temporal.PlainDate.from("2026-03-19")` |
-| Add N days | `date.setDate(date.getDate() + n)` ⚠️ mutates | `date.add({ days: n })` — returns new object |
-| Add N months (safe) | `setMonth(getMonth() + n)` overflows | `date.add({ months: n })` handles edge cases |
-| Compare two dates | `a.getTime() < b.getTime()` | `Temporal.PlainDate.compare(a, b) < 0` |
-| Convert to UTC string | `date.toISOString()` | `instant.toString()` |
-| Get day of month | `date.getDate()` | `date.day` (1-indexed) |
-| Get month | `date.getMonth() + 1` 🤦 | `date.month` (1-indexed, no +1 needed) |
-| Timezone-aware display | `Intl.DateTimeFormat` (manual) | `zdt.toLocaleString("en-US", { timeZone: "America/New_York" })` |
+<Comparison
+  headers={["Task", "`Date`", "`Temporal`"]}
+  rows={[
+    ["Current moment", "`new Date()`", "`Temporal.Now.zonedDateTimeISO()`"],
+    ["Current timestamp (ms)", "`Date.now()`", "`Temporal.Now.instant().epochMilliseconds`"],
+    ["Parse a date string", "`new Date(&quot;2026-03-19&quot;)` ⚠️", "`Temporal.PlainDate.from(&quot;2026-03-19&quot;)`"],
+    ["Add N days", "`date.setDate(date.getDate() + n)` ⚠️ mutates", "`date.add({ days: n })` — returns new object"],
+    ["Add N months (safe)", "`setMonth(getMonth() + n)` overflows", "`date.add({ months: n })` handles edge cases"],
+    ["Compare two dates", "`a.getTime() < b.getTime()`", "`Temporal.PlainDate.compare(a, b) < 0`"],
+    ["Convert to UTC string", "`date.toISOString()`", "`instant.toString()`"],
+    ["Get day of month", "`date.getDate()`", "`date.day` (1-indexed)"],
+    ["Get month", "`date.getMonth() + 1` 🤦", "`date.month` (1-indexed, no +1 needed)"],
+    ["Timezone-aware display", "`Intl.DateTimeFormat` (manual)", "`zdt.toLocaleString(&quot;en-US&quot;, { timeZone: &quot;America/New_York&quot; })`"]
+  ]}
+  caption="Common Date operations and their Temporal equivalents."
+/>
 
 A few patterns worth internalizing:
 

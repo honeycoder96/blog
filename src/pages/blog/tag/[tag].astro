@@ -1,0 +1,49 @@
+---
+import PageLayout from '../../../layouts/PageLayout.astro';
+import { PostsGrid } from '../../../components/react/blog/PostsGrid';
+import { AnimatedTitle } from '../../../components/react/ui/AnimatedTitle';
+import { siteConfig } from '../../../config/site';
+import { getPublishedPosts, mapPostToDisplay } from '../../../lib/content';
+
+export async function getStaticPaths() {
+  const posts = await getPublishedPosts();
+  const allTags = [...new Set(posts.flatMap((p) => p.data.tags))];
+  return allTags.map((tag) => ({
+    params: { tag: tag.toLowerCase().replace(/\s+/g, '-') },
+    props: { tag },
+  }));
+}
+
+const { tag } = Astro.props;
+const allPosts = await getPublishedPosts();
+
+const tagPosts = allPosts
+  .filter((p) => p.data.tags.includes(tag))
+  .map(mapPostToDisplay);
+---
+
+<PageLayout
+  title={`#${tag} — ${siteConfig.author}`}
+  description={`All posts tagged with #${tag}.`}
+>
+  <div class="max-w-7xl mx-auto px-8 lg:px-24 py-16">
+    <header class="mb-16">
+      <p class="font-mono text-xs uppercase tracking-widest text-fg-faint mb-4">Tag</p>
+      <AnimatedTitle
+        text={`#${tag}`}
+        className="text-5xl md:text-7xl font-display font-bold tracking-tighter text-fg mb-6"
+        client:visible
+      />
+      <p class="text-xl text-fg-muted max-w-2xl">
+        {tagPosts.length} {tagPosts.length === 1 ? 'article' : 'articles'} tagged with this.
+      </p>
+    </header>
+
+    <PostsGrid
+      initialPosts={tagPosts}
+      initialTotal={tagPosts.length}
+      category="All"
+      client:idle
+    />
+  </div>
+</PageLayout>

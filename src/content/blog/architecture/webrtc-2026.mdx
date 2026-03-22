@@ -10,13 +10,28 @@ tags: [webrtc, networking, video, quic]
 relatedPosts: []
 ---
 
+import Callout from '../../../components/mdx/Callout.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import MetricCard from '../../../components/mdx/MetricCard.astro';
+
 WebRTC turned 15 this year, and it's still the most underappreciated protocol stack on the web. We've built three production video products on top of it, and every time I think I understand it, the network reminds me I don't.
 
 ## The QUIC Revolution (That Mostly Didn't Happen)
 
 When QUIC became the default UDP transport for WebRTC in 2024, everyone predicted it would solve the "last mile" problem. The 0-RTT handshakes would eliminate setup latency. Congestion control would be smarter. Multi-path would Just Work™.
 
-The reality: QUIC helped significantly for initial connection setup — we saw 40-60ms improvement in P2P connection time. But in enterprise environments with deep-packet inspection firewalls, QUIC gets blocked at a higher rate than DTLS/SRTP. We ended up shipping a fallback that detects QUIC failure within 200ms and drops to the classic stack.
+<MetricCard
+  title="QUIC Transport — P2P Connection Time"
+  metrics={[{ label: "P2P connection setup (median)", before: "baseline", after: "40–60ms faster", better: "lower" }]}
+/>
+
+The reality: QUIC helped significantly for initial connection setup. But in enterprise environments with deep-packet inspection firewalls, QUIC gets blocked at a higher rate than DTLS/SRTP.
+
+<Callout type="warning" title="QUIC blocked by enterprise firewalls">
+QUIC (UDP-based) gets blocked at a higher rate than DTLS/SRTP in enterprise DPI environments. Ship a fallback that detects QUIC failure within 200ms and drops to the classic DTLS/SRTP stack. The detection window matters — 200ms is imperceptible; 2 seconds is a broken call.
+</Callout>
+
+We ended up shipping a fallback that detects QUIC failure within 200ms and drops to the classic stack.
 
 ## Insertable Streams: The Killer Feature Nobody Talks About
 
@@ -54,17 +69,28 @@ We went full SFU with mediasoup. The hidden cost: you now need to manage server-
 
 Google's GCC (Google Congestion Control) has been the default for years. The new kid: SCReAM (Self-Clocked Rate Adaptation for Multimedia). We benchmarked both under simulated packet loss scenarios.
 
-```
-Loss Rate | GCC Bitrate Drop | SCReAM Bitrate Drop
----------|------------------|--------------------
-1%       | 400kbps → 280kbps| 400kbps → 320kbps
-5%       | 400kbps → 120kbps| 400kbps → 200kbps
-10%      | 400kbps → 60kbps | 400kbps → 140kbps
-```
+<Comparison
+  highlight={2}
+  headers={["Packet Loss", "GCC (baseline)", "SCReAM"]}
+  rows={[
+    ["1%",  "400kbps → 280kbps", "400kbps → 320kbps"],
+    ["5%",  "400kbps → 120kbps", "400kbps → 200kbps"],
+    ["10%", "400kbps → 60kbps",  "400kbps → 140kbps"],
+  ]}
+  caption="SCReAM handles bursty loss better but is more aggressive about reclaiming bandwidth."
+/>
 
 SCReAM handles bursty loss significantly better. The tradeoff: it's more aggressive about reclaiming bandwidth, which can cause issues on shared networks.
 
 ## What Still Doesn't Work
+
+<Callout type="danger" title="NAT traversal still fails 3–5% of the time">
+ICE/TURN still fails in ~3-5% of enterprise networks. No amount of protocol improvements fixes misconfigured proxies. Budget for this in your SLA — silent call failure in enterprise environments is a support ticket, not a bug report.
+</Callout>
+
+<Callout type="warning" title="Audio-video sync drifts in long sessions">
+In sessions over 3 hours, `av_sync_offset` drifts by up to 400ms on certain Android devices. The fix is embarrassingly manual: periodic resync triggers. There is no automatic correction — you have to detect and compensate.
+</Callout>
 
 **NAT traversal reliability**: ICE/TURN still fails in ~3-5% of enterprise networks. No amount of protocol improvements fixes misconfigured proxies.
 

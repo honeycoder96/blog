@@ -10,6 +10,11 @@ tags: [crdt, distributed-systems, consistency, collaboration, system-design, dat
 relatedPosts: []
 ---
 
+import Callout from '../../../components/mdx/Callout.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import Steps from '../../../components/mdx/Steps.astro';
+import Step from '../../../components/mdx/Step.astro';
+
 Two engineers are on a flight with no internet. Both are editing the same design document offline. Three hours later, the plane lands, their laptops sync, and the document looks exactly right — both sets of changes present, sensibly merged, no conflicts, no "choose your version" dialogs, no data loss.
 
 This is not magic. It is mathematics applied to distributed systems design. The data structure making it possible is a **Conflict-Free Replicated Data Type**, and it is one of the most elegant ideas in distributed systems engineering.
@@ -34,15 +39,21 @@ So writes happen independently. Node A changes the document. Node B changes the 
 
 Every distributed system that allows concurrent writes chooses between three broad strategies:
 
-**Pessimistic locking.** Only one node can write at a time. The others wait. This eliminates conflicts by preventing them. The tradeoff is availability — if the lock holder goes offline, no one can write. Unacceptable for offline-capable apps and high-availability systems.
+<Comparison
+  headers={["", "Pessimistic Locking", "Operational Transformation (OT)", "CRDTs"]}
+  rows={[
+    ["**How it works**", "Only one node writes at a time; others wait", "Transform concurrent operations to account for each other before applying", "Design data structures with merge functions that converge regardless of order"],
+    ["**Conflict handling**", "Prevents conflicts by serialization", "Resolves conflicts via operation transformation", "No conflicts — merge is always defined"],
+    ["**Availability**", "Low — lock holder going offline blocks all writes", "High — works offline, merges on reconnect", "High — works fully offline, always converges"],
+    ["**Implementation complexity**", "Low", "Very high — transformation functions for every op pair", "Moderate — depends on data type"],
+    ["**Real-world examples**", "Traditional databases, distributed locks", "Google Docs (historically)", "Yjs, Automerge, Riak, Redis Enterprise"],
+    ["**Key limitation**", "Unacceptable for offline-capable / high-availability systems", "Correct implementations are extremely hard; subtle bugs cause document divergence", "Cannot enforce cross-node invariants (e.g. \"balance ≥ 0\") without coordination"],
+  ]}
+  highlight={3}
+  caption="Three approaches to concurrent writes in distributed systems. CRDTs column highlighted."
+/>
 
-**Operational Transformation (OT).** Don't prevent conflicts; transform operations to account for concurrent edits. If Alice inserts a character at position 5 and Bob deletes a character at position 3, Bob's operation is transformed before being applied to Alice's document. Google Docs used OT for years.
-
-OT works, but it is notoriously hard to get right. The transformation functions grow in complexity with the richness of the data model. A correct OT implementation for a general document model requires reasoning about every possible pair of concurrent operations. Google employed researchers for years to get it right. Several well-funded companies shipped OT implementations that had subtle bugs that caused document divergence in edge cases — bugs that only appeared after hours of concurrent editing.
-
-**CRDTs.** Design data structures with merge functions that are guaranteed to converge to the same result regardless of the order operations are applied. No locks. No conflict resolution dialogs. No transformation functions. Just data structures with a mathematical convergence guarantee.
-
-CRDTs trade some expressiveness for a correctness guarantee. Not everything can be naturally expressed as a CRDT. But for a large class of collaborative data — documents, counters, presence indicators, shopping carts, JSON documents — CRDTs deliver a correctness guarantee that OT approaches can only approximate.
+CRDTs trade some expressiveness for a correctness guarantee. Not everything can be naturally expressed as a CRDT. But for a large class of collaborative data — documents, counters, presence indicators, shopping carts, JSON documents — CRDTs deliver a convergence guarantee that OT approaches can only approximate.
 
 ---
 
@@ -54,14 +65,17 @@ You do not need to be a mathematician to use CRDTs, but you do need to understan
 
 A semilattice is a set of values with a merge operation (often written ⊔, pronounced "join") that satisfies three properties:
 
-**Commutativity:** `A ⊔ B = B ⊔ A`
-The order you merge two states does not matter.
-
-**Associativity:** `(A ⊔ B) ⊔ C = A ⊔ (B ⊔ C)`
-The grouping of merges does not matter. You can merge pairwise in any order.
-
-**Idempotency:** `A ⊔ A = A`
-Merging a state with itself produces no change. Receiving a message twice has the same effect as receiving it once.
+<Steps>
+  <Step title="Commutativity: A ⊔ B = B ⊔ A">
+    The order you merge two states does not matter. Node A receiving B's state and then merging produces the same result as Node B receiving A's state first.
+  </Step>
+  <Step title="Associativity: (A ⊔ B) ⊔ C = A ⊔ (B ⊔ C)">
+    The grouping of merges does not matter. You can merge pairwise in any order — merge A with B first, then with C, or merge B with C first, then with A. The result is identical.
+  </Step>
+  <Step title="Idempotency: A ⊔ A = A">
+    Merging a state with itself produces no change. Receiving a message twice has the same effect as receiving it once — critical for unreliable networks where duplicates are common.
+  </Step>
+</Steps>
 
 These three properties together guarantee that **any set of states, merged in any order, any number of times, will always converge to the same result**. This is the CRDT guarantee. Not "the system will try to merge" — the system *will* converge, provably.
 
@@ -87,7 +101,9 @@ States form a partial order: A ≤ B means B "knows everything A knows, and poss
 Merge always moves up the lattice, never down.
 ```
 
-This has an important implication: **you can never undo an operation in a state-based CRDT**. Deletion requires a workaround (tombstones, which we will cover in detail). This is not a bug — it is the source of the guarantee. Information only accumulates; it never disappears.
+<Callout type="info" title="Monotonicity means no true deletion">
+This has an important implication: **you can never undo an operation in a state-based CRDT**. Deletion requires a workaround (tombstones, which we will cover in detail). This is not a bug — it is the source of the guarantee. Information only accumulates; it never disappears. If your system needs true deletion with guaranteed garbage collection, plan for that complexity from the start.
+</Callout>
 
 ### Two families of CRDTs
 
@@ -364,7 +380,9 @@ WOOT's disambiguation rule: order by ID (e.g., lexicographic on node ID)
   Both nodes reach the same ordering: deterministic, convergent.
 ```
 
-**The tombstone problem.** WOOT never physically removes deleted characters — it only marks them as deleted. This means the internal representation grows unboundedly. A document that has had 100,000 characters typed and deleted has 100,000 tombstones forever. For short sessions this is fine; for documents edited over years, it becomes a serious storage and performance problem.
+<Callout type="warning" title="The tombstone growth problem">
+WOOT never physically removes deleted characters — it only marks them as deleted. A document that has had 100,000 characters typed and deleted has 100,000 tombstones forever. For short sessions this is fine; for documents edited over years, it becomes a serious storage and performance problem. All sequence CRDTs share this challenge to some degree — tombstone compaction requires knowing that all replicas have integrated the deletion.
+</Callout>
 
 WOOT is not used in production systems today, but its conceptual contribution — unique character IDs and intention-based neighbor references — underpins all subsequent approaches.
 

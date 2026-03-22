@@ -11,6 +11,9 @@ tags: [design-systems, tokens, components, engineering]
 relatedPosts: [hidden/art-of-micro-interactions]
 ---
 
+import Callout from '../../../components/mdx/Callout.astro';
+import { Tabs, Tab } from '../../../components/mdx/Tabs';
+
 Most design systems start the same way: a shared components folder that a couple of engineers agree to use. Some of them grow into something essential. Most become a maintenance burden that gets quietly abandoned.
 
 The difference isn't design quality. It's engineering decisions made in the first six months.
@@ -19,32 +22,35 @@ The difference isn't design quality. It's engineering decisions made in the firs
 
 Design tokens are the atoms of your system. If you get the token layer wrong, every component built on top of it will be wrong too.
 
-The mistake most systems make: flat token files with semantic names that don't compose.
+The mistake most systems make: flat token files with semantic names that don't compose. The composable approach uses three layers instead.
 
-```css
-/* Don't do this */
---button-primary-background: #0070f3;
---button-primary-text: #ffffff;
---button-secondary-background: #f0f0f0;
-/* 300 more tokens that are impossible to theme */
-```
+<Tabs client:load>
+  <Tab label="Flat (avoid)">
+    ```css
+    /* Don't do this */
+    --button-primary-background: #0070f3;
+    --button-primary-text: #ffffff;
+    --button-secondary-background: #f0f0f0;
+    /* 300 more tokens that are impossible to theme */
+    ```
+  </Tab>
+  <Tab label="3-Layer (recommended)">
+    ```css
+    /* Layer 1: Primitive tokens — raw values */
+    --color-blue-500: #0070f3;
+    --color-blue-600: #0060df;
+    --color-neutral-50: #fafafa;
 
-The composable approach uses three layers:
+    /* Layer 2: Semantic tokens — intent-based aliases */
+    --color-interactive-default: var(--color-blue-500);
+    --color-interactive-hover: var(--color-blue-600);
+    --color-surface-primary: var(--color-neutral-50);
 
-```css
-/* Layer 1: Primitive tokens — raw values */
---color-blue-500: #0070f3;
---color-blue-600: #0060df;
---color-neutral-50: #fafafa;
-
-/* Layer 2: Semantic tokens — intent-based aliases */
---color-interactive-default: var(--color-blue-500);
---color-interactive-hover: var(--color-blue-600);
---color-surface-primary: var(--color-neutral-50);
-
-/* Layer 3: Component tokens — local overrides */
---button-background: var(--color-interactive-default);
-```
+    /* Layer 3: Component tokens — local overrides */
+    --button-background: var(--color-interactive-default);
+    ```
+  </Tab>
+</Tabs>
 
 This architecture means theming only requires overriding layer 2. Component tokens inherit from semantic tokens, so they theme automatically.
 
@@ -101,4 +107,8 @@ Design systems either hit critical mass or die. The tipping point: when it's fas
 
 You hit this point by: solving real problems (not theoretical ones), making the installation and setup trivial, and ensuring performance is never worse than hand-written alternatives.
 
-The systems that fail: those that prioritize completeness over usability. Ship 10 excellent, well-documented components instead of 50 mediocre ones. Engineers adopt what they trust.
+The systems that fail: those that prioritize completeness over usability. Engineers adopt what they trust.
+
+<Callout type="tip" title="10 excellent components beats 50 mediocre ones">
+Ship 10 excellent, well-documented components instead of 50 mediocre ones. The systems that die are the ones that prioritize coverage over quality — 50 components nobody trusts is worse than 10 components everyone reaches for first.
+</Callout>

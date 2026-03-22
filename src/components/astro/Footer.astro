@@ -31,25 +31,6 @@ const links = [
           {link.label}
         </a>
       ))}
-
-      <!-- Back to top — respects prefers-reduced-motion -->
-      <button
-        id="back-to-top"
-        aria-label="Back to top"
-        class="font-mono text-sm tracking-widest uppercase text-fg-muted hover:text-fg transition-colors cursor-pointer"
-      >
-        ↑ Top
-      </button>
     </div>
   </div>
 </footer>
-
-<script>
-  const btn = document.getElementById('back-to-top');
-  if (btn) {
-    btn.addEventListener('click', () => {
-      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      window.scrollTo({ top: 0, behavior: prefersReducedMotion ? 'instant' : 'smooth' });
-    });
-  }
-</script>

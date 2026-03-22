@@ -1,0 +1,54 @@
+---
+import { getCollection, render } from 'astro:content';
+import BlogLayout from '../../layouts/BlogLayout.astro';
+import MdxImage from '../../components/astro/MdxImage.astro';
+import { resolveReadingTime, getRelatedPosts } from '../../lib/content';
+
+export async function getStaticPaths() {
+  const allPosts = await getCollection('blog');
+  const draftPosts = allPosts.filter((post) => post.data.draft);
+
+  return draftPosts.map((post) => ({
+    params: { slug: post.slug },
+    props: { post },
+  }));
+}
+
+const { post } = Astro.props;
+const { Content, headings } = await render(post);
+
+const readingTime = resolveReadingTime(post.data.readingTime, post.body);
+
+const allPosts = await getCollection('blog');
+const relatedPosts = getRelatedPosts(post, allPosts);
+---
+
+<!-- Draft preview banner — fixed so it's always visible while scrolling -->
+<div
+  style="position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;align-items:center;justify-content:center;gap:0.75rem;padding:0.5rem 1rem;background:#854d0e;color:#fef9c3;font-family:ui-monospace,monospace;font-size:0.75rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;"
+  role="alert"
+>
+  <span aria-hidden="true">⚠</span>
+  Draft Preview — not published
+  <span class="opacity-60">·</span>
+  <span class="opacity-60">/preview/{post.slug}</span>
+</div>
+
+<!-- Offset content below the fixed banner -->
+<div style="padding-top:2rem;">
+  <BlogLayout
+    title={post.data.title}
+    description={post.data.summary}
+    date={post.data.date}
+    pubDate={post.data.pubDate}
+    category={post.data.category}
+    author={post.data.author}
+    readingTime={readingTime}
+    tags={post.data.tags}
+    isVisible={false}
+    headings={headings}
+    relatedPosts={relatedPosts.map((r) => ({ slug: r.slug, title: r.data.title, category: r.data.category }))}
+  >
+    <Content components={{ img: MdxImage }} />
+  </BlogLayout>
+</div>

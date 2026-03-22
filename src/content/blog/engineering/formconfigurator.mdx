@@ -10,6 +10,11 @@ tags: [form-configurator, engineering, architecture]
 relatedPosts: []
 ---
 
+import Callout from '../../../components/mdx/Callout.astro';
+import ArchFlow from '../../../components/mdx/ArchFlow.astro';
+import Lessons from '../../../components/mdx/Lessons.astro';
+import Lesson from '../../../components/mdx/Lesson.astro';
+
 ## How We Built a Context-Aware Form Engine for 100+ Recruiter Segments
 
 > A pharma recruiter posting a Medical Representative role and a BPO recruiter posting a voice-process job land on the same page, in the same product, backed by the same codebase. The pharma recruiter sees fields for therapeutic area, pharmaceutical specialization, and dosage form. The BPO recruiter sees fields for process type, shift preferences, and language proficiency. Neither recruiter sees what's irrelevant to them.
@@ -56,22 +61,15 @@ The requirements that shaped the right solution were:
 
 The solution we landed on has three discrete layers, each with a single responsibility:
 
-```
-┌─────────────────────────────────────────────┐
-│              Rules Engine                   │
-│  context → template name                    │
-└──────────────────┬──────────────────────────┘
-                   │
-┌──────────────────▼──────────────────────────┐
-│            Template Registry                │
-│  template name → field configuration map   │
-└──────────────────┬──────────────────────────┘
-                   │
-┌──────────────────▼──────────────────────────┐
-│               Form SDK                      │
-│  field configuration map → rendered UI      │
-└─────────────────────────────────────────────┘
-```
+<ArchFlow
+  title="Three-Layer Architecture"
+  direction="vertical"
+  nodes={[
+    { label: "Rules Engine", sublabel: "context → template name" },
+    { label: "Template Registry", sublabel: "template name → field config map" },
+    { label: "Form SDK", sublabel: "field config → rendered UI" },
+  ]}
+/>
 
 **The Rules Engine** takes a recruiter's context object and returns the name of the template that should be used.
 
@@ -307,6 +305,10 @@ No event listeners. No imperative show/hide calls. The template declares the *co
 
 ### The Cleanup Contract
 
+<Callout type="warning" title="Invisible fields must clear their data">
+When a field becomes invisible, its data must be cleared. Without this rule, a recruiter who fills a conditional field, then changes the parent selection to hide it, will silently submit the stale value even though they never saw the field again.
+</Callout>
+
 There is a subtle but important invariant: **when a field becomes invisible, its data must be cleared.**
 
 Consider the scenario without this rule: a recruiter selects "Manufacturing" as their pharmaceutical specialization (making the "Dosage Form" field appear), fills it in, then changes their specialization to something else (making "Dosage Form" disappear). Without cleanup, the `dosageForm` value persists in form state and gets submitted, even though the recruiter last saw and interacted with a form that didn't show that field.
@@ -351,37 +353,20 @@ With 100+ templates each potentially containing custom field components, bundle 
 
 ## Engineering Challenges and Lessons Learned
 
-### 1. Preventing Visibility Cycles
-
-**Challenge:** What happens when Field A's visibility depends on Field B, and Field B's visibility depends on Field A? In theory, this creates an infinite evaluation loop.
-
-**Solution:** We enforce that `isVisible` functions are pure readers — they access `formData` but cannot modify it, and they cannot call any function that modifies it. The renderer also tracks whether visibility results have changed since the last render; if they haven't, it skips re-evaluation. In practice, the domain model doesn't produce natural cycles, but the purity constraint means that even if someone writes a buggy visibility function, it can't cause a runaway re-render.
-
-**Lesson:** *Purity is not just an FP virtue; it's a stability contract.*
-
-### 2. Testing Rules Without a UI
-
-**Challenge:** With 100+ templates across 6 segments, each with multiple overlapping conditions, testing coverage is daunting. A UI-driven test suite for this would be slow and brittle.
-
-**Solution:** The rules engine is a pure function: `resolveTemplate(context) → templateName`. It takes a plain object and returns a string. Unit tests are fixture files — context objects and their expected template names. Running the full suite is fast and gives immediate signal when a rule change produces an unexpected resolution.
-
-**Lesson:** *Keeping the decision logic pure means QA is just data.*
-
-### 3. Stale Feature Flags in Cached Rules
-
-**Challenge:** If rules are evaluated once at page load and cached, they might reflect stale feature flag state — especially if flag values are hydrated asynchronously after the initial render.
-
-**Solution:** Rules that include a `customFunction` predicate are never cached. They're re-evaluated whenever the context changes. Standard rules (pure data comparisons) are stable and can be memoized safely.
-
-**Lesson:** *Anything reading global mutable state must be late-binding.*
-
-### 4. Multi-Platform Without Forking
-
-**Challenge:** Desktop forms and PWA forms have different layout constraints. Some fields need different label text, different validation thresholds, or different component variants depending on platform.
-
-**Solution:** Field descriptors support a `versionProps` object — a partial override that the SDK applies when rendering in a specific version context. The base descriptor covers all shared properties; `versionProps` patches only what differs. A single template config serves both platforms.
-
-**Lesson:** *Configuration branching beats code branching every time.*
+<Lessons title="Engineering Lessons" type="learned">
+  <Lesson title="Purity is not just an FP virtue — it's a stability contract">
+    Visibility cycles (Field A depends on Field B, B depends on A) are impossible when `isVisible` functions are pure readers that cannot call anything that mutates `formData`. The renderer skips re-evaluation when visibility results are unchanged. In practice the domain model doesn't produce natural cycles, but the purity constraint prevents runaway re-renders even from buggy functions.
+  </Lesson>
+  <Lesson title="Keeping decision logic pure means QA is just data">
+    With 100+ templates across 6 segments, a UI-driven test suite would be slow and brittle. The rules engine is a pure function: `resolveTemplate(context) → templateName`. Unit tests are fixture files — context objects and expected template names. Running the full suite is fast, offline, and gives immediate signal when a rule change produces an unexpected resolution.
+  </Lesson>
+  <Lesson title="Anything reading global mutable state must be late-binding">
+    Rules evaluated once at page load and cached might reflect stale feature flag state, especially when flag values hydrate asynchronously after the initial render. Rules that include a `customFunction` predicate are never cached — they re-evaluate whenever context changes. Standard rules (pure data comparisons) are stable and can be memoized safely.
+  </Lesson>
+  <Lesson title="Configuration branching beats code branching every time">
+    Desktop and PWA forms have different layout constraints but identical business logic. Field descriptors support a `versionProps` object — a partial override the SDK applies in the specific version context. The base descriptor covers all shared properties; `versionProps` patches only what differs. One template config serves both platforms with no code fork.
+  </Lesson>
+</Lessons>
 
 ---
 

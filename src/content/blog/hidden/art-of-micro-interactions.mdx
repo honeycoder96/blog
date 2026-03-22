@@ -11,6 +11,8 @@ tags: [ux, animation, framer-motion, interaction-design]
 relatedPosts: [hidden/design-systems-that-scale, deepdives/custom-react-renderer]
 ---
 
+import Callout from '../../../components/mdx/Callout.astro';
+
 There's a category of software that people describe as "feeling fast" even when benchmark numbers say otherwise. There's a category that people describe as "feeling polished" before they can articulate why. Both categories are built by engineers who understand micro-interactions.
 
 ## What Makes an Interaction "Micro"?
@@ -86,6 +88,10 @@ The 50ms stagger is almost invisible to conscious perception but dramatically ch
 
 ## The Reduced Motion Contract
 
+<Callout type="info" title="prefers-reduced-motion is an accessibility requirement">
+Every animation you ship needs a `prefers-reduced-motion` fallback. Some users experience motion sickness from parallax effects and spring animations. The test: everything your application does should be possible without animations. Animations are enhancement, not function.
+</Callout>
+
 Every animation you ship needs a `prefers-reduced-motion` fallback. This isn't optional — it's an accessibility requirement. Some users experience motion sickness from parallax effects and spring animations.
 
 ```typescript
@@ -100,6 +106,10 @@ if (prefersReducedMotion) {
 The test: everything your application does should be possible without animations. Animations are enhancement, not function.
 
 ## The 100ms Rule
+
+<Callout type="tip" title="Feedback within 100ms or it feels broken">
+Interactions that take longer than 100ms to provide feedback feel broken. The feedback doesn't have to be the final state — it just has to acknowledge that something is happening. A button compression on press costs nothing and eliminates the entire category of "did my click register?" anxiety.
+</Callout>
 
 Interactions that take longer than 100ms to provide feedback feel broken. The feedback doesn't have to be the final state — it just has to acknowledge that something is happening.
 

@@ -1,0 +1,16 @@
+---
+// Container for <Step> components. Resets the CSS counter.
+---
+
+<ol class="mdx-steps" role="list">
+  <slot />
+</ol>
+
+<style is:global>
+  .mdx-steps {
+    list-style: none;
+    padding: 0;
+    margin: 2rem 0;
+    counter-reset: mdx-step-counter;
+  }
+</style>

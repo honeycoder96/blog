@@ -3,6 +3,7 @@ import { ArrowRight } from '../ui/Icons';
 import { CATEGORY_COLOR_MAP, slugifyCategory } from '../../../config/categories';
 import { ListSkeleton } from '../ui/ListSkeleton';
 import { ErrorRetry } from '../ui/ErrorRetry';
+import { getReadPosts } from '../../../lib/readPosts';
 
 /** Maximum number of tags rendered per post card. */
 const MAX_VISIBLE_TAGS = 3;
@@ -41,6 +42,9 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
   const [page, setPage] = useState<number>(1);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [readSlugs, setReadSlugs] = useState<Set<string>>(new Set());
+
+  useEffect(() => { setReadSlugs(getReadPosts()); }, []);
 
   // Slugs added via Load More — get the CSS enter animation
   const newSlugs = useRef<Set<string>>(new Set());
@@ -169,7 +173,12 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
             }`}
           >
             <div className="md:w-1/4 flex flex-col gap-3">
-              <time className="text-fg-faint font-mono text-xs">{post.data.date}</time>
+              <div className="flex items-center gap-2">
+                <time className="text-fg-faint font-mono text-xs">{post.data.date}</time>
+                {readSlugs.has(post.slug) && (
+                  <span className="font-mono text-[10px] text-fg-ghost uppercase tracking-widest">✓ read</span>
+                )}
+              </div>
               <span
                 className={`self-start px-3 py-1 rounded-full border text-xs font-mono uppercase tracking-wider ${
                   CATEGORY_COLOR_MAP[post.data.category] ?? 'text-fg-muted border-line'
@@ -193,6 +202,9 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
                       #{tag}
                     </span>
                   ))}
+                  {post.data.tags.length > MAX_VISIBLE_TAGS && (
+                    <span className="text-xs font-mono text-fg-ghost">+{post.data.tags.length - MAX_VISIBLE_TAGS}</span>
+                  )}
                 </div>
               )}
             </div>
