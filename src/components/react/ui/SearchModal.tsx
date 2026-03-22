@@ -1,6 +1,24 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Search, ArrowRight } from 'lucide-react';
 
+/** Maximum number of search results to render. */
+const MAX_SEARCH_RESULTS = 8;
+
+/** Debounce delay between keystrokes and search execution in milliseconds. */
+const SEARCH_DEBOUNCE_MS = 300;
+
+/** Delay before clearing modal state so the exit animation can finish. */
+const MODAL_RESET_DELAY_MS = 300;
+
+/** Delay before focusing the search input after the modal opens. */
+const INPUT_FOCUS_DELAY_MS = 200;
+
+/** Per-result entrance animation stagger in milliseconds. */
+const RESULT_STAGGER_DELAY_MS = 60;
+
+/** Spring easing used for modal open/close transitions. */
+const MODAL_SPRING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+
 interface SearchResult {
   url: string;
   title: string;
@@ -52,7 +70,7 @@ export const SearchModal: React.FC = () => {
       setQuery('');
       setResults([]);
       setHasSearched(false);
-    }, 300);
+    }, MODAL_RESET_DELAY_MS);
   }, []);
 
   useEffect(() => {
@@ -82,7 +100,7 @@ export const SearchModal: React.FC = () => {
 
   useEffect(() => {
     if (!isOpen) return;
-    const t = setTimeout(() => inputRef.current?.focus(), 200);
+    const t = setTimeout(() => inputRef.current?.focus(), INPUT_FOCUS_DELAY_MS);
     return () => clearTimeout(t);
   }, [isOpen]);
 
@@ -129,7 +147,7 @@ export const SearchModal: React.FC = () => {
       const search = await pf.search(q);
       if (ctrl.signal.aborted) return;
       // pagefind result and data objects have no TS types — any is unavoidable
-      const data = await Promise.all(search.results.slice(0, 8).map((r: any) => r.data())); // eslint-disable-line @typescript-eslint/no-explicit-any
+      const data = await Promise.all(search.results.slice(0, MAX_SEARCH_RESULTS).map((r: any) => r.data())); // eslint-disable-line @typescript-eslint/no-explicit-any
       if (ctrl.signal.aborted) return;
       setResults(
         data.map((d: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -152,7 +170,7 @@ export const SearchModal: React.FC = () => {
       const q = e.target.value;
       setQuery(q);
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => doSearch(q), 300);
+      debounceRef.current = setTimeout(() => doSearch(q), SEARCH_DEBOUNCE_MS);
     },
     [doSearch]
   );
@@ -165,9 +183,6 @@ export const SearchModal: React.FC = () => {
   }, []);
 
   const noResults = hasSearched && !isLoading && results.length === 0;
-
-  // Shared transition curve
-  const spring = 'cubic-bezier(0.22, 1, 0.36, 1)';
 
   return (
     <>
@@ -194,7 +209,7 @@ export const SearchModal: React.FC = () => {
           transform: isOpen ? 'scale(1) translateY(0)' : 'scale(0.92) translateY(72px)',
           pointerEvents: isOpen ? 'auto' : 'none',
           transition: isOpen
-            ? `opacity 0.32s ${spring}, transform 0.5s ${spring}`
+            ? `opacity 0.32s ${MODAL_SPRING}, transform 0.5s ${MODAL_SPRING}`
             : 'opacity 0.22s ease-in, transform 0.22s ease-in',
         }}
       >
@@ -223,7 +238,7 @@ export const SearchModal: React.FC = () => {
               style={{
                 paddingTop: hasSearched ? '5rem' : 'calc(50vh - 120px)',
                 paddingBottom: hasSearched ? '1.5rem' : '2rem',
-                transition: `padding-top 0.5s ${spring}, padding-bottom 0.5s ${spring}`,
+                transition: `padding-top 0.5s ${MODAL_SPRING}, padding-bottom 0.5s ${MODAL_SPRING}`,
               }}
             >
               {/* Subtitle — collapses when user starts typing */}
@@ -296,7 +311,7 @@ export const SearchModal: React.FC = () => {
                         <li
                           key={result.url}
                           className="animate-fade-slide-up"
-                          style={{ animationDelay: `${i * 60}ms` }}
+                          style={{ animationDelay: `${i * RESULT_STAGGER_DELAY_MS}ms` }}
                         >
                           <a
                             href={result.url}

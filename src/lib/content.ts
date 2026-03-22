@@ -5,6 +5,7 @@
 
 import { getCollection } from 'astro:content';
 import type { CollectionEntry } from 'astro:content';
+import { WORDS_PER_MINUTE } from './constants';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -65,7 +66,7 @@ export function mapPostToDisplay(p: CollectionEntry<'blog'>): PostDisplayItem {
  * Falls back to a word-count estimate when the remark plugin did not inject it.
  */
 export function resolveReadingTime(readingTime: number | undefined, body: string): number {
-  return readingTime ?? Math.max(1, Math.ceil(body.trim().split(/\s+/).filter(Boolean).length / 200));
+  return readingTime ?? Math.max(1, Math.ceil(body.trim().split(/\s+/).filter(Boolean).length / WORDS_PER_MINUTE));
 }
 
 // ── Shared ─────────────────────────────────────────────────────────

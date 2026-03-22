@@ -5,6 +5,24 @@ import { delay } from '../../../lib/utils';
 
 type FormState = 'idle' | 'validating' | 'sending' | 'success';
 
+const BUTTON_TEXT_IDLE       = 'SEND MESSAGE';
+const BUTTON_TEXT_ANALYZING  = 'ANALYZING...';
+
+/** Delay while the "ANALYZING..." scramble plays before showing field errors. */
+const VALIDATION_DELAY_MS       = 600;
+/** Delay before resetting the button text after a validation failure. */
+const VALIDATION_RESET_DELAY_MS = 800;
+/** Simulated send delay when no API URL is configured. */
+const SIMULATE_API_DELAY_MS     = 1200;
+/** How long the success state shows before the form resets. */
+const SUCCESS_RESET_DELAY_MS    = 2000;
+
+const BUTTON_EASE          = 'cubic-bezier(0.76, 0, 0.24, 1)';
+const BUTTON_WIDTH_IDLE    = '180px';
+const BUTTON_WIDTH_BUSY    = '60px';
+const BUTTON_RADIUS_IDLE   = '9999px';
+const BUTTON_RADIUS_BUSY   = '30px';
+
 const isBusy = (s: FormState) => s === 'sending' || s === 'success';
 
 export const ContactForm: React.FC = () => {
@@ -13,7 +31,7 @@ export const ContactForm: React.FC = () => {
   const [scannedErrors, setScannedErrors] = useState<Record<string, string>>({});
   const [generalError, setGeneralError] = useState('');
   const { displayText: buttonText, scramble: scrambleButton, setDisplayText: setButtonText } =
-    useScrambleText('SEND MESSAGE');
+    useScrambleText(BUTTON_TEXT_IDLE);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { id, value } = e.target;
@@ -29,8 +47,8 @@ export const ContactForm: React.FC = () => {
 
   const handleValidationPhase = async (): Promise<boolean> => {
     setFormState('validating');
-    scrambleButton('ANALYZING...');
-    await delay(600);
+    scrambleButton(BUTTON_TEXT_ANALYZING);
+    await delay(VALIDATION_DELAY_MS);
 
     let hasError = false;
     const newErrors: Record<string, string> = {};
@@ -51,9 +69,9 @@ export const ContactForm: React.FC = () => {
     if (hasError) {
       setScannedErrors(newErrors);
       setTimeout(() => {
-        scrambleButton('SEND MESSAGE');
+        scrambleButton(BUTTON_TEXT_IDLE);
         setFormState('idle');
-      }, 800);
+      }, VALIDATION_RESET_DELAY_MS);
       return false;
     }
     return true;
@@ -100,25 +118,24 @@ export const ContactForm: React.FC = () => {
         }
       } else {
         // No API configured — simulate success
-        await delay(1200);
+        await delay(SIMULATE_API_DELAY_MS);
       }
 
       setFormState('success');
       setTimeout(() => {
         setFormState('idle');
         setFormData({ name: '', email: '', message: '', website: '' });
-        setButtonText('SEND MESSAGE');
-      }, 2000);
+        setButtonText(BUTTON_TEXT_IDLE);
+      }, SUCCESS_RESET_DELAY_MS);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'NETWORK OFFLINE. RETRY TRANSMISSION.';
       setGeneralError(message);
       setFormState('idle');
-      scrambleButton('SEND MESSAGE');
+      scrambleButton(BUTTON_TEXT_IDLE);
     }
   };
 
   const fields = ['name', 'email', 'message'] as const;
-  const ease = 'cubic-bezier(0.76, 0, 0.24, 1)';
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-12 relative">
@@ -220,11 +237,11 @@ export const ContactForm: React.FC = () => {
         disabled={formState !== 'idle' && formState !== 'validating'}
         className="flex items-center justify-center h-[60px] overflow-hidden relative mt-4 origin-center self-start cursor-pointer active:scale-95"
         style={{
-          width: isBusy(formState) ? '60px' : '180px',
-          borderRadius: isBusy(formState) ? '30px' : '9999px',
+          width: isBusy(formState) ? BUTTON_WIDTH_BUSY : BUTTON_WIDTH_IDLE,
+          borderRadius: isBusy(formState) ? BUTTON_RADIUS_BUSY : BUTTON_RADIUS_IDLE,
           backgroundColor: formState === 'success' ? '#10b981' : 'var(--theme-fg)',
           color: 'var(--theme-bg)',
-          transition: `width 0.5s ${ease}, border-radius 0.5s ${ease}, background-color 0.5s ${ease}, transform 0.1s ease`,
+          transition: `width 0.5s ${BUTTON_EASE}, border-radius 0.5s ${BUTTON_EASE}, background-color 0.5s ${BUTTON_EASE}, transform 0.1s ease`,
         }}
       >
         {/* Button label */}

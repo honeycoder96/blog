@@ -4,6 +4,13 @@ import { CATEGORY_COLOR_MAP, slugifyCategory } from '../../../config/categories'
 import { ListSkeleton } from '../ui/ListSkeleton';
 import { ErrorRetry } from '../ui/ErrorRetry';
 
+/** Maximum number of tags rendered per post card. */
+const MAX_VISIBLE_TAGS = 3;
+
+/** Builds the URL for a paginated posts API response. */
+const postsApiUrl = (categorySlug: string, page: number) =>
+  `/api/posts/${categorySlug}/${page}.json`;
+
 interface Post {
   slug: string;
   data: {
@@ -52,7 +59,7 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
     const cacheKey = `${category}::${pageNum}`;
     if (prefetchCache.current.has(cacheKey)) return;
     const slug = slugifyCategory(category);
-    fetch(`/api/posts/${slug}/${pageNum}.json`)
+    fetch(postsApiUrl(slug, pageNum))
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => { if (data) prefetchCache.current.set(cacheKey, data); })
       .catch(() => {});
@@ -82,7 +89,7 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
     setError(null);
     try {
       const slug = slugifyCategory(category);
-      const res = await fetch(`/api/posts/${slug}/${pageNum}.json`, { signal: controller.signal });
+      const res = await fetch(postsApiUrl(slug, pageNum), { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       prefetchCache.current.set(cacheKey, data);
@@ -181,7 +188,7 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
               </p>
               {post.data.tags.length > 0 && (
                 <div className="flex gap-2 flex-wrap mt-1">
-                  {post.data.tags.slice(0, 3).map((tag) => (
+                  {post.data.tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
                     <span key={tag} className="text-xs font-mono text-fg-ghost">
                       #{tag}
                     </span>

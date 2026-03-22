@@ -10,6 +10,7 @@
 import { visit } from 'unist-util-visit';
 import type { Root } from 'mdast';
 import type { VFile } from 'vfile';
+import { WORDS_PER_MINUTE } from './constants';
 
 function countWords(tree: Root): number {
   let count = 0;
@@ -30,7 +31,7 @@ export function remarkReadingTime() {
     if (astroData?.frontmatter?.readingTime !== undefined) return;
 
     const words = countWords(tree);
-    const minutes = Math.max(1, Math.ceil(words / 200));
+    const minutes = Math.max(1, Math.ceil(words / WORDS_PER_MINUTE));
 
     if (!astroData) {
       (file.data as Record<string, unknown>).astro = { frontmatter: { readingTime: minutes } };

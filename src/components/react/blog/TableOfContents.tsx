@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MAX_TOC_DEPTH, scrollToHeading } from '../../../lib/toc';
 
+/** IntersectionObserver rootMargin: fires when heading enters top 20% of viewport. */
+const TOC_OBSERVER_ROOT_MARGIN = '-20% 0% -70% 0%';
+
+/** Half the indicator dot size (6px dot → 3px offset to vertically centre it). */
+const TOC_DOT_HALF_SIZE_PX = 3;
+
+/** CSS transition applied to the sliding indicator dot. */
+const TOC_INDICATOR_TRANSITION = 'transform 0.2s ease, opacity 0.15s ease';
+
 interface Heading {
   depth: number;
   slug: string;
@@ -26,7 +35,7 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({ headings }) =>
           if (entry.isIntersecting) setActiveSlug(entry.target.id);
         });
       },
-      { rootMargin: '-20% 0% -70% 0%', threshold: 0 }
+      { rootMargin: TOC_OBSERVER_ROOT_MARGIN, threshold: 0 }
     );
     filtered.forEach(({ slug }) => {
       const el = document.getElementById(slug);
@@ -57,7 +66,7 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({ headings }) =>
     // the offset of the item within the list at the moment the observer fires.
     const listRect = list.getBoundingClientRect();
     const itemRect = activeEl.getBoundingClientRect();
-    const top = itemRect.top - listRect.top + itemRect.height / 2 - 3; // center on 6px dot
+    const top = itemRect.top - listRect.top + itemRect.height / 2 - TOC_DOT_HALF_SIZE_PX;
 
     dot.style.transform = `translateY(${top}px)`;
     dot.style.opacity = '1';
@@ -76,7 +85,7 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({ headings }) =>
         <span
           ref={indicatorRef}
           className="absolute left-0 top-0 w-1.5 h-1.5 rounded-full bg-fg opacity-0 -translate-x-0.5"
-          style={{ transition: 'transform 0.2s ease, opacity 0.15s ease' }}
+          style={{ transition: TOC_INDICATOR_TRANSITION }}
         />
 
         <ul ref={listRef} className="flex flex-col gap-1">
@@ -92,7 +101,7 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({ headings }) =>
                     scrollToHeading(heading.slug);
                   }}
                   className={`block text-sm leading-relaxed transition-colors duration-200 py-0.5 ${
-                    heading.depth === 2 ? 'pl-6' : 'pl-3'
+                    heading.depth === MAX_TOC_DEPTH ? 'pl-6' : 'pl-3'
                   } ${isActive ? 'text-fg' : 'text-fg-faint hover:text-fg-default'}`}
                 >
                   {heading.text}

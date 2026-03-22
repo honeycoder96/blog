@@ -26,6 +26,28 @@ const OG_COLORS = {
 // Titles longer than this threshold use a smaller font size to avoid overflow
 const TITLE_LONG_THRESHOLD = 60;
 const TITLE_FONT_SIZE = { normal: '56px', long: '44px' } as const;
+const TITLE_LINE_HEIGHT = 1.15;
+const TITLE_MAX_WIDTH = '960px';
+
+const OG_PADDING = '72px 80px';
+
+const OG_FONT_SIZE = {
+  url:  '18px',
+  meta: '14px',
+} as const;
+
+const OG_META_GAP = '24px';
+
+const OG_BADGE = {
+  padding:      '6px 14px',
+  borderRadius: '999px',
+  border:       '1px',
+} as const;
+
+const OG_LETTER_SPACING = {
+  url:   '0.15em',
+  badge: '0.1em',
+} as const;
 
 // Load fonts once per build process (cached in module scope)
 let interRegular: ArrayBuffer | null = null;
@@ -63,7 +85,7 @@ export async function generateOgImage(data: OgData): Promise<Buffer> {
           flexDirection: 'column',
           justifyContent: 'space-between',
           backgroundColor: OG_COLORS.bg,
-          padding: '72px 80px',
+          padding: OG_PADDING,
           fontFamily: 'Inter',
         },
         children: [
@@ -77,9 +99,9 @@ export async function generateOgImage(data: OgData): Promise<Buffer> {
                   type: 'span',
                   props: {
                     style: {
-                      fontSize: '18px',
+                      fontSize: OG_FONT_SIZE.url,
                       color: OG_COLORS.muted,
-                      letterSpacing: '0.15em',
+                      letterSpacing: OG_LETTER_SPACING.url,
                       textTransform: 'uppercase',
                       fontWeight: 400,
                     },
@@ -108,8 +130,8 @@ export async function generateOgImage(data: OgData): Promise<Buffer> {
                         : TITLE_FONT_SIZE.normal,
                       fontWeight: 700,
                       color: OG_COLORS.title,
-                      lineHeight: 1.15,
-                      maxWidth: '960px',
+                      lineHeight: TITLE_LINE_HEIGHT,
+                      maxWidth: TITLE_MAX_WIDTH,
                     },
                     children: data.title,
                   },
@@ -124,20 +146,20 @@ export async function generateOgImage(data: OgData): Promise<Buffer> {
               style: {
                 display: 'flex',
                 alignItems: 'center',
-                gap: '24px',
+                gap: OG_META_GAP,
               },
               children: [
                 {
                   type: 'span',
                   props: {
                     style: {
-                      fontSize: '14px',
+                      fontSize: OG_FONT_SIZE.meta,
                       color: OG_COLORS.muted,
-                      border: `1px solid ${OG_COLORS.border}`,
-                      padding: '6px 14px',
-                      borderRadius: '999px',
+                      border: `${OG_BADGE.border} solid ${OG_COLORS.border}`,
+                      padding: OG_BADGE.padding,
+                      borderRadius: OG_BADGE.borderRadius,
                       textTransform: 'uppercase',
-                      letterSpacing: '0.1em',
+                      letterSpacing: OG_LETTER_SPACING.badge,
                       fontWeight: 400,
                     },
                     children: data.category,
@@ -146,7 +168,7 @@ export async function generateOgImage(data: OgData): Promise<Buffer> {
                 {
                   type: 'span',
                   props: {
-                    style: { color: OG_COLORS.subtle, fontSize: '14px' },
+                    style: { color: OG_COLORS.subtle, fontSize: OG_FONT_SIZE.meta },
                     children: data.author,
                   },
                 },
@@ -155,7 +177,7 @@ export async function generateOgImage(data: OgData): Promise<Buffer> {
                       {
                         type: 'span',
                         props: {
-                          style: { color: OG_COLORS.subtle, fontSize: '14px' },
+                          style: { color: OG_COLORS.subtle, fontSize: OG_FONT_SIZE.meta },
                           children: `${data.readingTime} min read`,
                         },
                       },
