@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 import { CATEGORY_COLOR_MAP, slugifyCategory } from '../../../config/categories.client';
 
@@ -27,19 +26,17 @@ interface PostsGridProps {
   category: string;
 }
 
-const cardVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0, transition: { type: 'spring' as const, stiffness: 200, damping: 20 } },
-  exit: { opacity: 0, y: -10, transition: { duration: 0.15 } },
-};
-
 export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal, category }) => {
   const [posts, setPosts] = useState<Post[]>(initialPosts);
   const [total, setTotal] = useState<number>(initialTotal);
   const [page, setPage] = useState<number>(1);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const prefersReducedMotion = useReducedMotion();
+
+  // Slugs present on initial render — these don't get the enter animation
+  const initialSlugs = useRef<Set<string>>(new Set(initialPosts.map((p) => p.slug)));
+  // Slugs added via Load More — get the CSS enter animation
+  const newSlugs = useRef<Set<string>>(new Set());
 
   const prefetchCache = useRef<Map<string, CachedPage>>(new Map());
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -73,6 +70,7 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
     const cacheKey = `${category}::${pageNum}`;
     const cached = prefetchCache.current.get(cacheKey);
     if (cached) {
+      cached.posts.forEach((p) => newSlugs.current.add(p.slug));
       setPosts((prev) => [...prev, ...cached.posts]);
       setTotal(cached.total);
       setPage(pageNum);
@@ -88,6 +86,7 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       prefetchCache.current.set(cacheKey, data);
+      data.posts.forEach((p: Post) => newSlugs.current.add(p.slug));
       setPosts((prev) => [...prev, ...data.posts]);
       setTotal(data.total);
       setPage(pageNum);
@@ -148,62 +147,58 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
     <div>
       {/* Posts list */}
       <div ref={listRef} className="w-full flex flex-col border-t border-line">
-        <AnimatePresence mode="popLayout">
-          {posts.map((post) => (
-            <motion.a
-              key={post.slug}
-              href={`/blog/${post.slug}`}
-              data-astro-prefetch
-              data-post-link
-              variants={prefersReducedMotion ? undefined : cardVariants}
-              initial={prefersReducedMotion ? undefined : 'hidden'}
-              animate={prefersReducedMotion ? undefined : 'visible'}
-              exit={prefersReducedMotion ? undefined : 'exit'}
-              className="group border-b border-line py-8 md:py-10 flex flex-col md:flex-row justify-between md:items-center gap-4 hover:border-fg-muted transition-colors w-full"
-            >
-              <div className="md:w-1/4 flex flex-col gap-3">
-                <time className="text-fg-faint font-mono text-xs">{post.data.date}</time>
-                <span
-                  className={`self-start px-3 py-1 rounded-full border text-xs font-mono uppercase tracking-wider ${
-                    CATEGORY_COLOR_MAP[post.data.category] ?? 'text-fg-muted border-line'
-                  }`}
-                >
-                  {post.data.category}
+        {posts.map((post) => (
+          <a
+            key={post.slug}
+            href={`/blog/${post.slug}`}
+            data-astro-prefetch
+            data-post-link
+            className={`group border-b border-line py-8 md:py-10 flex flex-col md:flex-row justify-between md:items-center gap-4 hover:border-fg-muted transition-colors w-full${
+              newSlugs.current.has(post.slug) ? ' animate-fade-slide-up' : ''
+            }`}
+          >
+            <div className="md:w-1/4 flex flex-col gap-3">
+              <time className="text-fg-faint font-mono text-xs">{post.data.date}</time>
+              <span
+                className={`self-start px-3 py-1 rounded-full border text-xs font-mono uppercase tracking-wider ${
+                  CATEGORY_COLOR_MAP[post.data.category] ?? 'text-fg-muted border-line'
+                }`}
+              >
+                {post.data.category}
+              </span>
+            </div>
+
+            <div className="md:w-2/4 flex flex-col gap-2">
+              <h3 className="text-xl md:text-2xl font-display font-bold text-fg-default group-hover:text-fg transition-colors duration-300">
+                {post.data.title}
+              </h3>
+              <p className="text-sm text-fg-faint line-clamp-2 leading-relaxed">
+                {post.data.summary}
+              </p>
+              {post.data.tags.length > 0 && (
+                <div className="flex gap-2 flex-wrap mt-1">
+                  {post.data.tags.slice(0, 3).map((tag) => (
+                    <span key={tag} className="text-xs font-mono text-fg-ghost">
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="md:w-1/4 flex justify-end items-center gap-3">
+              {post.data.readingTime && (
+                <span className="text-fg-ghost font-mono text-xs">
+                  {post.data.readingTime}m read
                 </span>
-              </div>
-
-              <div className="md:w-2/4 flex flex-col gap-2">
-                <h3 className="text-xl md:text-2xl font-display font-bold text-fg-default group-hover:text-fg transition-colors duration-300">
-                  {post.data.title}
-                </h3>
-                <p className="text-sm text-fg-faint line-clamp-2 leading-relaxed">
-                  {post.data.summary}
-                </p>
-                {post.data.tags.length > 0 && (
-                  <div className="flex gap-2 flex-wrap mt-1">
-                    {post.data.tags.slice(0, 3).map((tag) => (
-                      <span key={tag} className="text-xs font-mono text-fg-ghost">
-                        #{tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="md:w-1/4 flex justify-end items-center gap-3">
-                {post.data.readingTime && (
-                  <span className="text-fg-ghost font-mono text-xs">
-                    {post.data.readingTime}m read
-                  </span>
-                )}
-                <ArrowRight
-                  size={24}
-                  className="text-fg-ghost group-hover:text-fg group-hover:-rotate-45 transition-all duration-300"
-                />
-              </div>
-            </motion.a>
-          ))}
-        </AnimatePresence>
+              )}
+              <ArrowRight
+                size={24}
+                className="text-fg-ghost group-hover:text-fg group-hover:-rotate-45 transition-all duration-300"
+              />
+            </div>
+          </a>
+        ))}
       </div>
 
       {/* Empty state */}
