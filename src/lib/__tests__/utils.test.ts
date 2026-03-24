@@ -13,7 +13,9 @@ describe('delay', () => {
   it('does not resolve before the time elapses', async () => {
     vi.useFakeTimers();
     let resolved = false;
-    delay(500).then(() => { resolved = true; });
+    delay(500).then(() => {
+      resolved = true;
+    });
     vi.advanceTimersByTime(499);
     // Flush microtasks without advancing timers further
     await Promise.resolve();

@@ -80,9 +80,7 @@ const AccordionItem: React.FC<AccordionItemProps> = ({ s, isOpen, onToggle, isNe
             {s.title}
           </h3>
           {s.description && (
-            <p className="text-sm text-fg-faint line-clamp-2 leading-relaxed">
-              {s.description}
-            </p>
+            <p className="text-sm text-fg-faint line-clamp-2 leading-relaxed">{s.description}</p>
           )}
         </div>
 
@@ -91,7 +89,10 @@ const AccordionItem: React.FC<AccordionItemProps> = ({ s, isOpen, onToggle, isNe
             className="transition-transform duration-200"
             style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
           >
-            <ChevronDown size={20} className="text-fg-ghost group-hover:text-fg transition-colors duration-300" />
+            <ChevronDown
+              size={20}
+              className="text-fg-ghost group-hover:text-fg transition-colors duration-300"
+            />
           </div>
         </div>
       </button>
@@ -147,7 +148,12 @@ const AccordionItem: React.FC<AccordionItemProps> = ({ s, isOpen, onToggle, isNe
 // Main component
 // ---------------------------------------------------------------------------
 
-export const SeriesAccordion: React.FC<SeriesAccordionProps> = ({ initialSeries, initialTotal, categories, categoryCounts }) => {
+export const SeriesAccordion: React.FC<SeriesAccordionProps> = ({
+  initialSeries,
+  initialTotal,
+  categories,
+  categoryCounts,
+}) => {
   const [activeCategory, setActiveCategory] = useState<string>(() => {
     if (typeof window === 'undefined') return 'All';
     const param = new URLSearchParams(window.location.search).get('category');
@@ -181,7 +187,9 @@ export const SeriesAccordion: React.FC<SeriesAccordionProps> = ({ initialSeries,
     const slug = slugifyCategory(category);
     fetch(`/api/series/${slug}/${pageNum}.json`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data) prefetchCache.current.set(cacheKey, data); })
+      .then((data) => {
+        if (data) prefetchCache.current.set(cacheKey, data);
+      })
       .catch(() => {});
   }, []);
 
@@ -189,48 +197,56 @@ export const SeriesAccordion: React.FC<SeriesAccordionProps> = ({ initialSeries,
   // Core fetch helper
   // ---------------------------------------------------------------------------
 
-  const fetchPage = useCallback(async (category: string, pageNum: number, append: boolean) => {
-    abortControllerRef.current?.abort();
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
+  const fetchPage = useCallback(
+    async (category: string, pageNum: number, append: boolean) => {
+      abortControllerRef.current?.abort();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
-    const cacheKey = `${category}::${pageNum}`;
-    const cached = prefetchCache.current.get(cacheKey);
-    if (cached) {
-      if (append) cached.series.forEach((s) => newSlugs.current.add(s.seriesSlug));
-      else { newSlugs.current.clear(); initialSlugs.current = new Set(cached.series.map((s) => s.seriesSlug)); }
-      setSeries((prev) => (append ? [...prev, ...cached.series] : cached.series));
-      setTotal(cached.total);
-      setPage(pageNum);
-      prefetchInBackground(category, pageNum + 1);
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    try {
-      const slug = slugifyCategory(category);
-      const res = await fetch(`/api/series/${slug}/${pageNum}.json`, { signal: controller.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      prefetchCache.current.set(cacheKey, data);
-      if (append) {
-        data.series.forEach((s: Series) => newSlugs.current.add(s.seriesSlug));
-      } else {
-        newSlugs.current.clear();
-        initialSlugs.current = new Set(data.series.map((s: Series) => s.seriesSlug));
+      const cacheKey = `${category}::${pageNum}`;
+      const cached = prefetchCache.current.get(cacheKey);
+      if (cached) {
+        if (append) cached.series.forEach((s) => newSlugs.current.add(s.seriesSlug));
+        else {
+          newSlugs.current.clear();
+          initialSlugs.current = new Set(cached.series.map((s) => s.seriesSlug));
+        }
+        setSeries((prev) => (append ? [...prev, ...cached.series] : cached.series));
+        setTotal(cached.total);
+        setPage(pageNum);
+        prefetchInBackground(category, pageNum + 1);
+        return;
       }
-      setSeries((prev) => (append ? [...prev, ...data.series] : data.series));
-      setTotal(data.total);
-      setPage(pageNum);
-      prefetchInBackground(category, pageNum + 1);
-    } catch (e) {
-      if ((e as Error).name === 'AbortError') return;
-      setError('Failed to load series. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [prefetchInBackground]);
+
+      setIsLoading(true);
+      setError(null);
+      try {
+        const slug = slugifyCategory(category);
+        const res = await fetch(`/api/series/${slug}/${pageNum}.json`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        prefetchCache.current.set(cacheKey, data);
+        if (append) {
+          data.series.forEach((s: Series) => newSlugs.current.add(s.seriesSlug));
+        } else {
+          newSlugs.current.clear();
+          initialSlugs.current = new Set(data.series.map((s: Series) => s.seriesSlug));
+        }
+        setSeries((prev) => (append ? [...prev, ...data.series] : data.series));
+        setTotal(data.total);
+        setPage(pageNum);
+        prefetchInBackground(category, pageNum + 1);
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') return;
+        setError('Failed to load series. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [prefetchInBackground],
+  );
 
   // ---------------------------------------------------------------------------
   // On hydration: prefetch page 2 of "All", honour ?category= URL param
@@ -253,32 +269,38 @@ export const SeriesAccordion: React.FC<SeriesAccordionProps> = ({ initialSeries,
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const handleCategoryChange = useCallback((cat: string) => {
-    if (cat === activeCategory) return;
-    setActiveCategory(cat);
-    setOpenIndex(0);
-    if (cat === 'All') {
-      abortControllerRef.current?.abort();
-      newSlugs.current.clear();
-      initialSlugs.current = new Set(initialSeries.map((s) => s.seriesSlug));
-      setSeries(initialSeries);
-      setTotal(initialTotal);
-      setPage(1);
-    } else {
-      fetchPage(cat, 1, false);
-    }
-  }, [activeCategory, initialSeries, initialTotal, fetchPage]);
+  const handleCategoryChange = useCallback(
+    (cat: string) => {
+      if (cat === activeCategory) return;
+      setActiveCategory(cat);
+      setOpenIndex(0);
+      if (cat === 'All') {
+        abortControllerRef.current?.abort();
+        newSlugs.current.clear();
+        initialSlugs.current = new Set(initialSeries.map((s) => s.seriesSlug));
+        setSeries(initialSeries);
+        setTotal(initialTotal);
+        setPage(1);
+      } else {
+        fetchPage(cat, 1, false);
+      }
+    },
+    [activeCategory, initialSeries, initialTotal, fetchPage],
+  );
 
   const handleLoadMore = useCallback(() => {
     fetchPage(activeCategory, page + 1, true);
   }, [activeCategory, page, fetchPage]);
 
-  const handleCategoryPointerEnter = useCallback((cat: string) => {
-    if (cat === activeCategory) return;
-    hoverTimerRef.current = setTimeout(() => {
-      prefetchInBackground(cat, 1);
-    }, 100);
-  }, [activeCategory, prefetchInBackground]);
+  const handleCategoryPointerEnter = useCallback(
+    (cat: string) => {
+      if (cat === activeCategory) return;
+      hoverTimerRef.current = setTimeout(() => {
+        prefetchInBackground(cat, 1);
+      }, 100);
+    },
+    [activeCategory, prefetchInBackground],
+  );
 
   const handleCategoryPointerLeave = useCallback(() => {
     if (hoverTimerRef.current) {
@@ -307,7 +329,8 @@ export const SeriesAccordion: React.FC<SeriesAccordionProps> = ({ initialSeries,
                 : 'border-line text-fg-muted hover:border-line-strong hover:text-fg-default'
             }`}
           >
-            {cat}{categoryCounts?.[cat] !== undefined ? ` (${categoryCounts[cat]})` : ''}
+            {cat}
+            {categoryCounts?.[cat] !== undefined ? ` (${categoryCounts[cat]})` : ''}
           </button>
         ))}
       </div>
@@ -334,7 +357,9 @@ export const SeriesAccordion: React.FC<SeriesAccordionProps> = ({ initialSeries,
       {/* Loading skeleton — full replace (category switch) */}
       {isLoading && series.length === 0 && (
         <div className="w-full flex flex-col border-t border-line">
-          {[...Array(3)].map((_, i) => <ListSkeleton key={i} />)}
+          {[...Array(3)].map((_, i) => (
+            <ListSkeleton key={i} />
+          ))}
         </div>
       )}
 
@@ -353,10 +378,13 @@ export const SeriesAccordion: React.FC<SeriesAccordionProps> = ({ initialSeries,
             disabled={isLoading}
             className="px-8 py-3 rounded-full border border-line text-fg-muted hover:border-line-strong hover:text-fg font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading
-              ? 'Loading...'
-              : <>Load more <span className="text-fg-ghost">({total - series.length} remaining)</span></>
-            }
+            {isLoading ? (
+              'Loading...'
+            ) : (
+              <>
+                Load more <span className="text-fg-ghost">({total - series.length} remaining)</span>
+              </>
+            )}
           </button>
         </div>
       )}

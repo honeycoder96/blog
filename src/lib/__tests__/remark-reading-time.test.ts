@@ -42,35 +42,45 @@ describe('remarkReadingTime', () => {
   it('injects readingTime for 200-word content (1 min)', () => {
     const file = makeFile();
     plugin(makeTree(200), file);
-    const fm = ((file.data as Record<string, unknown>).astro as { frontmatter: Record<string, unknown> }).frontmatter;
+    const fm = (
+      (file.data as Record<string, unknown>).astro as { frontmatter: Record<string, unknown> }
+    ).frontmatter;
     expect(fm.readingTime).toBe(1);
   });
 
   it('injects readingTime for 400-word content (2 min)', () => {
     const file = makeFile();
     plugin(makeTree(400), file);
-    const fm = ((file.data as Record<string, unknown>).astro as { frontmatter: Record<string, unknown> }).frontmatter;
+    const fm = (
+      (file.data as Record<string, unknown>).astro as { frontmatter: Record<string, unknown> }
+    ).frontmatter;
     expect(fm.readingTime).toBe(2);
   });
 
   it('enforces a minimum of 1 minute for very short content', () => {
     const file = makeFile();
     plugin(makeTree(10), file);
-    const fm = ((file.data as Record<string, unknown>).astro as { frontmatter: Record<string, unknown> }).frontmatter;
+    const fm = (
+      (file.data as Record<string, unknown>).astro as { frontmatter: Record<string, unknown> }
+    ).frontmatter;
     expect(fm.readingTime).toBe(1);
   });
 
   it('does NOT overwrite an explicit readingTime from frontmatter', () => {
     const file = makeFile({ readingTime: 5 });
     plugin(makeTree(400), file);
-    const fm = ((file.data as Record<string, unknown>).astro as { frontmatter: Record<string, unknown> }).frontmatter;
+    const fm = (
+      (file.data as Record<string, unknown>).astro as { frontmatter: Record<string, unknown> }
+    ).frontmatter;
     expect(fm.readingTime).toBe(5);
   });
 
   it('creates the astro.frontmatter path when file.data.astro is absent', () => {
     const file = { data: {} } as unknown as VFile;
     plugin(makeTree(200), file);
-    const astro = (file.data as Record<string, unknown>).astro as { frontmatter: { readingTime: number } };
+    const astro = (file.data as Record<string, unknown>).astro as {
+      frontmatter: { readingTime: number };
+    };
     expect(astro.frontmatter.readingTime).toBe(1);
   });
 });

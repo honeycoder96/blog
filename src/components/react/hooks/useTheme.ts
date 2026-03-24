@@ -5,7 +5,7 @@ export function useTheme(): string {
   const [theme, setTheme] = useState(() =>
     typeof document !== 'undefined'
       ? document.documentElement.getAttribute(THEME_ATTRIBUTE) || DEFAULT_THEME
-      : DEFAULT_THEME
+      : DEFAULT_THEME,
   );
 
   useEffect(() => {

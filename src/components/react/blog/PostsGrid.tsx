@@ -44,7 +44,9 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
   const [error, setError] = useState<string | null>(null);
   const [readSlugs, setReadSlugs] = useState<Set<string>>(new Set());
 
-  useEffect(() => { setReadSlugs(getReadPosts()); }, []);
+  useEffect(() => {
+    setReadSlugs(getReadPosts());
+  }, []);
 
   // Slugs added via Load More — get the CSS enter animation
   const newSlugs = useRef<Set<string>>(new Set());
@@ -59,56 +61,64 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
   // Background prefetch — next page only (category is fixed per page)
   // ---------------------------------------------------------------------------
 
-  const prefetchInBackground = useCallback((pageNum: number) => {
-    const cacheKey = `${category}::${pageNum}`;
-    if (prefetchCache.current.has(cacheKey)) return;
-    const slug = slugifyCategory(category);
-    fetch(postsApiUrl(slug, pageNum))
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data) prefetchCache.current.set(cacheKey, data); })
-      .catch(() => {});
-  }, [category]);
+  const prefetchInBackground = useCallback(
+    (pageNum: number) => {
+      const cacheKey = `${category}::${pageNum}`;
+      if (prefetchCache.current.has(cacheKey)) return;
+      const slug = slugifyCategory(category);
+      fetch(postsApiUrl(slug, pageNum))
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data) prefetchCache.current.set(cacheKey, data);
+        })
+        .catch(() => {});
+    },
+    [category],
+  );
 
   // ---------------------------------------------------------------------------
   // Load More — always appends; category is fixed
   // ---------------------------------------------------------------------------
 
-  const fetchPage = useCallback(async (pageNum: number) => {
-    abortControllerRef.current?.abort();
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
+  const fetchPage = useCallback(
+    async (pageNum: number) => {
+      abortControllerRef.current?.abort();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
-    const cacheKey = `${category}::${pageNum}`;
-    const cached = prefetchCache.current.get(cacheKey);
-    if (cached) {
-      cached.posts.forEach((p) => newSlugs.current.add(p.slug));
-      setPosts((prev) => [...prev, ...cached.posts]);
-      setTotal(cached.total);
-      setPage(pageNum);
-      prefetchInBackground(pageNum + 1);
-      return;
-    }
+      const cacheKey = `${category}::${pageNum}`;
+      const cached = prefetchCache.current.get(cacheKey);
+      if (cached) {
+        cached.posts.forEach((p) => newSlugs.current.add(p.slug));
+        setPosts((prev) => [...prev, ...cached.posts]);
+        setTotal(cached.total);
+        setPage(pageNum);
+        prefetchInBackground(pageNum + 1);
+        return;
+      }
 
-    setIsLoading(true);
-    setError(null);
-    try {
-      const slug = slugifyCategory(category);
-      const res = await fetch(postsApiUrl(slug, pageNum), { signal: controller.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      prefetchCache.current.set(cacheKey, data);
-      data.posts.forEach((p: Post) => newSlugs.current.add(p.slug));
-      setPosts((prev) => [...prev, ...data.posts]);
-      setTotal(data.total);
-      setPage(pageNum);
-      prefetchInBackground(pageNum + 1);
-    } catch (e) {
-      if (e instanceof Error && e.name === 'AbortError') return;
-      setError('Failed to load posts. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [category, prefetchInBackground]);
+      setIsLoading(true);
+      setError(null);
+      try {
+        const slug = slugifyCategory(category);
+        const res = await fetch(postsApiUrl(slug, pageNum), { signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        prefetchCache.current.set(cacheKey, data);
+        data.posts.forEach((p: Post) => newSlugs.current.add(p.slug));
+        setPosts((prev) => [...prev, ...data.posts]);
+        setTotal(data.total);
+        setPage(pageNum);
+        prefetchInBackground(pageNum + 1);
+      } catch (e) {
+        if (e instanceof Error && e.name === 'AbortError') return;
+        setError('Failed to load posts. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [category, prefetchInBackground],
+  );
 
   // ---------------------------------------------------------------------------
   // On mount: prefetch page 2 so Load More is instant
@@ -176,7 +186,9 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
               <div className="flex items-center gap-2">
                 <time className="text-fg-faint font-mono text-xs">{post.data.date}</time>
                 {readSlugs.has(post.slug) && (
-                  <span className="font-mono text-[10px] text-fg-ghost uppercase tracking-widest">✓ read</span>
+                  <span className="font-mono text-[10px] text-fg-ghost uppercase tracking-widest">
+                    ✓ read
+                  </span>
                 )}
               </div>
               <span
@@ -203,7 +215,9 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
                     </span>
                   ))}
                   {post.data.tags.length > MAX_VISIBLE_TAGS && (
-                    <span className="text-xs font-mono text-fg-ghost">+{post.data.tags.length - MAX_VISIBLE_TAGS}</span>
+                    <span className="text-xs font-mono text-fg-ghost">
+                      +{post.data.tags.length - MAX_VISIBLE_TAGS}
+                    </span>
                   )}
                 </div>
               )}
@@ -235,9 +249,7 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
       {isLoading && posts.length > 0 && <ListSkeleton />}
 
       {/* Error state */}
-      {error && !isLoading && (
-        <ErrorRetry message={error} onRetry={() => fetchPage(page + 1)} />
-      )}
+      {error && !isLoading && <ErrorRetry message={error} onRetry={() => fetchPage(page + 1)} />}
 
       {/* Load More */}
       {hasMore && (
@@ -247,10 +259,13 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
             disabled={isLoading}
             className="px-8 py-3 rounded-full border border-line text-fg-muted hover:border-line-strong hover:text-fg font-mono text-xs uppercase tracking-widest transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading
-              ? 'Loading...'
-              : <>Load more <span className="text-fg-ghost">({total - posts.length} remaining)</span></>
-            }
+            {isLoading ? (
+              'Loading...'
+            ) : (
+              <>
+                Load more <span className="text-fg-ghost">({total - posts.length} remaining)</span>
+              </>
+            )}
           </button>
         </div>
       )}

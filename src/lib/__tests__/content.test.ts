@@ -6,7 +6,9 @@ import type { CollectionEntry } from 'astro:content';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makePost(overrides: Partial<CollectionEntry<'blog'>['data']> & { slug?: string } = {}): CollectionEntry<'blog'> {
+function makePost(
+  overrides: Partial<CollectionEntry<'blog'>['data']> & { slug?: string } = {},
+): CollectionEntry<'blog'> {
   const { slug = 'test/post', ...data } = overrides;
   return {
     slug,
@@ -119,9 +121,9 @@ describe('getRelatedPosts', () => {
 
   it('scores by tag overlap when no manual relatedPosts', () => {
     const post = makePost({ slug: 'a', tags: ['ts', 'react'] });
-    const high = makePost({ slug: 'b', tags: ['ts', 'react'] });    // 4pts (2 shared tags)
-    const mid  = makePost({ slug: 'c', tags: ['ts'], category: 'Engineering' }); // 2pts tag + 1pt cat = 3
-    const low  = makePost({ slug: 'd', tags: ['css'] });             // 0pts — filtered out
+    const high = makePost({ slug: 'b', tags: ['ts', 'react'] }); // 4pts (2 shared tags)
+    const mid = makePost({ slug: 'c', tags: ['ts'], category: 'Engineering' }); // 2pts tag + 1pt cat = 3
+    const low = makePost({ slug: 'd', tags: ['css'] }); // 0pts — filtered out
     const all = [post, high, mid, low];
     const result = getRelatedPosts(post, all);
     expect(result[0].slug).toBe('b');

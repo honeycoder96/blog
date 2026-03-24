@@ -5,23 +5,23 @@ import { delay } from '../../../lib/utils';
 
 type FormState = 'idle' | 'validating' | 'sending' | 'success';
 
-const BUTTON_TEXT_IDLE       = 'SEND MESSAGE';
-const BUTTON_TEXT_ANALYZING  = 'ANALYZING...';
+const BUTTON_TEXT_IDLE = 'SEND MESSAGE';
+const BUTTON_TEXT_ANALYZING = 'ANALYZING...';
 
 /** Delay while the "ANALYZING..." scramble plays before showing field errors. */
-const VALIDATION_DELAY_MS       = 600;
+const VALIDATION_DELAY_MS = 600;
 /** Delay before resetting the button text after a validation failure. */
 const VALIDATION_RESET_DELAY_MS = 800;
 /** Simulated send delay when no API URL is configured. */
-const SIMULATE_API_DELAY_MS     = 1200;
+const SIMULATE_API_DELAY_MS = 1200;
 /** How long the success state shows before the form resets. */
-const SUCCESS_RESET_DELAY_MS    = 2000;
+const SUCCESS_RESET_DELAY_MS = 2000;
 
-const BUTTON_EASE          = 'cubic-bezier(0.76, 0, 0.24, 1)';
-const BUTTON_WIDTH_IDLE    = '180px';
-const BUTTON_WIDTH_BUSY    = '60px';
-const BUTTON_RADIUS_IDLE   = '9999px';
-const BUTTON_RADIUS_BUSY   = '30px';
+const BUTTON_EASE = 'cubic-bezier(0.76, 0, 0.24, 1)';
+const BUTTON_WIDTH_IDLE = '180px';
+const BUTTON_WIDTH_BUSY = '60px';
+const BUTTON_RADIUS_IDLE = '9999px';
+const BUTTON_RADIUS_BUSY = '30px';
 
 const isBusy = (s: FormState) => s === 'sending' || s === 'success';
 
@@ -30,11 +30,14 @@ export const ContactForm: React.FC = () => {
   const [formData, setFormData] = useState({ name: '', email: '', message: '', website: '' });
   const [scannedErrors, setScannedErrors] = useState<Record<string, string>>({});
   const [generalError, setGeneralError] = useState('');
-  const { displayText: buttonText, scramble: scrambleButton, setDisplayText: setButtonText } =
-    useScrambleText(BUTTON_TEXT_IDLE);
+  const {
+    displayText: buttonText,
+    scramble: scrambleButton,
+    setDisplayText: setButtonText,
+  } = useScrambleText(BUTTON_TEXT_IDLE);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { id, value } = e.target;
+    const { id, value } = e.target as HTMLInputElement | HTMLTextAreaElement;
     setFormData((prev) => ({ ...prev, [id]: value }));
     if (scannedErrors[id]) {
       setScannedErrors((prev) => {
@@ -99,11 +102,17 @@ export const ContactForm: React.FC = () => {
         if (!res.ok) {
           const errorData = await res.json().catch(() => ({}));
 
-          if (res.status === 400 && Array.isArray(errorData.errors) && errorData.errors.length > 0) {
+          if (
+            res.status === 400 &&
+            Array.isArray(errorData.errors) &&
+            errorData.errors.length > 0
+          ) {
             const fieldErrors: Record<string, string> = {};
-            (errorData.errors as { field: string; message: string }[]).forEach(({ field, message }) => {
-              fieldErrors[field] = `Exception: ${message}`;
-            });
+            (errorData.errors as { field: string; message: string }[]).forEach(
+              ({ field, message }) => {
+                fieldErrors[field] = `Exception: ${message}`;
+              },
+            );
             setScannedErrors(fieldErrors);
             setFormState('idle');
             scrambleButton('SEND MESSAGE');
@@ -128,7 +137,8 @@ export const ContactForm: React.FC = () => {
         setButtonText(BUTTON_TEXT_IDLE);
       }, SUCCESS_RESET_DELAY_MS);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'NETWORK OFFLINE. RETRY TRANSMISSION.';
+      const message =
+        error instanceof Error ? error.message : 'NETWORK OFFLINE. RETRY TRANSMISSION.';
       setGeneralError(message);
       setFormState('idle');
       scrambleButton(BUTTON_TEXT_IDLE);
@@ -139,12 +149,10 @@ export const ContactForm: React.FC = () => {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-12 relative">
-
       {/* ── Fields ── */}
       <div className="flex flex-col gap-12">
         {fields.map((fieldName) => (
           <div key={fieldName} className="relative group">
-
             {/* Error message */}
             <div
               className="absolute -top-6 right-0 text-xs font-mono text-orange-400/80 tracking-widest uppercase"
@@ -199,8 +207,8 @@ export const ContactForm: React.FC = () => {
               {fieldName === 'name'
                 ? "What's your name?"
                 : fieldName === 'message'
-                ? 'Question, Comment or Message'
-                : 'Your Email'}
+                  ? 'Question, Comment or Message'
+                  : 'Your Email'}
             </label>
 
             {/* Underline — simple fill/clear transition, no scan */}
@@ -219,7 +227,10 @@ export const ContactForm: React.FC = () => {
       </div>
 
       {/* Honeypot */}
-      <div style={{ position: 'absolute', left: '-9999px', opacity: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
+      <div
+        style={{ position: 'absolute', left: '-9999px', opacity: 0, height: 0, overflow: 'hidden' }}
+        aria-hidden="true"
+      >
         <input
           type="text"
           id="website"

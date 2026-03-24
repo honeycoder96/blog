@@ -35,7 +35,7 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({ headings }) =>
           if (entry.isIntersecting) setActiveSlug(entry.target.id);
         });
       },
-      { rootMargin: TOC_OBSERVER_ROOT_MARGIN, threshold: 0 }
+      { rootMargin: TOC_OBSERVER_ROOT_MARGIN, threshold: 0 },
     );
     filtered.forEach(({ slug }) => {
       const el = document.getElementById(slug);
@@ -76,9 +76,7 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({ headings }) =>
 
   return (
     <nav aria-label="Table of contents">
-      <p className="text-xs font-mono uppercase tracking-widest text-fg-faint mb-4">
-        On this page
-      </p>
+      <p className="text-xs font-mono uppercase tracking-widest text-fg-faint mb-4">On this page</p>
 
       <div className="relative">
         {/* Sliding indicator dot — positioned absolutely, CSS transition moves it */}

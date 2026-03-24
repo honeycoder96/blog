@@ -82,11 +82,18 @@ export const SearchModal: React.FC = () => {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
-      if (e.key === 'Escape' && isOpen) { close(); return; }
+      if (e.key === 'Escape' && isOpen) {
+        close();
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         if (tag === 'INPUT' || tag === 'TEXTAREA') return;
         e.preventDefault();
-        if (isOpen) { close(); } else { open(); }
+        if (isOpen) {
+          close();
+        } else {
+          open();
+        }
       }
     };
     document.addEventListener('keydown', onKey);
@@ -95,7 +102,9 @@ export const SearchModal: React.FC = () => {
 
   useEffect(() => {
     document.body.style.overflow = isOpen ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, [isOpen]);
 
   useEffect(() => {
@@ -111,16 +120,22 @@ export const SearchModal: React.FC = () => {
       if (e.key !== 'Tab' || !modalRef.current) return;
       const focusable = Array.from(
         modalRef.current.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), input, textarea, select, [tabindex]:not([tabindex="-1"])'
-        )
+          'a[href], button:not([disabled]), input, textarea, select, [tabindex]:not([tabindex="-1"])',
+        ),
       ).filter((el) => !el.closest('[aria-hidden="true"]'));
       if (focusable.length === 0) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
       if (e.shiftKey) {
-        if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
       } else {
-        if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     };
     document.addEventListener('keydown', onTab);
@@ -147,16 +162,19 @@ export const SearchModal: React.FC = () => {
       const search = await pf.search(q);
       if (ctrl.signal.aborted) return;
       // pagefind result and data objects have no TS types — any is unavoidable
-      const data = await Promise.all(search.results.slice(0, MAX_SEARCH_RESULTS).map((r: any) => r.data())); // eslint-disable-line @typescript-eslint/no-explicit-any
+      const data = await Promise.all(
+        search.results.slice(0, MAX_SEARCH_RESULTS).map((r: any) => r.data()),
+      ); // eslint-disable-line @typescript-eslint/no-explicit-any
       if (ctrl.signal.aborted) return;
       setResults(
-        data.map((d: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+        data.map((d: any) => ({
+          // eslint-disable-line @typescript-eslint/no-explicit-any
           url: d.url,
           title: d.meta?.title ?? d.url,
           excerpt: d.excerpt,
           date: d.meta?.date,
           category: d.filters?.category?.[0],
-        }))
+        })),
       );
     } catch {
       // silently swallow AbortErrors
@@ -167,12 +185,12 @@ export const SearchModal: React.FC = () => {
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const q = e.target.value;
+      const q = (e.target as HTMLInputElement).value;
       setQuery(q);
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => doSearch(q), SEARCH_DEBOUNCE_MS);
     },
-    [doSearch]
+    [doSearch],
   );
 
   const clearQuery = useCallback(() => {
@@ -194,7 +212,9 @@ export const SearchModal: React.FC = () => {
           pointerEvents: isOpen ? 'auto' : 'none',
           transition: `opacity ${isOpen ? `0.28s ease` : `0.22s ease-in`}`,
         }}
-        onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) close();
+        }}
       />
 
       {/* ── Modal panel ── */}
@@ -214,7 +234,6 @@ export const SearchModal: React.FC = () => {
         }}
       >
         <div className="relative w-full h-full flex flex-col">
-
           {/* ── Close button — delayed entrance ── */}
           <button
             onClick={close}
@@ -231,7 +250,6 @@ export const SearchModal: React.FC = () => {
 
           {/* ── Scrollable area ── */}
           <div className="w-full h-full overflow-y-auto flex flex-col">
-
             {/* ── Search box — padding-top animates center → top ── */}
             <div
               className="w-full max-w-2xl mx-auto px-8"
@@ -248,7 +266,9 @@ export const SearchModal: React.FC = () => {
                   maxHeight: hasSearched ? '0' : '200px',
                   opacity: hasSearched ? 0 : 1,
                   marginBottom: hasSearched ? '0' : '2.5rem',
-                  transform: hasSearched ? 'translateY(-20px) scale(0.95)' : 'translateY(0) scale(1)',
+                  transform: hasSearched
+                    ? 'translateY(-20px) scale(0.95)'
+                    : 'translateY(0) scale(1)',
                   transition: `max-height 0.25s ease-in, opacity 0.2s ease-in, margin-bottom 0.25s ease-in, transform 0.2s ease-in`,
                   pointerEvents: hasSearched ? 'none' : 'auto',
                 }}
@@ -259,7 +279,9 @@ export const SearchModal: React.FC = () => {
                 <p className="text-fg-muted text-sm font-mono">
                   Search across all articles — engineering, deep dives, architecture
                   <span className="mx-3 text-fg-ghost">·</span>
-                  <kbd className="px-1.5 py-0.5 rounded border border-line text-fg-ghost text-xs">⌘K</kbd>
+                  <kbd className="px-1.5 py-0.5 rounded border border-line text-fg-ghost text-xs">
+                    ⌘K
+                  </kbd>
                   &nbsp;to toggle
                 </p>
               </div>
@@ -277,7 +299,7 @@ export const SearchModal: React.FC = () => {
                   onChange={handleChange}
                   placeholder="Search articles..."
                   autoComplete="off"
-                  spellCheck={false}
+                  spellcheck={false}
                   className="w-full pl-12 pr-12 py-4 bg-surface-raised border border-line rounded-2xl text-fg placeholder:text-fg-ghost font-mono text-sm focus:outline-none focus:border-line-strong transition-colors"
                 />
                 {isLoading && (
@@ -326,7 +348,9 @@ export const SearchModal: React.FC = () => {
                                   </span>
                                 )}
                                 {result.date && (
-                                  <span className="font-mono text-[10px] text-fg-ghost">{result.date}</span>
+                                  <span className="font-mono text-[10px] text-fg-ghost">
+                                    {result.date}
+                                  </span>
                                 )}
                               </div>
                               <p className="font-display font-bold text-fg-default group-hover:text-fg transition-colors leading-snug mb-1.5">

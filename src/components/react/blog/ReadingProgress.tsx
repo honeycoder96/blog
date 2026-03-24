@@ -72,7 +72,11 @@ export const ReadingProgress: React.FC<ReadingProgressProps> = ({ readingTime, p
         <div
           ref={timeRef}
           className="fixed top-[72px] right-6 z-[99] font-mono text-[11px] text-fg-faint bg-surface/80 backdrop-blur-sm border border-line rounded-full px-3 py-1 pointer-events-none select-none"
-          style={{ opacity: 0, transform: 'translateY(-6px)', transition: 'opacity 0.3s ease, transform 0.3s ease' }}
+          style={{
+            opacity: 0,
+            transform: 'translateY(-6px)',
+            transition: 'opacity 0.3s ease, transform 0.3s ease',
+          }}
         />
       )}
     </>

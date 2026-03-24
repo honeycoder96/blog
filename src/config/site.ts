@@ -87,7 +87,8 @@ export const siteConfig = {
 
   rss: {
     title: 'Honey Sharma — Blog',
-    description: 'In-depth writing on web engineering, JavaScript, architecture, and the craft of building software.',
+    description:
+      'In-depth writing on web engineering, JavaScript, architecture, and the craft of building software.',
   },
 
   // ── Comments (Giscus) ─────────────────────────────────────────────────────

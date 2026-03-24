@@ -1,5 +1,3 @@
-
-
 interface ErrorRetryProps {
   message: string;
   onRetry: () => void;

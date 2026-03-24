@@ -12,15 +12,15 @@ export interface OgData {
   readingTime?: number | null;
 }
 
-const OG_WIDTH  = 1200;
+const OG_WIDTH = 1200;
 const OG_HEIGHT = 630;
 
 const OG_COLORS = {
-  bg:       '#0d0d0d',
-  title:    '#f9fafb',
-  muted:    '#6b7280',
-  subtle:   '#4b5563',
-  border:   '#374151',
+  bg: '#0d0d0d',
+  title: '#f9fafb',
+  muted: '#6b7280',
+  subtle: '#4b5563',
+  border: '#374151',
 } as const;
 
 // Titles longer than this threshold use a smaller font size to avoid overflow
@@ -32,20 +32,20 @@ const TITLE_MAX_WIDTH = '960px';
 const OG_PADDING = '72px 80px';
 
 const OG_FONT_SIZE = {
-  url:  '18px',
+  url: '18px',
   meta: '14px',
 } as const;
 
 const OG_META_GAP = '24px';
 
 const OG_BADGE = {
-  padding:      '6px 14px',
+  padding: '6px 14px',
   borderRadius: '999px',
-  border:       '1px',
+  border: '1px',
 } as const;
 
 const OG_LETTER_SPACING = {
-  url:   '0.15em',
+  url: '0.15em',
   badge: '0.1em',
 } as const;
 
@@ -125,9 +125,10 @@ export async function generateOgImage(data: OgData): Promise<Buffer> {
                   type: 'span',
                   props: {
                     style: {
-                      fontSize: data.title.length > TITLE_LONG_THRESHOLD
-                        ? TITLE_FONT_SIZE.long
-                        : TITLE_FONT_SIZE.normal,
+                      fontSize:
+                        data.title.length > TITLE_LONG_THRESHOLD
+                          ? TITLE_FONT_SIZE.long
+                          : TITLE_FONT_SIZE.normal,
                       fontWeight: 700,
                       color: OG_COLORS.title,
                       lineHeight: TITLE_LINE_HEIGHT,
@@ -188,7 +189,7 @@ export async function generateOgImage(data: OgData): Promise<Buffer> {
           },
         ],
       },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- satori first arg is a plain object, not ReactNode
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- satori first arg is a plain object, not ReactNode
     } as any,
     {
       width: OG_WIDTH,

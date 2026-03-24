@@ -1,4 +1,3 @@
-
 import { AnimatedTitle } from '../ui/AnimatedTitle';
 import { siteConfig } from '../../../config/site';
 
@@ -26,7 +25,8 @@ export const HeroSection: React.FC = () => {
         className="hero-fade-in text-base text-fg-muted max-w-md inline leading-relaxed"
         style={{ animationDelay: '0.9s' }}
       >
-        Deep dives into patterns, performance, and engineering culture.<br />
+        Deep dives into patterns, performance, and engineering culture.
+        <br />
         Essays from the trenches of building real products.
       </p>
     </header>

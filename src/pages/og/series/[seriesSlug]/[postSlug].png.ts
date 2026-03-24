@@ -13,15 +13,17 @@ export const getStaticPaths: GetStaticPaths = async () => {
     return postOrder.flatMap((postSlug) => {
       const entry = postEntries.find((e) => e.slug === `${seriesSlug}/${postSlug}`);
       if (!entry) return [];
-      return [{
-        params: { seriesSlug, postSlug },
-        props: {
-          title: entry.data.title,
-          category: entry.data.category,
-          author: entry.data.author,
-          readingTime: entry.data.readingTime ?? null,
+      return [
+        {
+          params: { seriesSlug, postSlug },
+          props: {
+            title: entry.data.title,
+            category: entry.data.category,
+            author: entry.data.author,
+            readingTime: entry.data.readingTime ?? null,
+          },
         },
-      }];
+      ];
     });
   });
 };

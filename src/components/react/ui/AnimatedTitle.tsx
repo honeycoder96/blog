@@ -1,5 +1,3 @@
-
-
 interface AnimatedTitleProps {
   text: string;
   className?: string;
@@ -18,10 +16,7 @@ export const AnimatedTitle: React.FC<AnimatedTitleProps> = ({
   return (
     <Tag className={className}>
       {words.map((word, i) => (
-        <span
-          key={i}
-          className="inline-block overflow-hidden mr-[0.25em]"
-        >
+        <span key={i} className="inline-block overflow-hidden mr-[0.25em]">
           <span
             className="animated-title-word inline-block"
             style={{ animationDelay: `${i * staggerDelay}s` }}

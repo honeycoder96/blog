@@ -1,4 +1,3 @@
-
 import { ArrowRight } from '../ui/Icons';
 import { slugifyCategory } from '../../../config/categories';
 
@@ -15,7 +14,10 @@ interface CategoriesSectionProps {
   categoryCounts: Record<string, number>;
 }
 
-export const CategoriesSection: React.FC<CategoriesSectionProps> = ({ categories, categoryCounts }) => {
+export const CategoriesSection: React.FC<CategoriesSectionProps> = ({
+  categories,
+  categoryCounts,
+}) => {
   const cats = categories.map((cat) => ({
     ...cat,
     count: categoryCounts[cat.name] ?? 0,

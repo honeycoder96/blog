@@ -66,7 +66,10 @@ export function mapPostToDisplay(p: CollectionEntry<'blog'>): PostDisplayItem {
  * Falls back to a word-count estimate when the remark plugin did not inject it.
  */
 export function resolveReadingTime(readingTime: number | undefined, body: string): number {
-  return readingTime ?? Math.max(1, Math.ceil(body.trim().split(/\s+/).filter(Boolean).length / WORDS_PER_MINUTE));
+  return (
+    readingTime ??
+    Math.max(1, Math.ceil(body.trim().split(/\s+/).filter(Boolean).length / WORDS_PER_MINUTE))
+  );
 }
 
 // ── Shared ─────────────────────────────────────────────────────────
@@ -111,9 +114,7 @@ export function getRelatedPosts(
   limit = 2,
 ): CollectionEntry<'blog'>[] {
   if (post.data.relatedPosts.length > 0) {
-    return allPosts
-      .filter((p) => post.data.relatedPosts.includes(p.slug))
-      .slice(0, limit);
+    return allPosts.filter((p) => post.data.relatedPosts.includes(p.slug)).slice(0, limit);
   }
 
   const postTags = new Set(post.data.tags);
@@ -143,12 +144,14 @@ export async function parseSeriesCollection(): Promise<SeriesItem[]> {
     const posts = postOrder.flatMap((postSlug) => {
       const entry = postEntries.find((e) => e.slug === `${seriesSlug}/${postSlug}`);
       if (!entry) return [];
-      return [{
-        slug: postSlug,
-        title: entry.data.title,
-        summary: entry.data.summary,
-        readingTime: entry.data.readingTime,
-      }];
+      return [
+        {
+          slug: postSlug,
+          title: entry.data.title,
+          summary: entry.data.summary,
+          readingTime: entry.data.readingTime,
+        },
+      ];
     });
     return {
       seriesSlug,

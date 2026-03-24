@@ -17,7 +17,7 @@ interface TabsProps {
 export function Tabs({ children }: TabsProps) {
   const [active, setActive] = useState(0);
   const childArray = (Array.isArray(children) ? children : [children]).filter(
-    Boolean
+    Boolean,
   ) as VNode<TabProps>[];
 
   return (

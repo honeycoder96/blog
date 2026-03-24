@@ -1,5 +1,3 @@
-
-
 /**
  * A single animated skeleton row matching the two-column post/series list layout.
  * Used as a loading placeholder while PostsGrid or SeriesAccordion fetches more items.

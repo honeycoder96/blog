@@ -11,9 +11,9 @@ type FormState = 'idle' | 'submitting' | 'success' | 'error';
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const NewsletterSection: React.FC<Props> = ({ endpoint, source }) => {
-  const [email, setEmail]         = useState('');
-  const [state, setState]         = useState<FormState>('idle');
-  const [errorMsg, setErrorMsg]   = useState('');
+  const [email, setEmail] = useState('');
+  const [state, setState] = useState<FormState>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
   const [fieldError, setFieldError] = useState('');
 
   function validateEmail(value: string): string {
@@ -27,9 +27,10 @@ export const NewsletterSection: React.FC<Props> = ({ endpoint, source }) => {
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setEmail(e.target.value);
+    const { value } = e.target as HTMLInputElement;
+    setEmail(value);
     // Clear field error as soon as user starts correcting
-    if (fieldError) setFieldError(validateEmail(e.target.value));
+    if (fieldError) setFieldError(validateEmail(value));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -170,7 +171,11 @@ export const NewsletterSection: React.FC<Props> = ({ endpoint, source }) => {
 
               {/* Inline field validation error */}
               {fieldError && (
-                <p id="newsletter-field-error" className="pl-6 font-mono text-xs text-red-400" role="alert">
+                <p
+                  id="newsletter-field-error"
+                  className="pl-6 font-mono text-xs text-red-400"
+                  role="alert"
+                >
                   {fieldError}
                 </p>
               )}

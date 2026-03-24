@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* ── Self-hosted fonts ────────────────────────────────────────── */
 
@@ -63,7 +63,7 @@
 /* ── Theme tokens ─────────────────────────────────────────────── */
 
 :root,
-[data-theme="dark"] {
+[data-theme='dark'] {
   --theme-bg: #0a0a0a;
   --theme-bg-raised: #171717;
   --theme-bg-inset: #111111;
@@ -91,7 +91,7 @@
   --theme-scrollbar-hover: #404040;
 }
 
-[data-theme="light"] {
+[data-theme='light'] {
   --theme-bg: #ffffff;
   --theme-bg-raised: #f5f5f5;
   --theme-bg-inset: #ebebeb;
@@ -122,8 +122,8 @@
 /* ── Tailwind v4 design tokens ────────────────────────────────── */
 
 @theme {
-  --font-sans: "Inter", sans-serif;
-  --font-display: "Clash Display", sans-serif;
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'Clash Display', sans-serif;
 
   --color-surface: var(--theme-bg);
   --color-surface-raised: var(--theme-bg-raised);
@@ -150,7 +150,7 @@ html {
 body {
   background-color: var(--theme-bg);
   color: var(--theme-fg);
-  font-family: "Inter", sans-serif;
+  font-family: 'Inter', sans-serif;
   overflow-x: hidden;
 }
 
@@ -170,13 +170,27 @@ body {
 .prose-invert h3,
 .prose-invert h4 {
   color: var(--theme-fg);
-  font-family: "Clash Display", sans-serif;
+  font-family: 'Clash Display', sans-serif;
   font-weight: 700;
 }
 
-.prose-invert h1 { font-size: 2.5rem; margin-bottom: 1rem; margin-top: 2rem; }
-.prose-invert h2 { font-size: 1.875rem; margin-bottom: 0.875rem; margin-top: 2.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--theme-line); }
-.prose-invert h3 { font-size: 1.5rem; margin-bottom: 0.75rem; margin-top: 2rem; }
+.prose-invert h1 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+  margin-top: 2rem;
+}
+.prose-invert h2 {
+  font-size: 1.875rem;
+  margin-bottom: 0.875rem;
+  margin-top: 2.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--theme-line);
+}
+.prose-invert h3 {
+  font-size: 1.5rem;
+  margin-bottom: 0.75rem;
+  margin-top: 2rem;
+}
 
 .prose-invert p {
   line-height: 1.8;
@@ -230,8 +244,8 @@ body {
   text-decoration: var(--shiki-dark-text-decoration) !important;
 }
 
-[data-theme="light"] .astro-code,
-[data-theme="light"] .astro-code span {
+[data-theme='light'] .astro-code,
+[data-theme='light'] .astro-code span {
   color: var(--shiki-light) !important;
   font-style: var(--shiki-light-font-style) !important;
   font-weight: var(--shiki-light-font-weight) !important;
@@ -246,7 +260,8 @@ body {
   margin: 2rem 0;
 }
 
-.prose-invert ul, .prose-invert ol {
+.prose-invert ul,
+.prose-invert ol {
   margin: 1.5rem 0;
   padding-left: 2rem;
   color: var(--theme-fg-muted);
@@ -277,7 +292,7 @@ body {
   border-bottom: 2px solid var(--theme-line);
   color: var(--theme-fg);
   font-weight: 600;
-  font-family: "Clash Display", sans-serif;
+  font-family: 'Clash Display', sans-serif;
 }
 
 .prose-invert td {
@@ -335,47 +350,47 @@ body {
 
 /* Note variants — dark */
 :root .note-info,
-[data-theme="dark"] .note-info {
+[data-theme='dark'] .note-info {
   --note-accent: #3b82f6;
   --note-border: #1e3a5f;
   --note-bg: rgba(59, 130, 246, 0.05);
 }
 :root .note-tip,
-[data-theme="dark"] .note-tip {
+[data-theme='dark'] .note-tip {
   --note-accent: #22c55e;
   --note-border: #14532d;
   --note-bg: rgba(34, 197, 94, 0.05);
 }
 :root .note-warning,
-[data-theme="dark"] .note-warning {
+[data-theme='dark'] .note-warning {
   --note-accent: #eab308;
   --note-border: #422006;
   --note-bg: rgba(234, 179, 8, 0.05);
 }
 :root .note-danger,
-[data-theme="dark"] .note-danger {
+[data-theme='dark'] .note-danger {
   --note-accent: #ef4444;
   --note-border: #450a0a;
   --note-bg: rgba(239, 68, 68, 0.05);
 }
 
 /* Note variants — light */
-[data-theme="light"] .note-info {
+[data-theme='light'] .note-info {
   --note-accent: #2563eb;
   --note-border: #bfdbfe;
   --note-bg: #eff6ff;
 }
-[data-theme="light"] .note-tip {
+[data-theme='light'] .note-tip {
   --note-accent: #16a34a;
   --note-border: #bbf7d0;
   --note-bg: #f0fdf4;
 }
-[data-theme="light"] .note-warning {
+[data-theme='light'] .note-warning {
   --note-accent: #ca8a04;
   --note-border: #fef08a;
   --note-bg: #fefce8;
 }
-[data-theme="light"] .note-danger {
+[data-theme='light'] .note-danger {
   --note-accent: #dc2626;
   --note-border: #fecaca;
   --note-bg: #fef2f2;
@@ -392,8 +407,14 @@ body {
 /* ── Search modal — results container entrance ────────────────── */
 
 @keyframes searchResultsIn {
-  from { opacity: 0; transform: translateY(32px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(32px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .animate-results-in {
@@ -401,16 +422,24 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-results-in { animation: none; }
+  .animate-results-in {
+    animation: none;
+  }
 }
 
 /* ── ContactForm animations ───────────────────────────────────── */
 
 /* Success checkmark pop */
 @keyframes popIn {
-  0%   { transform: scale(0); }
-  65%  { transform: scale(1.2); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(0);
+  }
+  65% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .animate-pop-in {
@@ -418,15 +447,26 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-pop-in { animation: none; }
+  .animate-pop-in {
+    animation: none;
+  }
 }
 
 /* ── Scrollbar ────────────────────────────────────────────────── */
 
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--theme-scrollbar-track); }
-::-webkit-scrollbar-thumb { background: var(--theme-scrollbar-thumb); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--theme-scrollbar-hover); }
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--theme-scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--theme-scrollbar-thumb);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--theme-scrollbar-hover);
+}
 
 /* ── MDX Tabs component ──────────────────────────────────────── */
 
@@ -454,7 +494,9 @@ body {
   border: none;
   border-bottom: 2px solid transparent;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
   white-space: nowrap;
 }
 
@@ -487,14 +529,22 @@ body {
 /* ── Custom cursor ────────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce), (pointer: coarse) {
-  .custom-cursor { display: none; }
+  .custom-cursor {
+    display: none;
+  }
 }
 
 /* ── Section entrance animation ──────────────────────────────── */
 
 @keyframes fadeSlideUp {
-  from { opacity: 0; transform: translateY(2rem); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(2rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .animate-fade-slide-up {
@@ -502,7 +552,9 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-fade-slide-up { animation: none; }
+  .animate-fade-slide-up {
+    animation: none;
+  }
 }
 
 /* ── AnimatedTitle CSS keyframes ──────────────────────────────── */

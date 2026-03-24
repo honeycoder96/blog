@@ -10,17 +10,23 @@ const THEME_COLORS: Record<string, { bg: string; particle: string; lineRgb: stri
 // Extracted to module scope so the react-hooks linter can analyse it correctly.
 // Receives context (canvas, ctx, themeRef, mouse) as method parameters instead of closure.
 class Particle {
-  x: number; y: number;
-  directionX: number; directionY: number;
+  x: number;
+  y: number;
+  directionX: number;
+  directionY: number;
   size: number;
-  baseX: number; baseY: number;
+  baseX: number;
+  baseY: number;
   density: number;
 
   constructor(x: number, y: number, directionX: number, directionY: number, size: number) {
-    this.x = x; this.y = y;
-    this.directionX = directionX; this.directionY = directionY;
+    this.x = x;
+    this.y = y;
+    this.directionX = directionX;
+    this.directionY = directionY;
     this.size = size;
-    this.baseX = x; this.baseY = y;
+    this.baseX = x;
+    this.baseY = y;
     this.density = Math.random() * 30 + 1;
   }
 
@@ -133,7 +139,7 @@ export const HeroCanvas: React.FC = () => {
       const colors = THEME_COLORS[themeRef.current] || THEME_COLORS.dark;
       ctx!.fillStyle = colors.bg;
       ctx!.fillRect(0, 0, canvas!.width, canvas!.height);
-      particles.forEach(p => p.update(canvas!, ctx!, themeRef.current, mouse));
+      particles.forEach((p) => p.update(canvas!, ctx!, themeRef.current, mouse));
       connect();
     };
 

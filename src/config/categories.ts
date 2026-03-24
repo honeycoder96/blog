@@ -57,7 +57,8 @@ export const CATEGORY_CONFIG: CategoryConfig[] = [
   {
     name: 'AI & Automation',
     color: 'text-orange-400 border-orange-800',
-    description: 'AI-powered tooling, autonomous workflows, and intelligent automation for engineering.',
+    description:
+      'AI-powered tooling, autonomous workflows, and intelligent automation for engineering.',
     border: 'border-line-strong',
     borderHover: 'hover:border-fg-muted',
     accent: 'text-fg-muted',
