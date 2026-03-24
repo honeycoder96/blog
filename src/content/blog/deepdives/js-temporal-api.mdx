@@ -276,7 +276,7 @@ console.log(birthday.year)  // 1995
 console.log(birthday.month) // 10 (1-indexed! finally)
 console.log(birthday.day)   // 12
 
-// Add one month safely — no overflow into wrong month
+// Add one year safely — no overflow into wrong month
 const nextBirthday = birthday.with({ year: 2026 })
 console.log(nextBirthday.toString()) // "2026-10-12"
 
@@ -424,6 +424,6 @@ The path forward is clear:
 2. **Reach for the right type** — `PlainDate` for calendar dates, `ZonedDateTime` for events, `Instant` for storage
 3. **Keep an eye on Safari and Node.js** — until they ship native support, the polyfill is non-negotiable
 
-The cookbook at [tc39.es/proposal-temporal/docs/cookbook.html](https://tc39.es/proposal-temporal/docs/cookbook.html) is excellent for going deeper — it has worked examples for dozens of real-world patterns from "convert between timezones" to "next occurrence of a weekday."
+The cookbook at <a href="https://tc39.es/proposal-temporal/docs/cookbook.html" target="_blank" rel="noopener noreferrer">tc39.es/proposal-temporal/docs/cookbook.html</a> is excellent for going deeper — it has worked examples for dozens of real-world patterns from "convert between timezones" to "next occurrence of a weekday."
 
 Thirty years of `Date` bugs end here.
