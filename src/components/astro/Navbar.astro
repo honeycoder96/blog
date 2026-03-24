@@ -123,7 +123,7 @@ const currentPath = Astro.url.pathname;
 
 </div>
 
-<!-- Theme toggle — runs once after both toggle instances are in the DOM -->
+<!-- Theme toggle — re-runs on every navigation via astro:page-load -->
 <script is:inline>
   (function() {
     var THEMES = ['dark', 'light'];
@@ -147,16 +147,21 @@ const currentPath = Astro.url.pathname;
       });
     }
 
-    document.querySelectorAll('.theme-toggle').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        var current = getTheme();
-        var idx = THEMES.indexOf(current);
-        var next = THEMES[(idx + 1) % THEMES.length];
-        setTheme(next);
+    function init() {
+      document.querySelectorAll('.theme-toggle').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var current = getTheme();
+          var idx = THEMES.indexOf(current);
+          var next = THEMES[(idx + 1) % THEMES.length];
+          setTheme(next);
+        });
       });
-    });
+      updateAllIcons(getTheme());
+    }
 
-    updateAllIcons(getTheme());
+    // astro:page-load fires on initial load AND after every View Transition
+    // navigation, so icons and click handlers are always wired to fresh DOM nodes.
+    document.addEventListener('astro:page-load', init);
   })();
 </script>
 
