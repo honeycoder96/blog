@@ -163,12 +163,11 @@ export const SearchModal: React.FC = () => {
       if (ctrl.signal.aborted) return;
       // pagefind result and data objects have no TS types — any is unavoidable
       const data = await Promise.all(
-        search.results.slice(0, MAX_SEARCH_RESULTS).map((r: any) => r.data()),
-      ); // eslint-disable-line @typescript-eslint/no-explicit-any
+        search.results.slice(0, MAX_SEARCH_RESULTS).map((r: any) => r.data()), // eslint-disable-line @typescript-eslint/no-explicit-any
+      );
       if (ctrl.signal.aborted) return;
       setResults(
-        data.map((d: any) => ({
-          // eslint-disable-line @typescript-eslint/no-explicit-any
+        data.map((d: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
           url: d.url,
           title: d.meta?.title ?? d.url,
           excerpt: d.excerpt,
