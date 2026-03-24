@@ -13,11 +13,11 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Cache node_modules keyed by lockfile — fast installs on unchanged deps
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: node_modules
           key: node-modules-${{ hashFiles('package-lock.json') }}
@@ -45,10 +45,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: node_modules
           key: node-modules-${{ hashFiles('package-lock.json') }}
@@ -60,7 +60,7 @@ jobs:
       # Cache .astro/ keyed by content files — Astro skips re-processing
       # unchanged MDX/MD entries between builds (incremental builds)
       - name: Cache Astro build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .astro
           key: astro-${{ hashFiles('src/content/**') }}
