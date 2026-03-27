@@ -33,7 +33,6 @@ export default defineConfig({
           // Individual posts — stable content, monthly check is enough
           item.changefreq = 'monthly';
           item.priority = 0.7;
-          item.lastmod = new Date();
         }
         return item;
       },
