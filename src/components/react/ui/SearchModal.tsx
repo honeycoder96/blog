@@ -167,13 +167,20 @@ export const SearchModal: React.FC = () => {
       );
       if (ctrl.signal.aborted) return;
       setResults(
-        data.map((d: { url: string; meta?: Record<string, string>; excerpt?: string; filters?: Record<string, string[]> }) => ({
-          url: d.url,
-          title: d.meta?.title ?? d.url,
-          excerpt: d.excerpt ?? '',
-          date: d.meta?.date,
-          category: d.filters?.category?.[0],
-        })),
+        data.map(
+          (d: {
+            url: string;
+            meta?: Record<string, string>;
+            excerpt?: string;
+            filters?: Record<string, string[]>;
+          }) => ({
+            url: d.url,
+            title: d.meta?.title ?? d.url,
+            excerpt: d.excerpt ?? '',
+            date: d.meta?.date,
+            category: d.filters?.category?.[0],
+          }),
+        ),
       );
     } catch {
       // silently swallow AbortErrors
