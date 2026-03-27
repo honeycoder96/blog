@@ -170,7 +170,7 @@ export const SearchModal: React.FC = () => {
         data.map((d: { url: string; meta?: Record<string, string>; excerpt?: string; filters?: Record<string, string[]> }) => ({
           url: d.url,
           title: d.meta?.title ?? d.url,
-          excerpt: d.excerpt,
+          excerpt: d.excerpt ?? '',
           date: d.meta?.date,
           category: d.filters?.category?.[0],
         })),
