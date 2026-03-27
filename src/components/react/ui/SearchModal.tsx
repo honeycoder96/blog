@@ -167,8 +167,7 @@ export const SearchModal: React.FC = () => {
       );
       if (ctrl.signal.aborted) return;
       setResults(
-        data.map((d: any) => ({
-          // eslint-disable-line @typescript-eslint/no-explicit-any
+        data.map((d: { url: string; meta?: Record<string, string>; excerpt?: string; filters?: Record<string, string[]> }) => ({
           url: d.url,
           title: d.meta?.title ?? d.url,
           excerpt: d.excerpt,
