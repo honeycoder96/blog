@@ -1,0 +1,249 @@
+---
+title: "Why TypeScript Is Leaving JavaScript Behind"
+date: "Apr 2026"
+pubDate: 2026-04-05
+category: Engineering
+author: Honey Sharma
+summary: TypeScript 6.0 is the last compiler written in JavaScript. TypeScript 7.0 will be built in Go. The reason why is a precise diagnosis of where JavaScript breaks down as a platform for serious tooling — and what that means for every JS developer.
+featured: true
+isVisible: true
+tags: [typescript, javascript, go, compilers, tooling, performance, engineering]
+relatedPosts: []
+---
+
+import Callout from '../../../components/mdx/Callout.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import MetricCard from '../../../components/mdx/MetricCard.astro';
+import Lessons from '../../../components/mdx/Lessons.astro';
+import Lesson from '../../../components/mdx/Lesson.astro';
+
+TypeScript 6.0 is the last TypeScript compiler written in JavaScript. TypeScript 7.0 will be built in Go.
+
+Not because TypeScript is moving away from JavaScript developers. Because JavaScript is the wrong host language for a compiler serving millions of them.
+
+That distinction matters. The TypeScript team isn't abandoning the ecosystem — they're diagnosing exactly where JavaScript breaks down under compiler-grade workloads and choosing a substrate that doesn't. The diagnosis is precise. And it applies far beyond this one project.
+
+---
+
+## The Numbers First
+
+Before the why, the what. VS Code's codebase is 1.5 million lines of TypeScript — one of the largest TypeScript projects in existence, and conveniently maintained by the same team building the compiler. It's the real-world benchmark.
+
+<MetricCard
+  title="TypeScript 7.0 — VS Code Benchmark"
+  metrics={[
+    { label: "Full project build (1.5M lines)", before: "77.8s", after: "7.5s", better: "lower" },
+    { label: "Editor cold start", before: "9.6s", after: "1.2s", better: "lower" },
+    { label: "Memory usage (peak)", before: "~1.2 GB", after: "~590 MB", better: "lower" },
+  ]}
+/>
+
+Full build time drops from 77 seconds to 7.5 seconds. Editor startup from 9.6 seconds to 1.2 seconds. Memory cut roughly in half.
+
+These numbers get misread as "TypeScript is getting faster." That's not what's happening. The TypeScript language is identical — same syntax, same type system, same rules. What's changing is the engine running the type checker. The performance gains are entirely the cost of the old engine being eliminated.
+
+Which raises the obvious question: what was so expensive about the old one?
+
+---
+
+## Part 1 — The Runtime Tax
+
+Every `tsc` invocation starts a Node.js process. That's not an incidental detail — it is the first cost.
+
+A Go binary is machine code. You call it, it runs. There's no interpreter, no bytecode layer, no runtime to bootstrap. The program starts, does work, exits. The overhead between "you called it" and "it's doing compiler work" is measured in single-digit milliseconds.
+
+A Node.js program is different. Before your first line of TypeScript gets type-checked, Node.js has to:
+
+1. Spawn a V8 isolate
+2. Parse and compile the TypeScript compiler's own JavaScript source
+3. Wait for V8's JIT to warm up the hot paths in the compiler
+4. *Then* start processing your code
+
+For a long-running server, this amortizes to nothing — you pay it once on startup. For a CLI tool that runs hundreds of times a day in CI pipelines and editor integrations, you pay it every single time.
+
+<Callout type="warning" title="This isn't a TypeScript-specific problem">
+Every Node.js CLI tool pays this runtime tax. ESLint, Prettier, Jest, Webpack — they all spawn a V8 instance before doing any actual work. TypeScript just happens to be CPU-heavy enough that the startup cost is visible against total execution time. At smaller scales, you don't notice. At compiler scale, it's seconds on every cold invocation.
+</Callout>
+
+The Go binary eliminates the entire category. There is no runtime to start. The process overhead is negligible.
+
+---
+
+## Part 2 — The Single-Thread Ceiling
+
+JavaScript has one thread. That sentence has enough asterisks to fill a page, so let's be precise about what it means for a compiler.
+
+Worker threads exist. You can spin them up, pass data between them, and do CPU work in parallel — in theory. In practice, the coordination model is the problem. JS Worker threads share nothing by default. To move data between threads, you serialize it (usually JSON), message-pass it across a `postMessage` boundary, and deserialize it on the other side. For small payloads, this is fine. For the data structures a type checker operates on — full symbol tables, type graphs, cross-file reference maps — serialization is not a rounding error. It's a fundamental bottleneck.
+
+Go's concurrency model is different in kind, not just degree.
+
+<Comparison
+  headers={["Capability", "JavaScript", "Go"]}
+  rows={[
+    ["Parallelism model", "Worker threads (isolated heaps, message-passing)", "Goroutines (shared memory, lightweight)"],
+    ["Data sharing across threads", "Serialize → copy → deserialize", "Direct pointer access"],
+    ["Thread creation cost", "High (new V8 isolate ~4–10ms)", "~2KB stack, sub-microsecond"],
+    ["Multi-core type checking", "Not practical — serialization overhead too high", "Native — fan out checker work across cores"],
+    ["Concurrency primitives", "Promises, async/await, Worker postMessage", "Goroutines, channels, sync primitives"],
+  ]}
+/>
+
+Type checking is embarrassingly parallelizable in principle. Different files, different modules, different declaration paths — enormous amounts of this work can happen simultaneously. The TypeScript compiler in Go can fan out across your machine's cores without a serialization boundary in sight. The JavaScript compiler couldn't, structurally. One thread, always.
+
+This isn't a failure of the TypeScript team's ingenuity. They're among the best compiler engineers in the industry. It's a ceiling built into the language's execution model.
+
+---
+
+## Part 3 — V8's GC Wasn't Built for This
+
+V8's garbage collector is a generational GC, and it's very good at what it was designed for. Web applications create enormous quantities of short-lived objects: event objects, promise continuations, DOM update payloads, request/response bodies. These objects die young — the GC assumes this, optimizes for it, and performs extremely well when the assumption holds.
+
+A compiler's allocation pattern violates every one of those assumptions.
+
+When `tsc` processes a large codebase, it builds and holds:
+
+- **Symbol tables** for every identifier across every file — long-lived, rarely freed mid-compilation
+- **Type caches** mapping expressions to their inferred types — grow continuously, referenced repeatedly
+- **AST node pools** for the full parse tree of every file in the project — kept in memory until the compilation is done
+- **Declaration maps** across the module graph — large, dense, highly interconnected
+
+These objects live for the entire duration of the compilation. They're not short-lived. The generational GC keeps promoting them to old-gen, then eventually has to do a major collection — a full stop-the-world GC pass across hundreds of megabytes of live data. On large projects, these GC pauses are visible as latency spikes during `tsc` runs. They're why the memory profile for a large TypeScript compilation looks like a sawtooth: allocate, allocate, allocate, pause, collect, repeat.
+
+<Callout type="info" title="Why Go's GC fits better here">
+Go uses a concurrent, tri-color mark-and-sweep GC rather than a generational one. It's tuned for low-latency server workloads — long-running processes with large, stable heaps, where pause times matter more than throughput. This happens to match a compiler's workload well: large stable data structures held throughout compilation, with short-lived scratch allocations on top. The Go runtime doesn't keep trying to collect the symbol table because it thinks all objects are short-lived.
+</Callout>
+
+The result: Go's allocator is more efficient for this workload, and Go's GC is better matched to the lifetime patterns a compiler actually produces. The ~50% memory reduction in the VS Code benchmark isn't just "Go uses less memory" — it's the difference between a runtime optimized for the wrong workload and one optimized for the right one.
+
+---
+
+## Part 4 — What JavaScript Objects Actually Are
+
+This one is subtle but it compounds with everything above.
+
+In JavaScript, `{}` is a hash map. Always. The engine does heroic work to make frequently-created objects with consistent shapes into something closer to structs — V8's "hidden classes" / "shapes" optimization — but this is an optimization applied on top of a fundamentally dynamic model, not a property of the language. The engine can and does fall back to hash-map behavior when object shapes aren't consistent, when properties are added dynamically, or when the JIT deoptimizes.
+
+A TypeScript AST node for a function declaration has a fixed set of fields. In JS, that's an object with a shape the JIT may or may not keep stable. In Go, it's:
+
+```go
+type FunctionDeclaration struct {
+    Name       *Identifier
+    Parameters []*Parameter
+    ReturnType TypeNode
+    Body       *Block
+    Modifiers  ModifierFlags
+    // ...
+}
+```
+
+That struct has a known size. The compiler allocates exactly that many bytes, laid out exactly that way, on a predictable boundary. When the type checker walks a million of these nodes, adjacent accesses are adjacent in memory — cache lines load predictably. When a JS runtime walks a million JS objects, each one is a pointer to a heap allocation somewhere, chased one by one.
+
+For a codebase of VS Code's scale, cache locality is not a micro-optimization. It's the difference between 77 seconds and 7.5.
+
+---
+
+## Part 5 — Why Go and Not Rust or C++
+
+This is the question everyone asks, and the answer reveals something important about the nature of this project.
+
+It's a port. Not a rewrite.
+
+That distinction is doing a lot of work. A rewrite starts from a clean slate — you redesign the architecture, rethink the data structures, rebuild the algorithms from first principles. A rewrite is a multi-year moonshot with high risk of divergence, where the new version can silently behave differently from the old one in thousands of edge cases users depend on.
+
+A port translates the existing code, structure preserved, into a new language. The TypeScript compiler has been developed over more than a decade by hundreds of contributors. It has an enormous, battle-tested body of logic covering every corner of the language spec — conditional types, template literal types, variance inference, declaration merging, complex module resolution. Rewriting that from scratch is not a project you do in a year. The risk of getting something subtly wrong in a rarely-hit code path is enormous, and the correctness surface is too large to cover with tests alone.
+
+Go was chosen specifically because it makes a mechanical port feasible.
+
+<Callout type="info" title="Go's structural alignment with the existing TypeScript compiler">
+The TypeScript compiler is written in an object-oriented, class-heavy style — interfaces, inheritance, mutable state, explicit null checks. Go's struct-and-interface model maps to this naturally. Classes become structs. Interfaces become Go interfaces. Nullable types map to pointer semantics. The shape of the code can be preserved almost structurally, which is what makes this a port rather than a reimagining.
+</Callout>
+
+Rust was the obvious alternative, and it's what the rest of the native tooling ecosystem (Biome, Oxc, SWC, Rolldown) has chosen. For a greenfield compiler built from scratch, Rust makes excellent arguments: zero-cost abstractions, fearless concurrency, no GC at all. But Rust's ownership and borrow checker fundamentally change how you write data structures. A pointer-heavy, graph-structured AST with back-references — exactly the shape of the TypeScript compiler's internals — maps poorly to Rust's ownership rules without either significant architectural changes or heavy use of `Rc<RefCell<T>>` (which largely defeats the point). Porting the TypeScript compiler into Rust wouldn't be a port. It would be a rewrite, with all the risk that implies.
+
+C++ was the other candidate with the right performance profile. But C++ introduces manual memory management, header file complexity, and a much steeper contribution barrier. The TypeScript team writes TypeScript for a living — Go is close enough to read, close enough to the existing code's style, and safe-by-default in ways that C++ is not.
+
+<Comparison
+  headers={["Consideration", "Go", "Rust", "C++"]}
+  rows={[
+    ["Port feasibility", "High — OOP style maps naturally", "Low — ownership model forces rewrites", "Medium — possible but painful"],
+    ["Memory safety", "GC (low latency, tunable)", "Compile-time borrow checker", "Manual — footgun risk"],
+    ["Parallelism", "Goroutines + shared memory", "Threads + ownership guarantees", "Threads + manual sync"],
+    ["Contributor ramp-up", "Readable, familiar syntax", "Steep learning curve", "Very steep"],
+    ["GC pauses", "Low-latency concurrent GC", "None (no GC)", "None (no GC)"],
+    ["Ecosystem fit", "Strong stdlib, fast compile", "Growing, excellent tooling", "Mature but fragmented"],
+  ]}
+/>
+
+The choice of Go over Rust isn't a statement that Go is a better language for compilers in general. It's a statement that *for this specific project* — porting a decade of existing, working, correct compiler logic into a native binary as faithfully as possible — Go's tradeoffs are better matched to the constraints.
+
+The TypeScript team is explicit about this in the port announcement: the goal was a line-for-line translation where the Go code reads recognizably like the JavaScript it came from. That was the only way to ship something correct and auditable in a reasonable timeframe without a multi-year divergence risk.
+
+---
+
+## Part 6 — Why It Took This Long
+
+If JavaScript is such a poor substrate for compiler work, why was `tsc` written in it in the first place, and why did it stay that way for over a decade?
+
+The original decision made complete sense. TypeScript launched in 2012 with a clear mandate: be accessible to JavaScript developers. A compiler written in JavaScript could run in Node.js without dependencies. It could be read and contributed to by anyone who knew TypeScript. It bootstrapped itself — the compiler was compiled by the previous version of itself, a satisfying property. And at the scale TypeScript projects were in 2012 or 2015, none of the performance ceilings were visible yet.
+
+The problem is that TypeScript's success created the very conditions that exposed its limits. As TypeScript adoption grew, the projects using it grew with it. Microsoft's own codebases, Google's Angular ecosystem, Vercel's infrastructure — these are multi-million line TypeScript projects. The performance profile that was invisible at 10,000 lines became acutely visible at 1,000,000.
+
+<Callout type="tip" title="TypeScript isn't alone in making this transition">
+The broader JS tooling ecosystem is quietly going native. Biome (Rust) is replacing ESLint and Prettier. Rolldown (Rust, powering Vite 6) replaces the Rollup bundler. SWC (Rust) is Babel's successor in Next.js. Oxc (Rust) is building a full JS toolchain from scratch. TypeScript 7.0 is the most high-profile example of this shift, but it isn't an exception — it's a confirmation of a trend that was already underway.
+</Callout>
+
+The switch happened when the costs became impossible to ignore. The team didn't abandon JavaScript out of preference. They ran the benchmarks, measured the ceilings, and made the engineering call.
+
+---
+
+## Part 7 — What Actually Changes for You
+
+The headline is: if you write TypeScript applications, almost nothing changes.
+
+<Lessons type="recommendations">
+  <Lesson title="If you write TypeScript apps">
+    The language is identical. The same `.ts` files, the same `tsconfig.json`, the same type errors. You call `tsc` the same way. The only difference is that builds are dramatically faster and the editor feels noticeably more responsive. The transition is entirely transparent.
+  </Lesson>
+  <Lesson title="If you maintain TypeScript-based tooling">
+    The compiler API is changing. Tools that consume the TypeScript compiler programmatically — ts-morph, ts-jest, typescript-eslint, custom transformers — will need to migrate to the new API surface. The TypeScript team has committed to a compatibility layer and migration guide, but this is real work for ecosystem maintainers. Watch the TypeScript 7.0 roadmap closely.
+  </Lesson>
+  <Lesson title="If you're building new developer tooling">
+    Seriously consider Rust or Go as your host language from day one. If your tool is a CLI, a linter, a bundler, or anything else that does CPU-heavy work on large amounts of source code, JavaScript will eventually become the ceiling. Building in a native language means that ceiling doesn't exist.
+  </Lesson>
+  <Lesson title="If you're a library or type declaration author">
+    TypeScript 7.0 ships alongside meaningful language features — notably improved `--isolatedDeclarations` and bundled declaration emit. These are worth tracking independently of the Go migration. Faster checking also means faster feedback loops in your own development workflow.
+  </Lesson>
+</Lessons>
+
+The LSP protocol is unchanged, so every editor integration keeps working. The `language-server` binary that VS Code and other editors talk to is the same conceptual thing — it just runs much faster.
+
+---
+
+## What This Actually Tells Us About JavaScript
+
+The tempting read is that this is bad news for JavaScript. It isn't.
+
+JavaScript remains the right language for the things it was designed to do: building user interfaces, writing server logic, scripting browser interactions, creating APIs. It runs everywhere. The ecosystem is unmatched. The developer experience — especially with TypeScript layered on top — is genuinely excellent for product work.
+
+What TypeScript 7.0 reveals is the specific contour of that boundary. JavaScript is the right language for building products. It is increasingly not the right language for building the tools those products depend on.
+
+The compiler case is the clearest version: CPU-heavy, multi-core parallelizable, working with large long-lived data structures, needing predictable memory layout. Every one of JavaScript's structural limits manifests simultaneously. But the same logic applies to CI runners, bundlers, linters, build caches, code analysis tools. The moment your tool's workload is "process enormous amounts of code as fast as possible," you are asking JavaScript to do work it was never designed for.
+
+The JS ecosystem has always papered over this with clever engineering — worker pools, incremental caching, persistent daemon processes. TypeScript's watch mode (`tsc --watch`) is essentially a workaround for the startup cost problem. These approaches work. But they're workarounds for a ceiling, not a removal of it.
+
+TypeScript 7.0 removes the ceiling. Same language. Native engine.
+
+---
+
+---
+
+## Resources
+
+- <a href="https://devblogs.microsoft.com/typescript/typescript-native-port/" target="_blank" rel="noopener noreferrer">**TypeScript Native Port** — Microsoft Dev Blog</a> — the official announcement from the TypeScript team, including the port rationale, the Go decision, and the full set of benchmarks
+- <a href="https://devblogs.microsoft.com/typescript/announcing-typescript-6-0/" target="_blank" rel="noopener noreferrer">**Announcing TypeScript 6.0** — Microsoft Dev Blog</a> — the 6.0 release notes; the last major version before the native port
+- <a href="https://www.typescriptlang.org/" target="_blank" rel="noopener noreferrer">**TypeScript** — typescriptlang.org</a> — official documentation, playground, and handbook
+- <a href="https://github.com/microsoft/typescript-go" target="_blank" rel="noopener noreferrer">**microsoft/typescript-go** — GitHub</a> — the in-progress Go port; open source, active development, issues and PRs open
+
+---
+
+*The compiler getting faster is the obvious story. The interesting story is what it took to get here — and what it tells us about the layers of a system that JavaScript is and isn't the right tool for. If you're thinking through where that boundary sits in your own stack, I'd like to hear about it.*
