@@ -5,6 +5,7 @@ A minimal, fast, dark-mode-first engineering blog built with Astro 5, React, Tai
 ## Features
 
 - **Static output** — fully pre-rendered, deployable to Vercel, Netlify, Cloudflare Pages, or any CDN
+- **PWA / installable** — service worker with offline support, web app manifest, precached assets
 - **Pagefind search** — client-side full-text search, zero backend required
 - **MDX content** — write posts in Markdown with JSX component support
 - **Blog + Series** — standalone posts and ordered multi-part series, each with their own routing
@@ -67,6 +68,23 @@ export const siteConfig = {
 ```
 
 No other files need to change to personalise the blog.
+
+## Icons & PWA assets
+
+The web app manifest (`name`, `short_name`, `description`) is generated automatically from `src/config/site.ts`. However, the icon images are binary assets that must be replaced manually.
+
+Replace these files in `public/` with your own branding before deploying:
+
+| File | Size | Used for |
+|---|---|---|
+| `public/favicon.ico` | any | Legacy browser tab icon |
+| `public/favicon.svg` | any | Modern browser tab icon (scalable) |
+| `public/favicon-96x96.png` | 96×96 | High-DPI browser tab |
+| `public/apple-touch-icon.png` | 180×180 | iOS home screen icon |
+| `public/web-app-manifest-192x192.png` | 192×192 | Android home screen / PWA icon |
+| `public/web-app-manifest-512x512.png` | 512×512 | Android splash screen / PWA icon |
+
+The recommended tool for generating all of these at once is [realfavicongenerator.net](https://realfavicongenerator.net) — upload a high-resolution square PNG or SVG of your logo and it exports every size and format needed.
 
 ## Environment variables
 
@@ -170,7 +188,9 @@ src/
 │   ├── blog/
 │   ├── series/
 │   ├── contact.astro
-│   └── rss.xml.ts
+│   ├── offline.astro       ← PWA offline fallback page
+│   ├── rss.xml.ts
+│   └── site.webmanifest.ts ← PWA manifest (auto-generated from site.ts)
 ├── components/
 │   ├── astro/           ← Navbar, Footer, ThemeToggle
 │   └── react/           ← interactive UI components
@@ -188,6 +208,7 @@ src/
 | Content | MDX |
 | Search | Pagefind |
 | OG images | Satori + @resvg/resvg-js |
+| PWA / Service Worker | @vite-pwa/astro + Workbox |
 | Icons | Lucide React |
 
 ## Contributing
