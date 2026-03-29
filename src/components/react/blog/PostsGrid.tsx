@@ -112,7 +112,11 @@ export const PostsGrid: React.FC<PostsGridProps> = ({ initialPosts, initialTotal
         prefetchInBackground(pageNum + 1);
       } catch (e) {
         if (e instanceof Error && e.name === 'AbortError') return;
-        setError('Failed to load posts. Please try again.');
+        setError(
+          navigator.onLine
+            ? 'Failed to load posts. Please try again.'
+            : "You're offline — only posts loaded during this session are available.",
+        );
       } finally {
         setIsLoading(false);
       }

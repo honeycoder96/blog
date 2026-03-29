@@ -3,6 +3,7 @@ import preact from '@astrojs/preact';
 import tailwindcss from '@tailwindcss/vite';
 import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
+import AstroPWA from '@vite-pwa/astro';
 import { remarkReadingTime } from './src/lib/remark-reading-time.ts';
 import { siteConfig } from './src/config/site.ts';
 
@@ -35,6 +36,64 @@ export default defineConfig({
           item.priority = 0.7;
         }
         return item;
+      },
+    }),
+    AstroPWA({
+      registerType: 'autoUpdate',
+      // Service worker is written to dist/ during build; Pagefind runs after,
+      // so pagefind assets are handled via runtime caching only (not precache).
+      manifest: false, // We manage site.webmanifest manually in public/
+      workbox: {
+        // Offline fallback for navigation requests to uncached pages
+        navigateFallback: '/offline',
+        // Don't apply navigateFallback to API routes, OG images, or pagefind
+        navigateFallbackDenylist: [/^\/api\//, /^\/og\//, /^\/pagefind\//],
+        // Precache all Astro build output (hashed JS/CSS/HTML)
+        globPatterns: ['**/*.{html,js,css,woff2,ico,svg,png}'],
+        // Don't precache OG images (large, not needed offline)
+        globIgnores: ['og/**'],
+        runtimeCaching: [
+          // Paginated JSON API — cache-first (immutable, 1 year)
+          {
+            urlPattern: /^\/api\/posts\/.+\.json$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'posts-api',
+              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          // Series JSON API — cache-first (immutable, 1 year)
+          {
+            urlPattern: /^\/api\/series\/.+\.json$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'series-api',
+              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          // Pagefind search files — network-first (generated post-build, not precached)
+          {
+            urlPattern: /^\/pagefind\//,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'pagefind',
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 7 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          // Self-hosted fonts — cache-first (never change between deploys)
+          {
+            urlPattern: /^\/fonts\//,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'fonts',
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
       },
     }),
   ],

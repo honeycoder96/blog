@@ -27,6 +27,7 @@
     "@fontsource/inter": "^5.2.8",
     "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/vite": "^4.2.1",
+    "@vite-pwa/astro": "^1.2.0",
     "astro": "^5.17.1",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",

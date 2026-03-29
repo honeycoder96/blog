@@ -1,0 +1,22 @@
+---
+import PageLayout from '../layouts/PageLayout.astro';
+---
+
+<PageLayout title="You're offline — blog.honeyhimself" noindex={true}>
+  <div class="flex-1 flex flex-col items-center justify-center px-8 text-center py-32">
+    <p class="font-mono text-xs uppercase tracking-widest text-fg-faint mb-6">No connection</p>
+    <h1 class="text-4xl md:text-6xl font-display font-bold text-fg mb-6 tracking-tight">
+      You're offline
+    </h1>
+    <p class="text-fg-muted max-w-md leading-relaxed mb-10">
+      This page isn't available offline. Any posts and pages you've already visited are still
+      readable — head back to the blog to browse your cached content.
+    </p>
+    <a
+      href="/"
+      class="px-8 py-3 rounded-full border border-line text-fg-muted hover:border-line-strong hover:text-fg font-mono text-xs uppercase tracking-widest transition-all duration-200"
+    >
+      Back to homepage
+    </a>
+  </div>
+</PageLayout>
