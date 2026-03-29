@@ -63,7 +63,7 @@ export const ReadingProgress: React.FC<ReadingProgressProps> = ({ readingTime, p
       {/* Thin progress bar at the very top of the viewport */}
       <div
         ref={barRef}
-        className="fixed top-0 left-0 right-0 h-[2px] bg-fg origin-left z-[100] opacity-0"
+        className="fixed top-0 left-0 right-0 h-[2px] bg-fg origin-left z-[130] opacity-0"
         style={{ transform: 'scaleX(0)', transition: 'none' }}
       />
 
