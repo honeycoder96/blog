@@ -60,7 +60,7 @@ export const siteConfig = {
 
   contact: {
     /** API endpoint for the contact form — set to '' to disable */
-    endpoint: 'https://api.honeyhimself.com/v1/contact',
+    endpoint: 'https://talentsyncapi.honeyhimself.com/v1/contact',
     /** Displayed on the contact page, e.g. "UTC+5:30" */
     timezone: 'UTC+5:30',
     /** Displayed on the contact page, e.g. "6-12h" */
@@ -71,7 +71,7 @@ export const siteConfig = {
 
   newsletter: {
     /** API endpoint for newsletter subscriptions — set to '' to disable the form */
-    endpoint: 'https://api.honeyhimself.com/v1/newsletter',
+    endpoint: 'https://talentsyncapi.honeyhimself.com/v1/newsletter',
     /** Source tag sent with every subscription so you know where signups came from */
     source: 'blog-footer',
   },
