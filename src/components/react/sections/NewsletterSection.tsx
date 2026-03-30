@@ -13,6 +13,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const NewsletterSection: React.FC<Props> = ({ endpoint, source }) => {
   const [email, setEmail] = useState('');
   const [state, setState] = useState<FormState>('idle');
+  const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [fieldError, setFieldError] = useState('');
 
@@ -72,6 +73,7 @@ export const NewsletterSection: React.FC<Props> = ({ endpoint, source }) => {
         return;
       }
 
+      setSuccessMsg(data.message || "You're subscribed! Welcome to the list.");
       setState('success');
     } catch {
       setState('error');
@@ -82,6 +84,7 @@ export const NewsletterSection: React.FC<Props> = ({ endpoint, source }) => {
   const handleRetry = () => {
     setState('idle');
     setErrorMsg('');
+    setSuccessMsg('');
   };
 
   return (
@@ -103,7 +106,7 @@ export const NewsletterSection: React.FC<Props> = ({ endpoint, source }) => {
           {state === 'success' && (
             <div className="flex items-center gap-3 text-green-400 font-mono text-sm">
               <Check size={16} aria-hidden="true" />
-              You're subscribed. Welcome aboard.
+              {successMsg}
             </div>
           )}
 
