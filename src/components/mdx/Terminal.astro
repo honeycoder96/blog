@@ -1,0 +1,242 @@
+---
+interface Props {
+  command: string;
+  output: string;
+  prompt?: string;
+  title?: string;
+  language?: 'dig' | 'openssl' | 'curl' | 'plain';
+  highlight?: number[];
+}
+
+const {
+  command,
+  output,
+  prompt = '$',
+  title = 'Terminal',
+  language = 'plain',
+  highlight = [],
+} = Astro.props;
+
+const uid = `term-${Math.random().toString(36).slice(2, 7)}`;
+const outputLines = output.split('\n');
+
+// Minimal syntax coloring for dig output: section headers and answer lines
+function colorize(line: string, lang: string): string {
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  if (lang === 'dig') {
+    // Section headers: ;; ANSWER SECTION:  etc.
+    if (/^;;\s+\w+\s+SECTION:/.test(line)) {
+      return `<span class="dig-section">${esc(line)}</span>`;
+    }
+    // Comment / query lines starting with ;
+    if (/^;/.test(line)) {
+      return `<span class="dig-comment">${esc(line)}</span>`;
+    }
+    // Resource records (non-comment, non-empty)
+    if (line.trim() && !line.startsWith(';')) {
+      const parts = line.split(/\s+/);
+      if (parts.length >= 5) {
+        const name = esc(parts[0]);
+        const ttl  = esc(parts[1]);
+        const cls  = esc(parts[2]);
+        const type = esc(parts[3]);
+        const rest = esc(parts.slice(4).join(' '));
+        return `<span class="dig-name">${name}</span> <span class="dig-ttl">${ttl}</span> <span class="dig-cls">${cls}</span> <span class="dig-type">${type}</span> <span class="dig-value">${rest}</span>`;
+      }
+    }
+  }
+
+  if (lang === 'openssl') {
+    if (/^\s+[A-Z][a-zA-Z\s]+:/.test(line)) {
+      return `<span class="ssl-key">${esc(line)}</span>`;
+    }
+    if (/^-----/.test(line)) {
+      return `<span class="ssl-boundary">${esc(line)}</span>`;
+    }
+  }
+
+  return esc(line);
+}
+---
+
+<div class="term-wrap">
+  <div class="term-titlebar" aria-hidden="true">
+    <div class="term-dots">
+      <span class="term-dot term-red"></span>
+      <span class="term-dot term-yellow"></span>
+      <span class="term-dot term-green"></span>
+    </div>
+    <span class="term-title">{title}</span>
+    <button class="term-copy" id={uid} aria-label="Copy command" title="Copy command">
+      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round" aria-hidden="true">
+        <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="term-body">
+    <!-- Command line -->
+    <div class="term-cmd-line">
+      <span class="term-prompt">{prompt}</span>
+      <span class="term-command" id={`${uid}-cmd`}>{command}</span>
+    </div>
+
+    <!-- Output -->
+    <div class="term-output">
+      {outputLines.map((line, i) => (
+        <div class:list={['term-line', highlight.includes(i + 1) && 'term-line--hl']}>
+          <span class={`term-text term-lang-${language}`} set:html={colorize(line, language) || '&nbsp;'} />
+        </div>
+      ))}
+    </div>
+  </div>
+</div>
+
+<script define:vars={{ uid }}>
+  const btn = document.getElementById(uid);
+  const cmdEl = document.getElementById(uid + '-cmd');
+  if (btn && cmdEl) {
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(cmdEl.textContent ?? '').catch(() => {});
+      const prev = btn.getAttribute('aria-label');
+      btn.setAttribute('aria-label', 'Copied!');
+      btn.style.color = '#3fb950';
+      setTimeout(() => {
+        btn.setAttribute('aria-label', prev ?? 'Copy command');
+        btn.style.color = '';
+      }, 1600);
+    });
+  }
+</script>
+
+<style>
+  /* Terminal is always dark regardless of site theme */
+  .term-wrap {
+    margin: 2rem 0;
+    background: #0d1117;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #30363d;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .term-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.875rem;
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    user-select: none;
+  }
+
+  .term-dots {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .term-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: block;
+  }
+
+  .term-red    { background: #ff5f57; }
+  .term-yellow { background: #febc2e; }
+  .term-green  { background: #28c840; }
+
+  .term-title {
+    flex: 1;
+    text-align: center;
+    font-size: 0.7rem;
+    color: #8b949e;
+    /* nudge left to compensate for copy button so text appears centred */
+    margin-left: -1.25rem;
+  }
+
+  .term-copy {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: #8b949e;
+    padding: 2px 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    transition: color 0.15s;
+    flex-shrink: 0;
+  }
+
+  .term-copy:hover {
+    color: #e6edf3;
+  }
+
+  .term-body {
+    padding: 0.875rem 1.125rem;
+    overflow-x: auto;
+  }
+
+  .term-cmd-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    margin-bottom: 0.625rem;
+  }
+
+  .term-prompt {
+    color: #3fb950;
+    font-weight: 700;
+    font-size: 0.875rem;
+    flex-shrink: 0;
+    user-select: none;
+  }
+
+  .term-command {
+    color: #e6edf3;
+    font-size: 0.875rem;
+    white-space: pre;
+    word-break: break-all;
+  }
+
+  .term-output {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .term-line {
+    min-height: 1.4rem;
+    line-height: 1.6;
+    border-radius: 3px;
+  }
+
+  .term-line--hl {
+    background: rgba(248, 231, 28, 0.08);
+    outline: 1px solid rgba(248, 231, 28, 0.18);
+  }
+
+  .term-text {
+    font-size: 0.8rem;
+    white-space: pre;
+    color: #8b949e;
+  }
+
+  /* dig colorization */
+  .dig-section  { color: #f0883e; font-weight: 600; }
+  .dig-comment  { color: #6e7681; }
+  .dig-name     { color: #79c0ff; }
+  .dig-ttl      { color: #56d364; }
+  .dig-cls      { color: #8b949e; }
+  .dig-type     { color: #d2a8ff; font-weight: 600; }
+  .dig-value    { color: #e6edf3; }
+
+  /* openssl colorization */
+  .ssl-key      { color: #79c0ff; }
+  .ssl-boundary { color: #56d364; }
+</style>

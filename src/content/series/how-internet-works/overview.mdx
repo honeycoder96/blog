@@ -1,0 +1,219 @@
+---
+title: "How the Internet Works: The Full Journey"
+date: "Apr 2026"
+pubDate: 2026-04-02
+category: Deep Dive
+author: Honey Sharma
+summary: The complete map — every stage of the journey from typing google.com to pixels on your screen. Start here. Every other post in this series is one leg of this same trip.
+tags: [networking, dns, tcp, tls, http, browser, rendering, performance, web]
+---
+import Callout from '../../../components/mdx/Callout.astro';
+import Steps from '../../../components/mdx/Steps.astro';
+import Step from '../../../components/mdx/Step.astro';
+import NetworkPath from '../../../components/mdx/NetworkPath.astro';
+import ArchFlow from '../../../components/mdx/ArchFlow.astro';
+
+You type `google.com` into your browser's address bar and press Enter.
+
+In the next 200 milliseconds or so, your browser silently performs hundreds of individually remarkable operations. It consults a distributed database spread across thousands of servers worldwide to translate a human-readable name into a machine-readable address. It opens a connection using a protocol engineered to survive packet loss on unreliable networks. It negotiates an encrypted channel using mathematics that would take a classical computer longer than the age of the universe to crack without the right key. It speaks a protocol that was redesigned from scratch in 2015 because the original had a fundamental architectural bottleneck. It receives a stream of raw bytes, builds two separate in-memory tree structures, merges them into a third, calculates the exact pixel coordinates of every visible element on the page, and hands the final rendering instructions to your GPU.
+
+Then it shows you a search box.
+
+Most developers work with the results of all of this — the DOM, `fetch()`, CSS properties, network requests in DevTools — without ever looking at the machinery underneath. This series is about that machinery.
+
+## What This Series Is
+
+**The browser engineer's view of the stack.** Every concept here is chosen because it shows up in real work — in DevTools, in network logs, in performance profiles, in debugging sessions. We don't cover OSI layers for their own sake. We don't care about physical transmission media or switching theory. We care about the version of the stack that matters when you're building or debugging a web application.
+
+**One example, traced end to end.** Every post in this series uses the same running example: a single request to `google.com`. The same journey, examined from a different vantage point in each post. By the time you finish the series, you will have seen that one trip in complete detail.
+
+## The Full Journey
+
+Before looking at any individual block, here is the complete picture — every hop the packet makes from your laptop to Google's server and back.
+
+<NetworkPath
+  title="The Complete Path: From Your Laptop to Google's Server"
+  nodes={[
+    { id: 'device',   label: 'Your Laptop',    sublabel: '192.168.1.5',    type: 'device' },
+    { id: 'router',   label: 'Home Router',    sublabel: 'NAT + DHCP',     type: 'router', annotation: 'NAT here' },
+    { id: 'isp',      label: 'Your ISP',       sublabel: 'Regional network',type: 'isp' },
+    { id: 'ixp',      label: 'IXP / Backbone', sublabel: 'BGP routing',    type: 'ixp' },
+    { id: 'cdn',      label: 'Google Edge',    sublabel: 'Anycast CDN',    type: 'cdn', highlight: true },
+    { id: 'server',   label: "Google's Server",sublabel: '142.250.80.46',  type: 'server' },
+  ]}
+  edges={[
+    { from: 'device',  to: 'router', label: 'WiFi',    protocol: '802.11' },
+    { from: 'router',  to: 'isp',    label: 'Fiber / Cable' },
+    { from: 'isp',     to: 'ixp',    label: 'BGP' },
+    { from: 'ixp',     to: 'cdn',    label: 'Anycast' },
+    { from: 'cdn',     to: 'server', label: 'Internal' },
+  ]}
+  caption="The physical journey of a packet from your device to Google's nearest edge server."
+/>
+
+That visual tells you almost everything at a glance. Your browser generates the request. Your OS sends it over WiFi to your router. Your router performs NAT — replacing your private `192.168.x.x` address with your public IP — and forwards it through your ISP. Your ISP connects to the internet backbone. Within milliseconds, the request reaches a Google edge server, gets forwarded to the backend, and the response makes the same trip back in reverse.
+
+Each arrow in that diagram is a story. This series tells all of them.
+
+## The 8 Blocks
+
+The journey is divided into 8 blocks. Each is a logical stage of the trip, covered in one or more dedicated posts. They're sequenced so that each block builds naturally on the previous one — TCP makes more sense once you know what DNS found, TLS makes more sense once you understand what TCP established — but most posts are self-contained enough to read standalone if you already know the surrounding context.
+
+<ArchFlow
+  title="The 8 Stages of the Journey"
+  direction="horizontal"
+  nodes={[
+    { label: 'Block 1', sublabel: "Browser's first move" },
+    { label: 'Block 2', sublabel: 'DNS lookup' },
+    { label: 'Block 3', sublabel: 'WiFi → ISP' },
+    { label: 'Block 4', sublabel: 'TCP connection' },
+    { label: 'Block 5', sublabel: 'TLS handshake' },
+    { label: 'Block 6', sublabel: 'HTTP request' },
+    { label: 'Block 7', sublabel: 'Response & cache' },
+    { label: 'Block 8', sublabel: 'Browser renders' },
+  ]}
+/>
+
+<Steps>
+  <Step title="Block 1 — The Browser's First Move (1 post)">
+    Before a single byte leaves your device, the browser runs a quiet decision sequence. Is this domain on the HSTS preload list — meaning every connection must be HTTPS, enforced by the browser itself before any network call? Is there a valid DNS result already cached from a previous visit? Is the full HTTP response sitting in memory or on disk? Has a Service Worker registered to handle this navigation before the network is even consulted?
+
+    Most developers only discover this layer when caching causes hard-to-debug behaviour. This post makes it explicit.
+  </Step>
+
+  <Step title="Block 2 — DNS: The Internet's Phone Book (2 posts)">
+    Your browser knows `google.com`. Your router doesn't speak names — it only routes IP addresses. DNS is the distributed translation system between the two.
+
+    Two posts cover it. The first traces the full recursive resolution journey: your browser asks a resolver, the resolver asks a root server, which points to the TLD server, which points to Google's authoritative server, which finally returns `142.250.80.46`. Every cache check, every TTL, every hop. The second post goes deeper: every DNS record type that matters (`A`, `AAAA`, `CNAME`, `MX`, `TXT`, `NS`), how to use `dig` to inspect resolution in real time, glue records, and how modern DNS has added encryption via DoH and DoT.
+  </Step>
+
+  <Step title="Block 3 — The Physical Journey: WiFi → Router → ISP (1 post)">
+    IP address in hand, a packet needs to physically travel across the planet. This post covers the whole chain: how 802.11 WiFi works at the radio level, what your home router actually does (DHCP, NAT, and why `192.168.x.x` is a private address that never appears on the public internet), how your ISP connects you to the backbone, what an Internet Exchange Point (IXP) is and why it matters for latency, and how BGP — the routing protocol that makes the internet one coherent network — decides where the packet goes next.
+  </Step>
+
+  <Step title="Block 4 — TCP: The Reliable Pipe (1 post)">
+    IP delivers packets. It offers no guarantee they arrive, no guarantee they arrive in order, and no guarantee they arrive at all. TCP is the layer that adds those guarantees — and it pays for them with a connection setup cost.
+
+    Before a single HTTP byte flows, TCP runs a 3-way handshake: SYN, SYN-ACK, ACK. That exchange costs one full round trip. Once connected, TCP tracks sequence numbers, sends acknowledgements, retransmits dropped packets, and adjusts the transmission rate to avoid overwhelming the receiver or the network. This post explains exactly how — and why that round-trip cost matters so much for web performance.
+  </Step>
+
+  <Step title="Block 5 — TLS: Locking the Door (3 posts)">
+    Three posts for the security layer, because it has three genuinely distinct stories worth understanding separately.
+
+    The first covers the **certificate system**: what an X.509 certificate actually contains, who the Certificate Authorities are, how your browser builds a chain of trust from an unknown server certificate up to a root CA baked into your OS. The second covers **Let's Encrypt**: the non-profit that automated certificate issuance using the ACME protocol, dropping the cost of HTTPS from hundreds of dollars to zero and driving adoption from ~30% to over 90% of the web. The third covers the **TLS 1.3 handshake** itself: the cryptographic exchange that happens in one round trip, establishing shared encryption keys between two parties who have never met before.
+  </Step>
+
+  <Step title="Block 6 — HTTP: The Language of the Web (3 posts)">
+    HTTP is the protocol browsers and servers use to communicate — the actual application-layer conversation. Three posts cover its evolution across 30 years.
+
+    The first dissects **HTTP anatomy**: the structure of requests and responses, what every method and status code means, how HTTP/1.1's persistent connections work, and why head-of-line blocking meant browsers opened 6 parallel connections per domain as a workaround. The second covers **HTTP/2**: the 2015 redesign that introduced binary framing, stream multiplexing (many concurrent requests over one TCP connection), and HPACK header compression. The third covers **HTTP/3 and QUIC**: why Google moved HTTP from TCP to UDP, what connection migration means, and how 0-RTT makes reconnections faster.
+  </Step>
+
+  <Step title="Block 7 — The Response Arrives (2 posts)">
+    The server has responded. Bytes are arriving. Two posts cover what happens in this window.
+
+    The first covers the **response itself**: how streaming works and why the browser begins parsing HTML before the full file has downloaded, how `Content-Type`, `Content-Encoding`, and chunked transfer work, and why Brotli compresses better than gzip. The second is a deep dive into **HTTP caching**: the full model behind `Cache-Control`, `ETag`, `Last-Modified`, and `Vary`, how conditional requests and `304 Not Modified` save bandwidth, and how Service Workers give you a programmable cache layer that runs before any network call.
+  </Step>
+
+  <Step title="Block 8 — How Browsers Work: Architecture to Pixels (5 posts)">
+    The richest block — five posts covering the browser's internals from process architecture down to the last pixel.
+
+    **Browser architecture** covers Chrome's multi-process model: why each tab runs in its own sandboxed renderer process, what the browser process, GPU process, and network process are responsible for, and why this design makes tab crashes survivable. **The navigation pipeline** traces what happens between pressing Enter and receiving the first byte of HTML — the UI thread, the network thread, Safe Browsing checks, MIME detection, and the renderer process being prepared in parallel. **DOM and CSSOM** covers how HTML bytes become a DOM tree (incrementally, via streaming) and how CSS bytes become a CSSOM (necessarily render-blocking), plus how `async`, `defer`, and `type="module"` change script behaviour. **Layout and paint** covers how the render tree is built, how the browser calculates geometry for every visible element, what triggers a reflow vs a repaint, and how the display list is constructed. **Compositing and GPU** covers layer promotion, the compositor thread, rasterization, GPU acceleration, and why `transform` animations are cheap while `width` animations are not — finishing with Core Web Vitals mapped back to the pipeline stages.
+  </Step>
+</Steps>
+
+---
+
+## The Complete Map — All 18 Posts
+
+*Posts are published weekly and linked here as they go live.*
+
+---
+
+### Block 1 — Browser's First Move
+
+| # | Post | What you'll learn |
+|---|------|-------------------|
+| 1 | What Happens When You Press Enter? URL Parsing, Caches & the HSTS List | URL anatomy, the browser's pre-network decision tree, HSTS preload, DNS and HTTP cache lookup, Service Worker intercept |
+
+---
+
+### Block 2 — DNS: The Internet's Phone Book
+
+| # | Post | What you'll learn |
+|---|------|-------------------|
+| 2 | DNS Resolution: How google.com Becomes an IP Address | Recursive resolution journey, root/TLD/authoritative nameservers, resolver caches, TTL, reading a DNS response |
+| 3 | DNS Records, `dig`, Glue Records & Modern DNS | A, AAAA, CNAME, MX, TXT, NS, SOA records; `dig` command walkthrough; glue records; DNS over HTTPS and TLS |
+
+---
+
+### Block 3 — The Physical Journey
+
+| # | Post | What you'll learn |
+|---|------|-------------------|
+| 4 | From Your Laptop to Google's Server: WiFi, NAT, ISPs & the Internet Backbone | 802.11 WiFi, home router, NAT, private vs public IPs, ISP infrastructure, IXPs, BGP routing |
+
+---
+
+### Block 4 — TCP
+
+| # | Post | What you'll learn |
+|---|------|-------------------|
+| 5 | TCP: How the Internet Guarantees Your Data Arrives, In Order, Every Time | Four-tuple, 3-way handshake, sequence numbers, ACKs, retransmission, flow control, congestion control |
+
+---
+
+### Block 5 — TLS / HTTPS
+
+| # | Post | What you'll learn |
+|---|------|-------------------|
+| 6 | PKI & Certificates: How Your Browser Decides Who to Trust | X.509 certificates, Certificate Authorities, chain of trust, Certificate Transparency, OCSP and CRL |
+| 7 | Let's Encrypt: How Free, Automated Certificates Changed the Web | ACME protocol, HTTP-01 and DNS-01 challenge types, certbot, 90-day cert philosophy, HTTPS adoption impact |
+| 8 | The TLS 1.3 Handshake: How Two Strangers Agree on a Secret in Public | ECDHE key exchange, 1-RTT handshake, certificate verification, forward secrecy, 0-RTT session resumption |
+
+---
+
+### Block 6 — HTTP
+
+| # | Post | What you'll learn |
+|---|------|-------------------|
+| 9  | HTTP Anatomy: Methods, Headers, Status Codes & the Request/Response Cycle | HTTP/1.1 request and response structure, methods, status codes, key headers, HOL blocking, why 6-connection limits exist |
+| 10 | HTTP/2: Multiplexing, HPACK & Server Push | Binary framing, streams/messages/frames, multiplexing, HPACK header compression, server push, stream prioritisation |
+| 11 | HTTP/3 & QUIC: Rebuilding the Web's Foundation on UDP | QUIC vs TCP, connection IDs, 0-RTT, independent streams, packet loss isolation, HTTP/3 adoption landscape |
+
+---
+
+### Block 7 — The Response Arrives
+
+| # | Post | What you'll learn |
+|---|------|-------------------|
+| 12 | The Response Arrives: Streaming, Content Negotiation & Compression | Streaming response, navigation commit, Content-Type, chunked transfer, gzip vs Brotli, Content-Encoding vs Transfer-Encoding |
+| 13 | HTTP Caching: Cache-Control, ETags & the Browser's Memory | Cache-Control directives, ETag and Last-Modified, conditional requests, 304, Vary header, Service Worker caching strategies |
+
+---
+
+### Block 8 — How Browsers Work: Architecture to Pixels
+
+| # | Post | What you'll learn |
+|---|------|-------------------|
+| 14 | Inside the Browser: Processes, Threads & Why Each Tab Lives in Isolation | Multi-process architecture, browser/renderer/GPU/network processes, main thread vs compositor thread, Site Isolation |
+| 15 | The Navigation Pipeline: From Address Bar to the First Byte of HTML | UI thread, network thread, Safe Browsing, MIME sniffing, renderer preparation, navigation commit, Service Worker intercept |
+| 16 | Parsing HTML & CSS: Building the DOM and CSSOM | HTML tokenisation, incremental DOM construction, preload scanner, render-blocking CSS, CSSOM, async/defer/module, DOMContentLoaded |
+| 17 | Layout & Paint: From the Render Tree to a List of Drawing Instructions | Render tree, layout algorithm, reflow triggers, LayoutNG, paint records, display list, paint order, stacking contexts |
+| 18 | Compositing, GPU Acceleration & the Path to 60fps | Layer promotion, compositor thread, rasterisation, GPU compositing, cheap vs expensive animations, Core Web Vitals mapped to the pipeline |
+
+---
+
+## How to Read This Series
+
+**In order, start to finish** — the sequencing is deliberate. Block 4 (TCP) makes Block 5 (TLS) significantly clearer. Block 5 makes Block 6 (HTTP) clearer. If you're new to this material, the linear path is the fastest one.
+
+**Jump to a specific block** — each post opens with enough context to stand on its own. The diagrams use a consistent colour scheme throughout the series (indigo for DNS, blue for TCP, green for TLS, amber for HTTP, violet for browser/DOM), so visuals from earlier posts will feel familiar even if you skipped them.
+
+**Use it as a reference** — every sequence diagram, packet anatomy breakdown, and decision flow in this series is built to be bookmarked and returned to. The TLS handshake post, the caching decision flow, the rendering pipeline — these are the kind of things worth revisiting when you hit something confusing in production.
+
+<Callout type="tip" title="The Google.com thread">
+  Every post in this series uses the same example: a request to `google.com`. When you finish the series, you will have traced that single request through every layer in complete detail — DNS query, TCP handshake, TLS negotiation, HTTP/2 request, chunked response, DOM construction, layout, compositing. That's the payoff.
+</Callout>
+
+*Posts are published weekly. This table will be updated with links as each one goes live.*

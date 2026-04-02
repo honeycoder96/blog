@@ -29,6 +29,7 @@ const seriesCollection = defineCollection({
     category: z.string(),
     // Index-only
     postOrder: z.array(z.string()).optional(),
+    order: z.number().optional(),
     // Post-only
     date: z.string().optional(),
     pubDate: z.coerce.date().optional(),

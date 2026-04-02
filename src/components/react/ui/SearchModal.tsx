@@ -210,184 +210,184 @@ export const SearchModal: React.FC = () => {
 
   return (
     <>
-      {/* ── Backdrop ── */}
-      <div
-        className="fixed inset-0 z-[100] bg-surface/55 backdrop-blur-xl"
-        style={{
-          opacity: isOpen ? 1 : 0,
-          pointerEvents: isOpen ? 'auto' : 'none',
-          transition: `opacity ${isOpen ? `0.28s ease` : `0.22s ease-in`}`,
-        }}
-        onMouseDown={(e) => {
-          if (e.target === e.currentTarget) close();
-        }}
-      />
+      {isOpen ? <>
+        {/* ── Backdrop ── */}
+        <div
+          className="fixed inset-0 z-[100] bg-surface/55 backdrop-blur-xl"
+          style={{
+            opacity: 1,
+            pointerEvents: 'auto',
+            transition: `opacity ${`0.28s ease`}`,
+          }}
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) close();
+          }}
+        />
 
-      {/* ── Modal panel ── */}
-      <div
-        ref={modalRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Search"
-        className="fixed inset-0 z-[101] flex flex-col"
-        style={{
-          opacity: isOpen ? 1 : 0,
-          transform: isOpen ? 'scale(1) translateY(0)' : 'scale(0.92) translateY(72px)',
-          pointerEvents: isOpen ? 'auto' : 'none',
-          transition: isOpen
-            ? `opacity 0.32s ${MODAL_SPRING}, transform 0.5s ${MODAL_SPRING}`
-            : 'opacity 0.22s ease-in, transform 0.22s ease-in',
-        }}
-      >
-        <div className="relative w-full h-full flex flex-col">
-          {/* ── Close button — delayed entrance ── */}
-          <button
-            onClick={close}
-            aria-label="Close search"
-            className="absolute top-6 right-8 z-10 p-2 text-fg-muted hover:text-fg transition-colors cursor-pointer"
-            style={{
-              opacity: isOpen ? 1 : 0,
-              transform: isOpen ? 'translateY(0)' : 'translateY(-8px)',
-              transition: `opacity 0.2s 0.15s ease, transform 0.2s 0.15s ease`,
-            }}
-          >
-            <X size={22} />
-          </button>
-
-          {/* ── Scrollable area ── */}
-          <div className="w-full h-full overflow-y-auto flex flex-col">
-            {/* ── Search box — padding-top animates center → top ── */}
-            <div
-              className="w-full max-w-2xl mx-auto px-8"
+        {/* ── Modal panel ── */}
+        <div
+          ref={modalRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Search"
+          className="fixed inset-0 z-[101] flex flex-col"
+          style={{
+            opacity: 1,
+            transform: 'scale(1) translateY(0)',
+            pointerEvents: 'auto',
+            transition: `opacity 0.32s ${MODAL_SPRING}, transform 0.5s ${MODAL_SPRING}`,
+          }}
+        >
+          <div className="relative w-full h-full flex flex-col">
+            {/* ── Close button — delayed entrance ── */}
+            <button
+              onClick={close}
+              aria-label="Close search"
+              className="absolute top-6 right-8 z-10 p-2 text-fg-muted hover:text-fg transition-colors cursor-pointer"
               style={{
-                paddingTop: hasSearched ? '5rem' : 'calc(50vh - 120px)',
-                paddingBottom: hasSearched ? '1.5rem' : '2rem',
-                transition: `padding-top 0.5s ${MODAL_SPRING}, padding-bottom 0.5s ${MODAL_SPRING}`,
+                opacity: 1,
+                transform: 'translateY(0)',
+                transition: `opacity 0.2s 0.15s ease, transform 0.2s 0.15s ease`,
               }}
             >
-              {/* Subtitle — collapses when user starts typing */}
+              <X size={22} />
+            </button>
+
+            {/* ── Scrollable area ── */}
+            <div className="w-full h-full overflow-y-auto flex flex-col">
+              {/* ── Search box — padding-top animates center → top ── */}
               <div
-                className="text-center overflow-hidden"
+                className="w-full max-w-2xl mx-auto px-8"
                 style={{
-                  maxHeight: hasSearched ? '0' : '200px',
-                  opacity: hasSearched ? 0 : 1,
-                  marginBottom: hasSearched ? '0' : '2.5rem',
-                  transform: hasSearched
-                    ? 'translateY(-20px) scale(0.95)'
-                    : 'translateY(0) scale(1)',
-                  transition: `max-height 0.25s ease-in, opacity 0.2s ease-in, margin-bottom 0.25s ease-in, transform 0.2s ease-in`,
-                  pointerEvents: hasSearched ? 'none' : 'auto',
+                  paddingTop: hasSearched ? '5rem' : 'calc(50vh - 120px)',
+                  paddingBottom: hasSearched ? '1.5rem' : '2rem',
+                  transition: `padding-top 0.5s ${MODAL_SPRING}, padding-bottom 0.5s ${MODAL_SPRING}`,
                 }}
               >
-                <p className="font-display text-3xl md:text-4xl font-bold text-fg mb-4 tracking-tight">
-                  Search the blog
-                </p>
-                <p className="text-fg-muted text-sm font-mono">
-                  Search across all articles — engineering, deep dives, architecture
-                  <span className="mx-3 text-fg-ghost">·</span>
-                  <kbd className="px-1.5 py-0.5 rounded border border-line text-fg-ghost text-xs">
-                    ⌘K
-                  </kbd>
-                  &nbsp;to toggle
-                </p>
-              </div>
-
-              {/* Input */}
-              <div className="relative">
-                <Search
-                  size={18}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-fg-faint pointer-events-none"
-                />
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={query}
-                  onChange={handleChange}
-                  placeholder="Search articles..."
-                  autoComplete="off"
-                  spellcheck={false}
-                  className="w-full pl-12 pr-12 py-4 bg-surface-raised border border-line rounded-2xl text-fg placeholder:text-fg-ghost font-mono text-sm focus:outline-none focus:border-line-strong transition-colors"
-                />
-                {isLoading && (
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                    <div className="w-4 h-4 rounded-full border border-fg-faint border-t-fg animate-spin" />
-                  </div>
-                )}
-                {query && !isLoading && (
-                  <button
-                    onClick={clearQuery}
-                    aria-label="Clear search"
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-fg-faint hover:text-fg transition-colors cursor-pointer"
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* ── Results ── */}
-            {hasSearched && (
-              <div className="w-full max-w-2xl mx-auto px-8 pb-24 rounded-2xl bg-surface animate-results-in">
-                {noResults ? (
-                  <p className="animate-fade-slide-up text-center text-fg-faint font-mono text-sm py-16">
-                    No results for &ldquo;{query}&rdquo;
+                {/* Subtitle — collapses when user starts typing */}
+                <div
+                  className="text-center overflow-hidden"
+                  style={{
+                    maxHeight: hasSearched ? '0' : '200px',
+                    opacity: hasSearched ? 0 : 1,
+                    marginBottom: hasSearched ? '0' : '2.5rem',
+                    transform: hasSearched
+                      ? 'translateY(-20px) scale(0.95)'
+                      : 'translateY(0) scale(1)',
+                    transition: `max-height 0.25s ease-in, opacity 0.2s ease-in, margin-bottom 0.25s ease-in, transform 0.2s ease-in`,
+                    pointerEvents: hasSearched ? 'none' : 'auto',
+                  }}
+                >
+                  <p className="font-display text-3xl md:text-4xl font-bold text-fg mb-4 tracking-tight">
+                    Search the blog
                   </p>
-                ) : (
-                  <>
-                    <ul className="flex flex-col divide-y divide-line">
-                      {results.map((result, i) => (
-                        <li
-                          key={result.url}
-                          className="animate-fade-slide-up"
-                          style={{ animationDelay: `${i * RESULT_STAGGER_DELAY_MS}ms` }}
-                        >
-                          <a
-                            href={result.url}
-                            onClick={close}
-                            className="group flex items-start justify-between gap-4 py-5"
-                          >
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-3 mb-1.5">
-                                {result.category && (
-                                  <span className="font-mono text-[10px] uppercase tracking-widest text-fg-ghost">
-                                    {result.category}
-                                  </span>
-                                )}
-                                {result.date && (
-                                  <span className="font-mono text-[10px] text-fg-ghost">
-                                    {result.date}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="font-display font-bold text-fg-default group-hover:text-fg transition-colors leading-snug mb-1.5">
-                                {result.title}
-                              </p>
-                              <p
-                                className="text-sm text-fg-faint leading-relaxed line-clamp-2 search-excerpt"
-                                dangerouslySetInnerHTML={{ __html: result.excerpt }}
-                              />
-                            </div>
-                            <ArrowRight
-                              size={16}
-                              className="text-fg-ghost group-hover:text-fg group-hover:-rotate-45 transition-all duration-200 shrink-0 mt-1"
-                            />
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="text-center text-fg-ghost font-mono text-xs pt-6">
-                      {results.length} result{results.length !== 1 ? 's' : ''}
-                    </p>
-                  </>
-                )}
-              </div>
-            )}
+                  <p className="text-fg-muted text-sm font-mono">
+                    Search across all articles — engineering, deep dives, architecture
+                    <span className="mx-3 text-fg-ghost">·</span>
+                    <kbd className="px-1.5 py-0.5 rounded border border-line text-fg-ghost text-xs">
+                      ⌘K
+                    </kbd>
+                    &nbsp;to toggle
+                  </p>
+                </div>
 
-            {/* Bottom spacer when idle */}
-            {!hasSearched && <div className="flex-1" aria-hidden />}
+                {/* Input */}
+                <div className="relative">
+                  <Search
+                    size={18}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-fg-faint pointer-events-none"
+                  />
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={query}
+                    onChange={handleChange}
+                    placeholder="Search articles..."
+                    autoComplete="off"
+                    spellcheck={false}
+                    className="w-full pl-12 pr-12 py-4 bg-surface-raised border border-line rounded-2xl text-fg placeholder:text-fg-ghost font-mono text-sm focus:outline-none focus:border-line-strong transition-colors"
+                  />
+                  {isLoading && (
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                      <div className="w-4 h-4 rounded-full border border-fg-faint border-t-fg animate-spin" />
+                    </div>
+                  )}
+                  {query && !isLoading && (
+                    <button
+                      onClick={clearQuery}
+                      aria-label="Clear search"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-fg-faint hover:text-fg transition-colors cursor-pointer"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Results ── */}
+              {hasSearched && (
+                <div className="w-full max-w-2xl mx-auto px-8 pb-24 rounded-2xl bg-surface animate-results-in">
+                  {noResults ? (
+                    <p className="animate-fade-slide-up text-center text-fg-faint font-mono text-sm py-16">
+                      No results for &ldquo;{query}&rdquo;
+                    </p>
+                  ) : (
+                    <>
+                      <ul className="flex flex-col divide-y divide-line">
+                        {results.map((result, i) => (
+                          <li
+                            key={result.url}
+                            className="animate-fade-slide-up"
+                            style={{ animationDelay: `${i * RESULT_STAGGER_DELAY_MS}ms` }}
+                          >
+                            <a
+                              href={result.url}
+                              onClick={close}
+                              className="group flex items-start justify-between gap-4 py-5"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-3 mb-1.5">
+                                  {result.category && (
+                                    <span className="font-mono text-[10px] uppercase tracking-widest text-fg-ghost">
+                                      {result.category}
+                                    </span>
+                                  )}
+                                  {result.date && (
+                                    <span className="font-mono text-[10px] text-fg-ghost">
+                                      {result.date}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="font-display font-bold text-fg-default group-hover:text-fg transition-colors leading-snug mb-1.5">
+                                  {result.title}
+                                </p>
+                                <p
+                                  className="text-sm text-fg-faint leading-relaxed line-clamp-2 search-excerpt"
+                                  dangerouslySetInnerHTML={{ __html: result.excerpt }}
+                                />
+                              </div>
+                              <ArrowRight
+                                size={16}
+                                className="text-fg-ghost group-hover:text-fg group-hover:-rotate-45 transition-all duration-200 shrink-0 mt-1"
+                              />
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="text-center text-fg-ghost font-mono text-xs pt-6">
+                        {results.length} result{results.length !== 1 ? 's' : ''}
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Bottom spacer when idle */}
+              {!hasSearched && <div className="flex-1" aria-hidden />}
+            </div>
           </div>
         </div>
-      </div>
+      </> : null}
     </>
   );
 };

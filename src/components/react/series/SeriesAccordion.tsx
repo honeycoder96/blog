@@ -165,7 +165,7 @@ export const SeriesAccordion: React.FC<SeriesAccordionProps> = ({
   const [page, setPage] = useState<number>(1);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [openIndex, setOpenIndex] = useState<number | null>(0);
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   // Track initial slugs so Load More items get the enter animation
   const initialSlugs = useRef<Set<string>>(new Set(initialSeries.map((s) => s.seriesSlug)));
@@ -271,9 +271,10 @@ export const SeriesAccordion: React.FC<SeriesAccordionProps> = ({
 
   const handleCategoryChange = useCallback(
     (cat: string) => {
+      console.log("category changed", cat)
       if (cat === activeCategory) return;
       setActiveCategory(cat);
-      setOpenIndex(0);
+      setOpenIndex(null);
       if (cat === 'All') {
         abortControllerRef.current?.abort();
         newSlugs.current.clear();

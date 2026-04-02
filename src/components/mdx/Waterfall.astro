@@ -1,0 +1,417 @@
+---
+type Phase = 'dns' | 'tcp' | 'tls' | 'ttfb' | 'download' | 'queued' | 'blocked';
+
+interface TimingSegment {
+  phase: Phase;
+  duration: number; // ms
+}
+
+interface Request {
+  name: string;
+  type?: 'document' | 'stylesheet' | 'script' | 'image' | 'font' | 'xhr';
+  timing: TimingSegment[];
+  startOffset: number; // ms from navigation start
+}
+
+interface Props {
+  requests: Request[];
+  title?: string;
+  caption?: string;
+  totalDuration?: number;
+  showLegend?: boolean;
+}
+
+const {
+  requests,
+  title,
+  caption,
+  totalDuration,
+  showLegend = true,
+} = Astro.props;
+
+const PHASE_COLOR: Record<Phase, string> = {
+  dns:      '#6366f1',
+  tcp:      '#3b82f6',
+  tls:      '#22c55e',
+  ttfb:     '#f59e0b',
+  download: '#ec4899',
+  queued:   '#737373',
+  blocked:  '#ef4444',
+};
+
+const PHASE_LABEL: Record<Phase, string> = {
+  dns:      'DNS Lookup',
+  tcp:      'TCP Connect',
+  tls:      'TLS Handshake',
+  ttfb:     'Waiting (TTFB)',
+  download: 'Download',
+  queued:   'Queued',
+  blocked:  'Blocked',
+};
+
+const TYPE_LABEL: Record<string, string> = {
+  document:   'doc',
+  stylesheet: 'css',
+  script:     'js',
+  image:      'img',
+  font:       'font',
+  xhr:        'xhr',
+};
+
+// Compute the timeline scale
+const maxTime = totalDuration ?? Math.max(
+  ...requests.map(r =>
+    r.startOffset + r.timing.reduce((s, t) => s + t.duration, 0)
+  )
+);
+
+interface ComputedSeg {
+  phase: Phase;
+  duration: number;
+  startPct: number;
+  widthPct: number;
+}
+
+interface ComputedRequest {
+  name: string;
+  type?: string;
+  segments: ComputedSeg[];
+  totalMs: number;
+}
+
+const computed: ComputedRequest[] = requests.map(req => {
+  let offset = req.startOffset;
+  const segments: ComputedSeg[] = req.timing.map(seg => {
+    const startPct = (offset / maxTime) * 100;
+    const widthPct = Math.max((seg.duration / maxTime) * 100, 0.25);
+    offset += seg.duration;
+    return { phase: seg.phase, duration: seg.duration, startPct, widthPct };
+  });
+  return {
+    name: req.name,
+    type: req.type,
+    segments,
+    totalMs: req.timing.reduce((s, t) => s + t.duration, 0),
+  };
+});
+
+const usedPhases = [...new Set(requests.flatMap(r => r.timing.map(t => t.phase)))] as Phase[];
+
+// Tick marks at 0%, 25%, 50%, 75%, 100% of maxTime
+const ticks = [0, 25, 50, 75, 100].map(pct => ({
+  pct,
+  label: Math.round(maxTime * pct / 100) + 'ms',
+}));
+---
+
+<div class="wf-wrap">
+  {title && <div class="wf-header">{title}</div>}
+  <div class="wf-body">
+    <!-- Rows -->
+    {computed.map((req, i) => (
+      <div class="wf-row" tabindex="0" aria-label={`${req.name}: ${req.totalMs}ms`}>
+        <div class="wf-row-meta">
+          {req.type && (
+            <span class={`wf-type-badge wf-type-${req.type}`}>{TYPE_LABEL[req.type] ?? req.type}</span>
+          )}
+          <span class="wf-row-name" title={req.name}>{req.name}</span>
+        </div>
+        <div class="wf-row-timeline">
+          {req.segments.map(seg => (
+            <div
+              class="wf-seg"
+              style={`left:${seg.startPct}%;width:${seg.widthPct}%;background:${PHASE_COLOR[seg.phase]};`}
+              aria-label={`${PHASE_LABEL[seg.phase]}: ${seg.duration}ms`}
+            />
+          ))}
+          <!-- Tooltip (shown on hover via CSS) -->
+          <div class="wf-tooltip" aria-hidden="true">
+            <div class="wf-tooltip-name">{req.name}</div>
+            {req.segments.map(seg => (
+              <div class="wf-tooltip-row">
+                <span class="wf-tooltip-dot" style={`background:${PHASE_COLOR[seg.phase]}`} />
+                <span class="wf-tooltip-phase">{PHASE_LABEL[seg.phase]}</span>
+                <span class="wf-tooltip-dur">{seg.duration}ms</span>
+              </div>
+            ))}
+            <div class="wf-tooltip-total">Total: {req.totalMs}ms</div>
+          </div>
+        </div>
+        <div class="wf-row-dur">{req.totalMs}ms</div>
+      </div>
+    ))}
+
+    <!-- Timeline axis -->
+    <div class="wf-axis">
+      <div class="wf-axis-meta"></div>
+      <div class="wf-axis-ticks">
+        {ticks.map(tick => (
+          <div class="wf-tick" style={`left:${tick.pct}%`}>
+            <span class="wf-tick-label">{tick.label}</span>
+          </div>
+        ))}
+      </div>
+      <div class="wf-axis-end"></div>
+    </div>
+  </div>
+
+  {showLegend && (
+    <div class="wf-legend">
+      {usedPhases.map(phase => (
+        <div class="wf-legend-item">
+          <span class="wf-legend-dot" style={`background:${PHASE_COLOR[phase]}`} />
+          <span class="wf-legend-label">{PHASE_LABEL[phase]}</span>
+        </div>
+      ))}
+    </div>
+  )}
+
+  {caption && <div class="wf-caption">{caption}</div>}
+</div>
+
+<style>
+  .wf-wrap {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .wf-header {
+    padding: 0.625rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-fg-faint);
+  }
+
+  .wf-body {
+    background: var(--theme-bg-inset);
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-x: auto;
+    min-width: 0;
+  }
+
+  /* ── Row ─────────────────────────────────────────────────────────── */
+  .wf-row {
+    display: grid;
+    grid-template-columns: 180px 1fr 52px;
+    align-items: center;
+    gap: 8px;
+    border-radius: 5px;
+    padding: 2px 0;
+    outline: none;
+    position: relative;
+  }
+
+  .wf-row:hover,
+  .wf-row:focus-visible {
+    background: var(--theme-bg-raised);
+  }
+
+  .wf-row-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    padding-left: 4px;
+  }
+
+  .wf-type-badge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+    background: var(--theme-bg-raised);
+    border: 1px solid var(--theme-line-strong);
+    color: var(--theme-fg-faint);
+  }
+
+  .wf-type-document  { color: #6366f1; border-color: rgba(99,102,241,0.3); background: rgba(99,102,241,0.08); }
+  .wf-type-stylesheet{ color: #3b82f6; border-color: rgba(59,130,246,0.3); background: rgba(59,130,246,0.08); }
+  .wf-type-script    { color: #f59e0b; border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.08); }
+  .wf-type-image     { color: #ec4899; border-color: rgba(236,72,153,0.3); background: rgba(236,72,153,0.08); }
+
+  .wf-row-name {
+    font-size: 0.75rem;
+    color: var(--theme-fg-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .wf-row-dur {
+    font-size: 0.72rem;
+    color: var(--theme-fg-faint);
+    text-align: right;
+    white-space: nowrap;
+    padding-right: 4px;
+  }
+
+  /* ── Timeline track ──────────────────────────────────────────────── */
+  .wf-row-timeline {
+    position: relative;
+    height: 20px;
+    background: var(--theme-bg-raised);
+    border-radius: 3px;
+    overflow: visible;
+  }
+
+  .wf-seg {
+    position: absolute;
+    top: 3px;
+    height: 14px;
+    border-radius: 2px;
+    opacity: 0.9;
+    transition: opacity 0.1s;
+  }
+
+  .wf-row:hover .wf-seg,
+  .wf-row:focus-visible .wf-seg {
+    opacity: 1;
+  }
+
+  /* ── Hover tooltip ───────────────────────────────────────────────── */
+  .wf-tooltip {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 10;
+    background: var(--theme-bg-raised);
+    border: 1px solid var(--theme-line-strong);
+    border-radius: 8px;
+    padding: 0.625rem 0.875rem;
+    min-width: 200px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    pointer-events: none;
+  }
+
+  .wf-row:hover .wf-tooltip,
+  .wf-row:focus-visible .wf-tooltip {
+    display: block;
+  }
+
+  .wf-tooltip-name {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--theme-fg-default);
+    margin-bottom: 0.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
+  }
+
+  .wf-tooltip-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 0;
+  }
+
+  .wf-tooltip-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .wf-tooltip-phase {
+    font-size: 0.72rem;
+    color: var(--theme-fg-muted);
+    flex: 1;
+  }
+
+  .wf-tooltip-dur {
+    font-size: 0.72rem;
+    color: var(--theme-fg-default);
+    font-weight: 600;
+  }
+
+  .wf-tooltip-total {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--theme-fg-default);
+    margin-top: 0.375rem;
+    padding-top: 0.375rem;
+    border-top: 1px solid var(--theme-line);
+  }
+
+  /* ── Axis ────────────────────────────────────────────────────────── */
+  .wf-axis {
+    display: grid;
+    grid-template-columns: 180px 1fr 52px;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .wf-axis-meta,
+  .wf-axis-end {
+    /* spacers */
+  }
+
+  .wf-axis-ticks {
+    position: relative;
+    height: 18px;
+  }
+
+  .wf-tick {
+    position: absolute;
+    transform: translateX(-50%);
+  }
+
+  .wf-tick-label {
+    font-size: 0.62rem;
+    color: var(--theme-fg-ghost);
+  }
+
+  /* ── Legend ──────────────────────────────────────────────────────── */
+  .wf-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1.25rem;
+    padding: 0.625rem 1rem;
+    background: var(--theme-bg-raised);
+    border-top: 1px solid var(--theme-line);
+  }
+
+  .wf-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .wf-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .wf-legend-label {
+    font-size: 0.72rem;
+    color: var(--theme-fg-muted);
+  }
+
+  /* ── Caption ─────────────────────────────────────────────────────── */
+  .wf-caption {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--theme-fg-faint);
+    font-style: italic;
+    text-align: center;
+    border-top: 1px solid var(--theme-line);
+    background: var(--theme-bg-raised);
+  }
+</style>

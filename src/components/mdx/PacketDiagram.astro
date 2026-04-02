@@ -1,0 +1,176 @@
+---
+interface Field {
+  name: string;
+  bytes?: number | string;
+  value?: string;
+  description?: string;
+  color?: 'blue' | 'green' | 'orange' | 'purple' | 'red' | 'neutral';
+  highlight?: boolean;
+}
+
+interface Row {
+  label?: string;
+  fields: Field[];
+}
+
+interface Props {
+  rows: Row[];
+  title?: string;
+  caption?: string;
+  compact?: boolean;
+}
+
+const { rows, title, caption, compact = false } = Astro.props;
+
+// Per-color CSS values injected as custom props on each field
+const COLORS: Record<string, { bg: string; border: string; text: string }> = {
+  blue:    { bg: 'rgba(99,102,241,0.09)',  border: 'rgba(99,102,241,0.32)',  text: '#818cf8' },
+  green:   { bg: 'rgba(34,197,94,0.09)',   border: 'rgba(34,197,94,0.32)',   text: '#4ade80' },
+  orange:  { bg: 'rgba(249,115,22,0.09)',  border: 'rgba(249,115,22,0.32)',  text: '#fb923c' },
+  purple:  { bg: 'rgba(168,85,247,0.09)',  border: 'rgba(168,85,247,0.32)',  text: '#c084fc' },
+  red:     { bg: 'rgba(239,68,68,0.09)',   border: 'rgba(239,68,68,0.32)',   text: '#f87171' },
+  neutral: { bg: 'var(--theme-bg-raised)', border: 'var(--theme-line)',      text: 'var(--theme-fg-faint)' },
+};
+---
+
+<div class="pkt-wrap">
+  {title && <div class="pkt-header">{title}</div>}
+  <div class="pkt-body">
+    {rows.map(row => {
+      return (
+        <div class="pkt-row-block">
+          {row.label && <div class="pkt-row-label">{row.label}</div>}
+          <div class:list={['pkt-fields', compact && 'pkt-fields--compact']}>
+            {row.fields.map(field => {
+              const c = COLORS[field.color ?? 'neutral'];
+              return (
+                <div
+                  class:list={['pkt-field', field.highlight && 'pkt-field--hl']}
+                  style={`--f-bg:${c.bg};--f-border:${c.border};--f-text:${c.text}`}
+                  title={field.description ?? field.name}
+                >
+                  <span class="pkt-field-name">{field.name}</span>
+                  {field.bytes && <span class="pkt-field-bytes">{field.bytes}</span>}
+                  {field.value && <span class="pkt-field-value">{field.value}</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+  {caption && <div class="pkt-caption">{caption}</div>}
+</div>
+
+<style>
+  .pkt-wrap {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .pkt-header {
+    padding: 0.625rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-fg-faint);
+  }
+
+  .pkt-body {
+    background: var(--theme-bg-inset);
+    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .pkt-row-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .pkt-row-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--theme-fg-ghost);
+  }
+
+  .pkt-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .pkt-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 0.5rem 0.75rem;
+    background: var(--f-bg);
+    border: 1px solid var(--f-border);
+    border-radius: 7px;
+    min-width: 76px;
+    flex: 1;
+    min-height: 54px;
+    justify-content: center;
+    cursor: default;
+    transition: border-color 0.12s;
+  }
+
+  .pkt-fields--compact .pkt-field {
+    padding: 0.3rem 0.6rem;
+    min-height: 38px;
+  }
+
+  .pkt-field--hl {
+    box-shadow: 0 0 0 2px var(--f-border);
+  }
+
+  .pkt-field:hover {
+    border-color: var(--f-text);
+  }
+
+  .pkt-field-name {
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: var(--f-text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    white-space: nowrap;
+    line-height: 1.2;
+  }
+
+  .pkt-field-bytes {
+    font-size: 0.64rem;
+    color: var(--theme-fg-ghost);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .pkt-field-value {
+    font-size: 0.7rem;
+    color: var(--theme-fg-muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .pkt-caption {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--theme-fg-faint);
+    font-style: italic;
+    text-align: center;
+    border-top: 1px solid var(--theme-line);
+    background: var(--theme-bg-raised);
+  }
+</style>

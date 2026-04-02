@@ -138,7 +138,11 @@ export function getRelatedPosts(
 export async function parseSeriesCollection(): Promise<SeriesItem[]> {
   const { indexEntries, postEntries } = await splitSeriesEntries();
 
-  return indexEntries.map((index) => {
+  const sorted = [...indexEntries].sort(
+    (a, b) => (a.data.order ?? 999) - (b.data.order ?? 999),
+  );
+
+  return sorted.map((index) => {
     const seriesSlug = index.slug.replace('/index', '');
     const postOrder: string[] = index.data.postOrder ?? [];
     const posts = postOrder.flatMap((postSlug) => {

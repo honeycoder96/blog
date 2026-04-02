@@ -1,0 +1,179 @@
+---
+interface URLPart {
+  value: string;
+  label: string;
+  description?: string;
+  color?: string;
+}
+
+interface Props {
+  parts: URLPart[];
+  caption?: string;
+  title?: string;
+}
+
+const { parts, caption, title } = Astro.props;
+
+// Default colours per part position if not specified
+const DEFAULT_COLORS = [
+  '#6366f1', // indigo  — scheme
+  '#3b82f6', // blue    — subdomain / authority
+  '#22c55e', // green   — domain
+  '#f59e0b', // amber   — TLD
+  '#ec4899', // pink    — path
+  '#14b8a6', // teal    — query
+  '#f87171', // red     — fragment
+];
+
+const partsWithColor: Array<URLPart & { resolvedColor: string }> = parts.map((p, i) => ({
+  ...p,
+  resolvedColor: p.color ?? DEFAULT_COLORS[i % DEFAULT_COLORS.length],
+}));
+---
+
+<div class="ua-wrap">
+  {title && <div class="ua-header">{title}</div>}
+
+  <div class="ua-body">
+    <!-- ── URL display with coloured spans ─────────────────────── -->
+    <div class="ua-url" aria-label={partsWithColor.map(p => p.value).join('')}>
+      {partsWithColor.map(p => (
+        <span
+          class="ua-part"
+          style={`--part-color: ${p.resolvedColor}`}
+          title={p.description ?? p.label}
+        >{p.value}</span>
+      ))}
+    </div>
+
+    <!-- ── Annotation grid ─────────────────────────────────────── -->
+    <div class="ua-annotations">
+      {partsWithColor.map(p => (
+        <div class="ua-annotation" style={`--part-color: ${p.resolvedColor}`}>
+          <div class="ua-ann-bar" />
+          <div class="ua-ann-content">
+            <span class="ua-ann-label">{p.label}</span>
+            {p.description && <span class="ua-ann-desc">{p.description}</span>}
+            <span class="ua-ann-value">{p.value}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  {caption && <div class="ua-caption">{caption}</div>}
+</div>
+
+<style>
+  .ua-wrap {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .ua-header {
+    padding: 0.625rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-fg-faint);
+  }
+
+  .ua-body {
+    background: var(--theme-bg-inset);
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  /* ── URL row ─────────────────────────────────────────────────── */
+  .ua-url {
+    display: flex;
+    flex-wrap: wrap;
+    background: var(--theme-bg-raised);
+    border: 1px solid var(--theme-line-strong);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.95rem;
+    overflow-x: auto;
+    white-space: nowrap;
+    gap: 0;
+    line-height: 1.6;
+  }
+
+  .ua-part {
+    color: var(--part-color);
+    border-bottom: 2.5px solid var(--part-color);
+    padding-bottom: 1px;
+    cursor: default;
+    transition: opacity 0.12s;
+    white-space: nowrap;
+  }
+
+  .ua-part:hover {
+    opacity: 0.75;
+  }
+
+  /* ── Annotation grid ─────────────────────────────────────────── */
+  .ua-annotations {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+  }
+
+  .ua-annotation {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .ua-ann-bar {
+    height: 3px;
+    border-radius: 2px;
+    background: var(--part-color);
+  }
+
+  .ua-ann-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .ua-ann-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--part-color);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .ua-ann-desc {
+    font-size: 0.72rem;
+    color: var(--theme-fg-muted);
+    line-height: 1.4;
+  }
+
+  .ua-ann-value {
+    font-size: 0.72rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    color: var(--theme-fg-faint);
+    word-break: break-all;
+  }
+
+  .ua-caption {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--theme-fg-faint);
+    font-style: italic;
+    text-align: center;
+    border-top: 1px solid var(--theme-line);
+    background: var(--theme-bg-raised);
+  }
+</style>

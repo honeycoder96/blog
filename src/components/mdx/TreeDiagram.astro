@@ -1,0 +1,268 @@
+---
+type NodeType = 'element' | 'text' | 'hidden' | 'root' | 'cert' | 'highlight';
+
+interface TreeNode {
+  id: string;
+  label: string;
+  sublabel?: string;
+  type?: NodeType;
+  children?: TreeNode[];
+}
+
+interface Props {
+  root: TreeNode;
+  title?: string;
+  caption?: string;
+  direction?: 'vertical' | 'horizontal';
+  maxDepth?: number;
+}
+
+const { root, title, caption, direction = 'vertical', maxDepth = 6 } = Astro.props;
+
+// Safe HTML escape for set:html
+function esc(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function renderNode(node: TreeNode, depth: number): string {
+  const typeClass = `td-type-${node.type ?? 'element'}`;
+
+  const labelHtml = `<div class="td-label ${typeClass}">
+    <span class="td-label-text">${esc(node.label)}</span>${
+      node.sublabel
+        ? `<span class="td-sublabel">${esc(node.sublabel)}</span>`
+        : ''
+    }
+  </div>`;
+
+  if (depth >= maxDepth) {
+    return `<div class="td-node">${labelHtml}</div>`;
+  }
+
+  if (!node.children?.length) {
+    return `<div class="td-node">${labelHtml}</div>`;
+  }
+
+  const childrenHtml = node.children
+    .map(child => `<div class="td-child">${renderNode(child, depth + 1)}</div>`)
+    .join('');
+
+  return `<div class="td-node">
+    ${labelHtml}
+    <div class="td-children">${childrenHtml}</div>
+  </div>`;
+}
+
+const treeHtml = renderNode(root, 0);
+---
+
+<div class="td-wrap">
+  {title && <div class="td-header">{title}</div>}
+  <div class:list={['td-body', direction === 'horizontal' && 'td-body--horiz']}>
+    <div class="td-tree" set:html={treeHtml} />
+  </div>
+  {caption && <div class="td-caption">{caption}</div>}
+</div>
+
+<style is:global>
+  /* Using is:global because the tree HTML is injected via set:html
+     and those inner elements won't carry the Astro scoped attribute. */
+
+  .td-wrap {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .td-header {
+    padding: 0.625rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-fg-faint);
+  }
+
+  .td-body {
+    background: var(--theme-bg-inset);
+    padding: 1.5rem 1rem;
+    overflow-x: auto;
+  }
+
+  .td-body--horiz .td-tree {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .td-tree {
+    display: flex;
+    justify-content: center;
+  }
+
+  /* ── Node ─────────────────────────────────────────────────────── */
+  .td-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* ── Label box ────────────────────────────────────────────────── */
+  .td-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 0.35rem 0.75rem;
+    background: var(--theme-bg-raised);
+    border: 1px solid var(--theme-line-strong);
+    border-radius: 7px;
+    white-space: nowrap;
+    cursor: default;
+    transition: border-color 0.12s;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .td-label:hover {
+    border-color: var(--theme-fg-muted);
+  }
+
+  .td-label-text {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--theme-fg-default);
+    line-height: 1.3;
+  }
+
+  .td-sublabel {
+    font-size: 0.66rem;
+    color: var(--theme-fg-faint);
+  }
+
+  /* ── Node type variants ───────────────────────────────────────── */
+  .td-type-root .td-label-text {
+    color: var(--theme-fg);
+  }
+
+  .td-type-root {
+    background: var(--theme-bg-raised);
+    border-color: var(--theme-fg-ghost);
+  }
+
+  .td-type-highlight {
+    background: rgba(99, 102, 241, 0.08);
+    border-color: rgba(99, 102, 241, 0.4);
+  }
+
+  .td-type-highlight .td-label-text {
+    color: #818cf8;
+  }
+
+  .td-type-hidden {
+    border-style: dashed;
+    opacity: 0.55;
+  }
+
+  .td-type-text {
+    background: rgba(34, 197, 94, 0.06);
+    border-color: rgba(34, 197, 94, 0.25);
+  }
+
+  .td-type-text .td-label-text {
+    color: #4ade80;
+    font-style: italic;
+  }
+
+  .td-type-cert {
+    background: rgba(249, 115, 22, 0.07);
+    border-color: rgba(249, 115, 22, 0.3);
+  }
+
+  .td-type-cert .td-label-text {
+    color: #fb923c;
+  }
+
+  /* ── Children container ───────────────────────────────────────── */
+  .td-children {
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    position: relative;
+    padding-top: 28px;
+    justify-content: center;
+  }
+
+  /* Vertical connector from parent node down to the horizontal bar */
+  .td-node > .td-children::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 1.5px;
+    height: 14px;
+    background: var(--theme-line-strong);
+    transform: translateX(-50%);
+  }
+
+  /* Horizontal bar connecting siblings */
+  .td-child {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+  }
+
+  /* Horizontal bar segment above each child */
+  .td-child::before {
+    content: '';
+    position: absolute;
+    top: -14px;
+    height: 1.5px;
+    background: var(--theme-line-strong);
+    left: -6px;
+    right: -6px;
+  }
+
+  /* Vertical drop from bar to child's label box */
+  .td-child::after {
+    content: '';
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    width: 1.5px;
+    height: 14px;
+    background: var(--theme-line-strong);
+    transform: translateX(-50%);
+  }
+
+  /* First and last child: cap the horizontal bar at their midpoint */
+  .td-child:first-child::before {
+    left: 50%;
+  }
+
+  .td-child:last-child::before {
+    right: 50%;
+  }
+
+  /* When a node has only one child, skip horizontal bar */
+  .td-children:has(> .td-child:only-child) > .td-child::before {
+    display: none;
+  }
+
+  .td-caption {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--theme-fg-faint);
+    font-style: italic;
+    text-align: center;
+    border-top: 1px solid var(--theme-line);
+    background: var(--theme-bg-raised);
+  }
+</style>

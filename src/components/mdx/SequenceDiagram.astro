@@ -1,0 +1,301 @@
+---
+interface Actor {
+  id: string;
+  label: string;
+  sublabel?: string;
+  icon?: 'browser' | 'server' | 'dns' | 'ca' | 'router' | 'client';
+}
+
+interface Message {
+  from: string;
+  to: string;
+  label: string;
+  sublabel?: string;
+  type?: 'request' | 'response' | 'note' | 'error';
+  highlight?: boolean;
+  annotation?: string;
+}
+
+interface Props {
+  actors: Actor[];
+  messages: Message[];
+  title?: string;
+  caption?: string;
+}
+
+const { actors, messages, title, caption } = Astro.props;
+
+// Unique prefix per instance so SVG marker IDs never conflict on the same page
+const uid = `sd-${Math.random().toString(36).slice(2, 7)}`;
+
+// ── SVG coordinate system ──────────────────────────────────────────────────
+const W = 1000;
+const hasSubLabels = actors.some(a => a.sublabel);
+const ACTOR_BOX_H = hasSubLabels ? 58 : 46;
+const ACTOR_BOX_W = Math.min(160, (W / actors.length) - 28);
+const LIFELINE_START_Y = ACTOR_BOX_H + 6;
+const MSG_FIRST_Y     = ACTOR_BOX_H + 44;
+const MSG_GAP         = 64;
+const SVG_H           = MSG_FIRST_Y + messages.length * MSG_GAP + 32;
+
+function actorX(id: string): number {
+  const idx = actors.findIndex(a => a.id === id);
+  return ((idx + 0.5) * W) / actors.length;
+}
+
+// ── Colour / dash per message type ────────────────────────────────────────
+const TYPE_COLOR: Record<string, string> = {
+  request:  '#6366f1',
+  response: '#22c55e',
+  note:     '#f59e0b',
+  error:    '#ef4444',
+};
+const TYPE_DASH: Record<string, string | undefined> = {
+  request:  undefined,
+  response: '6 3',
+  note:     '3 3',
+  error:    undefined,
+};
+
+const msgColor = (msg: Message): string =>
+  msg.highlight ? '#f59e0b' : (TYPE_COLOR[msg.type ?? 'request'] ?? TYPE_COLOR.request);
+
+const msgDash = (msg: Message): string | undefined =>
+  TYPE_DASH[msg.type ?? 'request'];
+
+const markerId = (msg: Message): string =>
+  `${uid}-${msg.highlight ? 'highlight' : (msg.type ?? 'request')}`;
+
+// All distinct marker IDs needed
+const markerTypes = ['request', 'response', 'note', 'error', 'highlight'] as const;
+type MarkerType = typeof markerTypes[number];
+
+const markerColor = (t: MarkerType): string =>
+  t === 'highlight' ? '#f59e0b' : (TYPE_COLOR[t] ?? TYPE_COLOR.request);
+---
+
+<div class="seq-wrap">
+  {title && <div class="seq-header">{title}</div>}
+  <div class="seq-body">
+    <svg
+      viewBox={`0 0 ${W} ${SVG_H}`}
+      xmlns="http://www.w3.org/2000/svg"
+      class="seq-svg"
+      role="img"
+      aria-label={title ?? 'Sequence diagram'}
+    >
+      <defs>
+        {markerTypes.map(t => (
+          <marker
+            id={`${uid}-${t}`}
+            markerWidth="9"
+            markerHeight="9"
+            refX="9"
+            refY="4.5"
+            orient="auto"
+          >
+            <polygon points="0 0, 9 4.5, 0 9" fill={markerColor(t)} />
+          </marker>
+        ))}
+      </defs>
+
+      {/* ── Lifelines ──────────────────────────────────────────────────── */}
+      {actors.map(actor => (
+        <line
+          x1={actorX(actor.id)} y1={LIFELINE_START_Y}
+          x2={actorX(actor.id)} y2={SVG_H - 10}
+          class="seq-lifeline"
+        />
+      ))}
+
+      {/* ── Messages ───────────────────────────────────────────────────── */}
+      {messages.map((msg, i) => {
+        const y    = MSG_FIRST_Y + i * MSG_GAP;
+        const x1   = actorX(msg.from);
+        const x2   = actorX(msg.to);
+        const color = msgColor(msg);
+        const dash  = msgDash(msg);
+        const mid   = (x1 + x2) / 2;
+        const isSelf = msg.from === msg.to;
+        const dir    = x2 >= x1 ? 1 : -1;
+        const mId   = markerId(msg);
+
+        return (
+          <>
+            {/* Arrow line */}
+            {isSelf ? (
+              <path
+                d={`M ${x1} ${y - 13} C ${x1 + 70} ${y - 13}, ${x1 + 70} ${y + 13}, ${x1 + 2} ${y + 13}`}
+                fill="none"
+                stroke={color}
+                stroke-width="2"
+                stroke-dasharray={dash}
+                marker-end={`url(#${mId})`}
+              />
+            ) : (
+              <line
+                x1={x1}
+                y1={y}
+                x2={x2 - dir * 10}
+                y2={y}
+                stroke={color}
+                stroke-width={msg.highlight ? 2.5 : 2}
+                stroke-dasharray={dash}
+                marker-end={`url(#${mId})`}
+              />
+            )}
+
+            {/* Primary label */}
+            <text
+              x={isSelf ? x1 + 78 : mid}
+              y={y - 9}
+              class="seq-msg-label"
+              fill={color}
+              text-anchor="middle"
+            >{msg.label}</text>
+
+            {/* Secondary label */}
+            {msg.sublabel && (
+              <text
+                x={isSelf ? x1 + 78 : mid}
+                y={y - 23}
+                class="seq-msg-sub"
+                text-anchor="middle"
+              >{msg.sublabel}</text>
+            )}
+
+            {/* Side annotation */}
+            {msg.annotation && (
+              <text
+                x={W - 8}
+                y={y + 4}
+                class="seq-annotation"
+                text-anchor="end"
+              >{msg.annotation}</text>
+            )}
+          </>
+        );
+      })}
+
+      {/* ── Actor boxes (on top of lifelines) ──────────────────────────── */}
+      {actors.map(actor => {
+        const cx = actorX(actor.id);
+        const bx = cx - ACTOR_BOX_W / 2;
+        return (
+          <>
+            <rect
+              x={bx} y={4}
+              width={ACTOR_BOX_W}
+              height={ACTOR_BOX_H - 4}
+              rx="8"
+              class="seq-actor-box"
+            />
+            <text
+              x={cx}
+              y={actor.sublabel ? 23 : 27}
+              class="seq-actor-label"
+              text-anchor="middle"
+              dominant-baseline="middle"
+            >{actor.label}</text>
+            {actor.sublabel && (
+              <text
+                x={cx} y={43}
+                class="seq-actor-sub"
+                text-anchor="middle"
+                dominant-baseline="middle"
+              >{actor.sublabel}</text>
+            )}
+          </>
+        );
+      })}
+    </svg>
+  </div>
+  {caption && <div class="seq-caption">{caption}</div>}
+</div>
+
+<style>
+  .seq-wrap {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .seq-header {
+    padding: 0.625rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-fg-faint);
+  }
+
+  .seq-body {
+    background: var(--theme-bg-inset);
+    overflow-x: auto;
+    padding: 1rem;
+  }
+
+  .seq-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-width: 380px;
+  }
+
+  .seq-lifeline {
+    stroke: var(--theme-line-strong);
+    stroke-width: 1.5;
+    stroke-dasharray: 5 4;
+  }
+
+  .seq-actor-box {
+    fill: var(--theme-bg-raised);
+    stroke: var(--theme-line-strong);
+    stroke-width: 1.5;
+  }
+
+  .seq-actor-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    font-weight: 700;
+    fill: var(--theme-fg-default);
+  }
+
+  .seq-actor-sub {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 10px;
+    fill: var(--theme-fg-faint);
+  }
+
+  .seq-msg-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .seq-msg-sub {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 10px;
+    fill: var(--theme-fg-faint);
+  }
+
+  .seq-annotation {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 10px;
+    fill: var(--theme-fg-ghost);
+    font-style: italic;
+  }
+
+  .seq-caption {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--theme-fg-faint);
+    font-style: italic;
+    text-align: center;
+    border-top: 1px solid var(--theme-line);
+    background: var(--theme-bg-raised);
+  }
+</style>
