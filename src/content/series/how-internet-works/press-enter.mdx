@@ -1,0 +1,248 @@
+---
+title: "What Happens When You Press Enter?"
+date: "Apr 2026"
+pubDate: 2026-04-03
+category: Deep Dive
+author: Honey Sharma
+summary: Before a single packet leaves your machine, the browser runs four silent checks — HSTS enforcement, Service Worker intercept, DNS cache, HTTP cache. Only if all four miss does it touch the network. This post maps every step.
+tags: [networking, browser, hsts, service-worker, dns-cache, http-cache, url, performance]
+---
+import URLAnatomy from '../../../components/mdx/URLAnatomy.astro';
+import DecisionFlow from '../../../components/mdx/DecisionFlow.astro';
+import SequenceDiagram from '../../../components/mdx/SequenceDiagram.astro';
+import Terminal from '../../../components/mdx/Terminal.astro';
+import Callout from '../../../components/mdx/Callout.astro';
+
+You press Enter. Nothing visible happens yet.
+
+Underneath, the browser runs a short decision sequence before it touches the network — checking four different places that might let it skip a round-trip to a remote server entirely. Most of the time, at least one check produces a hit. The full network journey we'll trace across this series is the *slow path* — the path taken only when every cache misses.
+
+This post maps the pre-network phase: what the browser checks, in what order, and what each hit means.
+
+---
+
+## Anatomy of a URL
+
+The first thing the browser does is parse the text in the address bar. Not just to display it neatly — the parsed result drives every decision that follows: which protocol to use, which host to connect to, which cached responses to look up, which Service Worker to consult.
+
+<URLAnatomy
+  title="Anatomy of a URL"
+  parts={[
+    {
+      value: 'https://',
+      label: 'Scheme',
+      description: 'Protocol to use for this request. https means HTTP over TLS — encrypted. http would be plaintext.',
+    },
+    {
+      value: 'www.',
+      label: 'Subdomain',
+      description: 'Optional prefix identifying a sub-service. www is convention, not required. Could be api., blog., mail., etc.',
+    },
+    {
+      value: 'google',
+      label: 'Domain',
+      description: "The registered domain name — Google's unique identifier on the public internet.",
+    },
+    {
+      value: '.com',
+      label: 'TLD',
+      description: 'Top-level domain, controlled by ICANN. .com, .org, .io, .co.uk are all TLDs.',
+    },
+    {
+      value: '/search',
+      label: 'Path',
+      description: "The resource to fetch from the server. Google's search endpoint is at /search.",
+    },
+    {
+      value: '?q=how+the+internet+works',
+      label: 'Query string',
+      description: 'Key-value parameters appended after ?. The search term is sent here as q=how+the+internet+works.',
+    },
+  ]}
+  caption="Every part of this URL plays a distinct role in what happens next."
+/>
+
+The browser extracts three things it needs immediately: the **scheme** (determines security requirements and port), the **host** (`www.google.com`) for DNS resolution and cache lookup, and the **origin** (`https://www.google.com`) for Service Worker scope matching.
+
+### What if it's not a valid URL?
+
+If what you typed doesn't look like a URL — no scheme, no recognisable TLD, spaces in it — the browser sends it to your configured search engine instead. Chrome's omnibox tries hard to guess: `google.com` without `https://` gets treated as a hostname, but `how does the internet work` goes to Google Search. The heuristics are fuzzy, and the browser occasionally gets it wrong in either direction.
+
+---
+
+## Check 1 — HSTS: The Security Hardcode
+
+Before opening any connection, the browser asks: *is this domain required to use HTTPS?*
+
+**HTTP Strict Transport Security (HSTS)** is a mechanism that lets a server tell the browser: "for the next N seconds, only connect to me over HTTPS — never plain HTTP." Once a browser has seen this header from a server, it will silently upgrade any future `http://` request to `https://` without sending the original HTTP request at all.
+
+The header looks like this:
+
+<Terminal
+  title="HSTS header — sent by the server on first HTTPS visit"
+  command="curl -sI https://google.com | grep -i strict"
+  output="strict-transport-security: max-age=31536000"
+  language="plain"
+/>
+
+`max-age=31536000` means 365 days. For the next year, the browser will never send an HTTP request to this domain, regardless of what URL the user types or a link provides.
+
+### The preload list — no first visit required
+
+HSTS has a bootstrapping problem: the *very first* visit to a site is still vulnerable, because the browser hasn't received the HSTS header yet. An attacker who intercepts that first HTTP request can downgrade the connection before the user ever reaches HTTPS.
+
+The **HSTS preload list** solves this. It's a hardcoded list of domains — baked into Chrome, Firefox, Safari, and Edge at compile time — for which HTTPS is enforced *before any network request*, even on first visit. Google, most banking sites, and over 100,000 other domains are on it.
+
+You can check any domain's status at [hstspreload.org](https://hstspreload.org), or query Chrome's own database directly:
+
+<Terminal
+  title="Checking HSTS state in Chrome"
+  command="chrome://net-internals/#hsts"
+  output={`Domain: google.com
+Static STS: present
+  include subdomains: true
+  observed: preloaded`}
+  language="plain"
+/>
+
+<Callout type="warning" title="The first-visit problem">
+  If a domain isn't on the preload list, the browser only learns about HSTS after the first successful HTTPS connection. That first visit — when the browser goes `http://` and gets redirected to `https://` by the server — is the window of exposure. An attacker on the same network can intercept that first redirect. The preload list is the only complete fix.
+</Callout>
+
+<Callout type="tip" title="Clearing browser cache doesn't clear HSTS">
+  Developer gotcha: you've changed your local server's HTTPS setup, things are broken, you clear the cache, reload — still broken. HSTS entries live separately from the HTTP cache. To clear them in Chrome, go to `chrome://net-internals/#hsts` and use the "Delete domain security policies" form.
+</Callout>
+
+---
+
+## Check 2 — Service Worker: The Programmable Gatekeeper
+
+If a Service Worker is registered for this origin, it intercepts the fetch before the browser checks any network cache.
+
+A Service Worker is a JavaScript file that runs in a background thread, separate from the main page. It registers itself for an origin (e.g., `https://www.google.com`) and receives a `fetch` event for every request that origin makes — navigations, API calls, image loads, everything.
+
+```js
+// Inside the service worker
+self.addEventListener('fetch', (event) => {
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      return cached ?? fetch(event.request);
+    })
+  );
+});
+```
+
+This is a cache-first strategy: check the SW's own cache (`caches.match`), and only go to the network if nothing matches. The SW has total control — it can serve stale content, synthesize responses, or route different URLs to different caches.
+
+The browser checks whether a SW is registered for the current URL's origin and, if so, routes the fetch through it. If the SW serves a response from its own cache, the network is never consulted.
+
+We'll cover Service Worker caching strategies in depth in Block 7. For now, the key point is: if an SW is active and has a cached response, the request never leaves the browser process.
+
+---
+
+## Check 3 — Browser DNS Cache
+
+If no SW intercepted the request, the browser needs an IP address for the hostname. Before going to the network for DNS, it checks its own DNS cache.
+
+The browser maintains a small in-memory cache of recent DNS responses. Each entry has a TTL (time-to-live) — a duration set by the DNS server that tells resolvers how long to cache the answer. If the cached entry hasn't expired, the browser uses it directly.
+
+There are three cache layers the OS checks in order before going to the network:
+
+| Layer | Where | Typical TTL |
+|-------|-------|-------------|
+| Browser DNS cache | In-memory, per-process | Respects record TTL |
+| OS DNS cache | System-level (`nscd`, `mDNSResponder`) | Varies by OS |
+| Router / local resolver | Your home router | Short (often 0) |
+
+Only if all three miss does a real DNS query leave the machine. We'll trace that query in full in Block 2.
+
+---
+
+## Check 4 — HTTP Cache
+
+The HTTP cache stores full request/response pairs on disk. If the browser has previously fetched this exact URL and the cached response is still fresh, it can serve it without contacting the server at all.
+
+Freshness is determined by the `Cache-Control` header. A response with `Cache-Control: max-age=86400` is considered fresh for 24 hours. During that window, any request for the same URL can be served from cache with zero network activity.
+
+```
+HTTP/2 200 OK
+cache-control: max-age=86400, public
+content-type: text/javascript
+```
+
+If the cached response is stale (past its `max-age`), the browser doesn't discard it immediately — it sends a *conditional request* to the server, asking "has this changed?" The server either confirms it's unchanged (returns `304 Not Modified`, saving bandwidth) or sends a fresh copy. We cover this fully in Block 7.
+
+---
+
+## The Complete Decision Sequence
+
+Here is how all four checks fit together as a temporal sequence. The browser works through them in order — each one a potential exit that avoids everything that follows.
+
+<SequenceDiagram
+  title="Pre-network decision sequence"
+  actors={[
+    { id: 'browser', label: 'Browser' },
+    { id: 'sw', label: 'Service Worker', sublabel: 'if registered' },
+    { id: 'cache', label: 'HTTP Cache', sublabel: 'browser + SW caches' },
+    { id: 'net', label: 'Network' },
+  ]}
+  messages={[
+    { from: 'browser', to: 'browser', label: 'Parse URL + HSTS check', type: 'note' },
+    { from: 'browser', to: 'sw', label: 'fetch event', type: 'request', annotation: 'if SW active' },
+    { from: 'sw', to: 'cache', label: 'caches.match(request)', type: 'request' },
+    { from: 'cache', to: 'sw', label: 'Response / null', type: 'response' },
+    { from: 'sw', to: 'browser', label: 'serve from SW cache', type: 'response', highlight: true },
+    { from: 'browser', to: 'cache', label: 'HTTP cache lookup', type: 'request', annotation: 'if no SW hit' },
+    { from: 'cache', to: 'browser', label: '200 OK (cached)', type: 'response', highlight: true },
+    { from: 'browser', to: 'net', label: 'network request', type: 'request', highlight: true, annotation: 'all caches miss' },
+  ]}
+  caption="Each highlighted response is an early exit — the browser never reaches the steps below it."
+/>
+
+---
+
+## The Decision Tree
+
+The same logic as a decision flow — showing which check leads where, and what a "yes" at each point means for the request.
+
+<DecisionFlow
+  title="Browser pre-network decision flow"
+  nodes={[
+    { id: 'start', type: 'start', label: 'Press Enter' },
+    { id: 'hsts', type: 'decision', label: 'HSTS list?', sublabel: 'domain preloaded?' },
+    { id: 'hsts_hit', type: 'result', label: 'Force HTTPS', sublabel: 'browser rewrites scheme' },
+    { id: 'sw', type: 'decision', label: 'Service Worker?', sublabel: 'registered for origin?' },
+    { id: 'sw_hit', type: 'result', label: 'SW intercepts', sublabel: 'serves from SW cache' },
+    { id: 'dns_cache', type: 'decision', label: 'DNS cache?', sublabel: 'known IP for host?' },
+    { id: 'dns_hit', type: 'result', label: 'Got IP', sublabel: 'skip DNS resolution' },
+    { id: 'http_cache', type: 'decision', label: 'HTTP cache?', sublabel: 'response still fresh?' },
+    { id: 'cache_hit', type: 'result', label: 'Serve cached', sublabel: 'zero network calls' },
+    { id: 'net', type: 'action', label: 'Network request', sublabel: '→ Block 2: DNS lookup' },
+  ]}
+  edges={[
+    { from: 'start', to: 'hsts' },
+    { from: 'hsts', to: 'sw', label: 'No' },
+    { from: 'hsts', to: 'hsts_hit', label: 'Yes' },
+    { from: 'sw', to: 'dns_cache', label: 'No' },
+    { from: 'sw', to: 'sw_hit', label: 'Yes' },
+    { from: 'dns_cache', to: 'http_cache', label: 'No' },
+    { from: 'dns_cache', to: 'dns_hit', label: 'Yes' },
+    { from: 'http_cache', to: 'net', label: 'No' },
+    { from: 'http_cache', to: 'cache_hit', label: 'Yes' },
+  ]}
+  caption="The main path (left column) is the full miss — every check comes back No. The right column shows the shortcut exits."
+/>
+
+---
+
+## What Actually Reaches the Network
+
+In practice, most requests hit at least one cache. A first visit to a new site will miss everything and go through the full sequence. A repeat visit to a well-cached site might never touch the network.
+
+The pattern this creates is why performance work focuses so heavily on caching strategy — every cache hit is a round-trip avoided. The Service Worker gives you programmatic control over the most powerful cache layer. `Cache-Control` headers control the HTTP cache. The HSTS preload list eliminates the HTTP→HTTPS redirect round-trip on first visit.
+
+When you're debugging "why is my updated file not showing," you're fighting these four layers. The browser isn't broken — it's working exactly as designed.
+
+<Callout type="tip" title="The google.com thread">
+  For our running example, we missed every cache — a first visit, no Service Worker registered, no prior DNS or HTTP cache entries. The request now needs a real DNS lookup to turn `www.google.com` into an IP address. That's Block 2.
+</Callout>
