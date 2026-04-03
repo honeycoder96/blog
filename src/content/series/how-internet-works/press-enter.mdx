@@ -19,8 +19,6 @@ Underneath, the browser runs a short decision sequence before it touches the net
 
 This post maps the pre-network phase: what the browser checks, in what order, and what each hit means.
 
----
-
 ## Anatomy of a URL
 
 The first thing the browser does is parse the text in the address bar. Not just to display it neatly — the parsed result drives every decision that follows: which protocol to use, which host to connect to, which cached responses to look up, which Service Worker to consult.
@@ -67,8 +65,6 @@ The browser extracts three things it needs immediately: the **scheme** (determin
 ### What if it's not a valid URL?
 
 If what you typed doesn't look like a URL — no scheme, no recognisable TLD, spaces in it — the browser sends it to your configured search engine instead. Chrome's omnibox tries hard to guess: `google.com` without `https://` gets treated as a hostname, but `how does the internet work` goes to Google Search. The heuristics are fuzzy, and the browser occasionally gets it wrong in either direction.
-
----
 
 ## Check 1 — HSTS: The Security Hardcode
 
