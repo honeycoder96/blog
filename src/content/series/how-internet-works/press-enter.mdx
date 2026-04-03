@@ -109,8 +109,6 @@ Static STS: present
   Developer gotcha: you've changed your local server's HTTPS setup, things are broken, you clear the cache, reload — still broken. HSTS entries live separately from the HTTP cache. To clear them in Chrome, go to `chrome://net-internals/#hsts` and use the "Delete domain security policies" form.
 </Callout>
 
----
-
 ## Check 2 — Service Worker: The Programmable Gatekeeper
 
 If a Service Worker is registered for this origin, it intercepts the fetch before the browser checks any network cache.
@@ -134,8 +132,6 @@ The browser checks whether a SW is registered for the current URL's origin and, 
 
 We'll cover Service Worker caching strategies in depth in Block 7. For now, the key point is: if an SW is active and has a cached response, the request never leaves the browser process.
 
----
-
 ## Check 3 — Browser DNS Cache
 
 If no SW intercepted the request, the browser needs an IP address for the hostname. Before going to the network for DNS, it checks its own DNS cache.
@@ -152,8 +148,6 @@ There are three cache layers the OS checks in order before going to the network:
 
 Only if all three miss does a real DNS query leave the machine. We'll trace that query in full in Block 2.
 
----
-
 ## Check 4 — HTTP Cache
 
 The HTTP cache stores full request/response pairs on disk. If the browser has previously fetched this exact URL and the cached response is still fresh, it can serve it without contacting the server at all.
@@ -167,8 +161,6 @@ content-type: text/javascript
 ```
 
 If the cached response is stale (past its `max-age`), the browser doesn't discard it immediately — it sends a *conditional request* to the server, asking "has this changed?" The server either confirms it's unchanged (returns `304 Not Modified`, saving bandwidth) or sends a fresh copy. We cover this fully in Block 7.
-
----
 
 ## The Complete Decision Sequence
 
@@ -194,8 +186,6 @@ Here is how all four checks fit together as a temporal sequence. The browser wor
   ]}
   caption="Each highlighted response is an early exit — the browser never reaches the steps below it."
 />
-
----
 
 ## The Decision Tree
 
@@ -228,8 +218,6 @@ The same logic as a decision flow — showing which check leads where, and what 
   ]}
   caption="The main path (left column) is the full miss — every check comes back No. The right column shows the shortcut exits."
 />
-
----
 
 ## What Actually Reaches the Network
 

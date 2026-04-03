@@ -44,7 +44,7 @@ export const siteConfig = {
     linkedin: 'https://www.linkedin.com/in/honeycoder96/',
 
     /** Twitter / X handle including the @ sign — used for Twitter Card meta tags */
-    twitter: '@honeyhimself',
+    twitter: '',
 
     /** Contact / reply-to email address */
     email: 'contact@honeyhimself.com',
