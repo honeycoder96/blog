@@ -6,4 +6,6 @@ order: 1
 postOrder:
   - overview
   - press-enter
+  - dns-resolution
+  - dns-records-dig
 ---
