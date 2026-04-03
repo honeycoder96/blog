@@ -1,0 +1,278 @@
+---
+title: "DNS Records, dig, Glue Records & Modern DNS"
+date: "Apr 2026"
+pubDate: 2026-04-17
+category: Deep Dive
+author: Honey Sharma
+summary: The DNS resolution journey ends at a nameserver holding DNS records. This post covers every record type that matters in practice, how to read and query them with dig, the glue record bootstrap problem, the DNS wire format, and how DoH and DoT encrypt the query.
+tags: [networking, dns, dns-records, dig, glue-records, doh, dot, cname, mx, txt]
+---
+import PacketDiagram from '../../../components/mdx/PacketDiagram.astro';
+import SequenceDiagram from '../../../components/mdx/SequenceDiagram.astro';
+import Terminal from '../../../components/mdx/Terminal.astro';
+import Callout from '../../../components/mdx/Callout.astro';
+
+The previous post traced the DNS resolution journey — a recursive resolver working through root, TLD, and authoritative nameservers to get an answer. But what is that answer, exactly?
+
+The answer is a **DNS record** — a structured entry in the authoritative nameserver's zone file. There are dozens of record types; seven of them come up constantly in real work. This post covers those seven, shows how to query them with `dig`, explains glue records (the structural fix for a circular dependency at the heart of DNS), walks through the DNS wire format, and looks at how modern DNS adds encryption.
+
+---
+
+## Record Types
+
+### A — IPv4 Address
+
+The most fundamental record. Maps a hostname to an IPv4 address.
+
+<Terminal
+  title="A record — IPv4 address"
+  command="dig A www.google.com +short"
+  language="dig"
+  output="142.250.80.46"
+/>
+
+A single hostname can have multiple A records pointing to different IPs — this is how basic load balancing and geographic routing work at the DNS level. The client picks one (typically the first, though resolvers may vary).
+
+---
+
+### AAAA — IPv6 Address
+
+The IPv6 equivalent of A. Four times as many characters, the same idea.
+
+<Terminal
+  title="AAAA record — IPv6 address"
+  command="dig AAAA www.google.com +short"
+  language="dig"
+  output="2607:f8b0:4004:c1b::64"
+/>
+
+Modern browsers perform a "Happy Eyeballs" race: they query for both A and AAAA simultaneously and connect via whichever responds first (preferring IPv6). If only an A record exists, the connection falls back to IPv4.
+
+---
+
+### CNAME — Canonical Name (Alias)
+
+A CNAME says "this name is an alias for another name." The resolver follows the chain until it finds an A or AAAA record.
+
+<Terminal
+  title="CNAME record — alias chain"
+  command="dig CNAME docs.example.com"
+  language="dig"
+  highlight={[8]}
+  output={`; <<>> DiG 9.10.6 <<>> CNAME docs.example.com
+;; QUESTION SECTION:
+;docs.example.com.              IN      CNAME
+
+;; ANSWER SECTION:
+docs.example.com.       3600    IN      CNAME   example.github.io.
+
+;; Query time: 22 msec
+;; SERVER: 8.8.8.8#53(8.8.8.8)`}
+/>
+
+<Callout type="warning" title="You cannot CNAME a naked domain">
+  `CNAME` records cannot coexist with other records at the same name. This makes them illegal at the zone apex (the naked domain like `google.com`) — because the apex must have `NS` and `SOA` records. So you can CNAME `www.google.com` but not `google.com` itself.
+
+  This is a real problem for CDN and hosting setups that require you to point your root domain to a hostname (not an IP). The workaround is a proprietary `ALIAS` or `ANAME` record offered by some DNS providers — they resolve the target at query time and return the resulting IP as if it were an A record. It's not in the DNS standard, but it's widely supported.
+</Callout>
+
+---
+
+### MX — Mail Exchange
+
+Controls where email for a domain is delivered. MX records include a **priority** number — lower means higher preference. Mail servers try the lowest-priority MX first and fall back to higher values if it's unavailable.
+
+<Terminal
+  title="MX record — mail routing"
+  command="dig MX google.com +short"
+  language="dig"
+  output="10 smtp.google.com."
+/>
+
+If a domain has no MX record, mail servers fall back to the A record. If a domain has `MX 0 .` (null MX, RFC 7505), it explicitly rejects all email.
+
+---
+
+### TXT — Text Records
+
+Free-form text attached to a name. Used for everything that doesn't have its own record type: domain verification, SPF anti-spoofing, DKIM public keys, DMARC policy.
+
+<Terminal
+  title="TXT records — verification and email policy"
+  command="dig TXT google.com +short"
+  language="dig"
+  output={`"v=spf1 include:_spf.google.com ~all"
+"google-site-verification=wD8N7i1JTNTkezJ49swvWW48f8_9xveREV4oB-0Hf5o"
+"docusign=05958488-4752-4ef2-8f10-0ee00b7cc4a2"
+"MS=E4A68B9AB2BB9670BCE15412F62916164C0B20BB"`}
+/>
+
+The `v=spf1` record tells receiving mail servers which hosts are authorised to send email claiming to be from `google.com`. If you own a domain and send email from it, you need this — otherwise your messages are likely to be marked as spam.
+
+---
+
+### NS — Nameservers
+
+Delegates authority for a domain to a set of nameservers. These are what the TLD nameserver returns in referrals.
+
+<Terminal
+  title="NS records — authoritative nameservers"
+  command="dig NS google.com +short"
+  language="dig"
+  output={`ns1.google.com.
+ns2.google.com.
+ns3.google.com.
+ns4.google.com.`}
+/>
+
+When you register a domain, you set its NS records at your registrar. This is what delegates DNS authority from the TLD registry to your nameservers. Changing NS records triggers a 24–48 hour wait because TLD nameservers cache them at long TTLs.
+
+---
+
+### SOA — Start of Authority
+
+Every DNS zone has exactly one SOA record. It contains administrative metadata: the primary nameserver, the responsible email address, the zone's serial number (incremented on every change), and timing values for zone transfers.
+
+<Terminal
+  title="SOA record — zone metadata"
+  command="dig SOA google.com +short"
+  language="dig"
+  output="ns1.google.com. dns-admin.google.com. 606836917 900 900 1800 60"
+/>
+
+Reading it left to right: primary NS is `ns1.google.com`, admin contact is `dns-admin.google.com` (the first `.` is `@`), serial is `606836917`, refresh/retry/expire/minimum TTL follow. The serial is what secondary nameservers use to detect that a zone has changed and needs to be re-transferred.
+
+---
+
+## dig: Your DNS Debugger
+
+Beyond `+short` and basic queries, `dig` has flags worth knowing for debugging.
+
+<Terminal
+  title="Query a specific resolver with @"
+  command="dig A www.google.com @1.1.1.1 +short"
+  language="dig"
+  output="142.250.80.46"
+/>
+
+Use `@` to bypass your system's configured resolver and query a specific one directly. Useful for checking whether a propagation issue is with your ISP's resolver or global.
+
+<Terminal
+  title="Check if a domain exists at all"
+  command="dig A nonexistent.example.com"
+  language="dig"
+  highlight={[4]}
+  output={`; <<>> DiG 9.10.6 <<>> A nonexistent.example.com
+;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 12345
+;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 0
+
+;; AUTHORITY SECTION:
+example.com.            3600    IN      SOA     ns1.example.com. ...`}
+/>
+
+`NXDOMAIN` (Non-Existent Domain) means the name doesn't exist in DNS. The AUTHORITY section returns the SOA record of the parent zone so the resolver knows how long to cache the negative response.
+
+---
+
+## Glue Records: Breaking the Circular Dependency
+
+Here is a structural puzzle at the heart of DNS. Consider Google's authoritative nameservers: `ns1.google.com`, `ns2.google.com`. The `.com` TLD returns these names in a referral. Your resolver now needs to query `ns1.google.com` — but to do that, it needs to resolve `ns1.google.com` first, which requires querying `google.com`'s authoritative nameserver... which is `ns1.google.com`.
+
+Circular dependency.
+
+**Glue records** break the loop. When you delegate a domain to nameservers under that same domain, the registrar requires you to provide the IP addresses of those nameservers. The TLD registry stores those IPs alongside the NS records. The TLD then includes them in the ADDITIONAL section of referral responses — before the resolver needs to look them up.
+
+<SequenceDiagram
+  title="How glue records break the circular dependency"
+  actors={[
+    { id: 'resolver', label: 'Recursive Resolver' },
+    { id: 'tld', label: 'TLD Nameserver', sublabel: '.com registry' },
+    { id: 'auth', label: 'Auth Nameserver', sublabel: 'ns1.google.com' },
+  ]}
+  messages={[
+    { from: 'resolver', to: 'tld', label: 'google.com NS?', type: 'request' },
+    { from: 'tld', to: 'resolver', label: 'AUTHORITY: ns1.google.com', type: 'response', sublabel: 'nameserver for google.com' },
+    { from: 'tld', to: 'resolver', label: 'ADDITIONAL: ns1 → 216.239.32.10', type: 'response', highlight: true, sublabel: 'glue — IP included in same response' },
+    { from: 'resolver', to: 'auth', label: 'www.google.com A?', type: 'request', annotation: 'using glue IP directly' },
+    { from: 'auth', to: 'resolver', label: 'A: 142.250.80.46 TTL 300', type: 'response', highlight: true },
+  ]}
+  caption="The TLD includes the nameserver's IP (glue) in the ADDITIONAL section — the resolver uses it directly without needing a separate DNS lookup."
+/>
+
+Glue records only exist when the nameserver hostname is under the domain being delegated. If Google used `ns1.cloudns.net` instead of `ns1.google.com`, there would be no circular dependency and no glue records needed.
+
+---
+
+## The DNS Wire Format
+
+DNS messages travel over UDP (port 53), typically. Each message — query and response — shares the same binary format.
+
+<PacketDiagram
+  title="DNS message format"
+  rows={[
+    {
+      label: 'Header (12 bytes — present in every message)',
+      fields: [
+        { name: 'ID', bytes: '2B', value: '0xD431', color: 'blue', description: 'Random identifier — matched between query and response', highlight: true },
+        { name: 'Flags', bytes: '2B', value: 'QR|RD|RA', color: 'orange', description: 'QR=response, OPCODE, AA, TC, RD=recursion desired, RA=recursion available, RCODE' },
+        { name: 'QDCOUNT', bytes: '2B', value: '1', color: 'neutral', description: 'Number of questions in the QUESTION section' },
+        { name: 'ANCOUNT', bytes: '2B', value: '1', color: 'neutral', description: 'Number of resource records in ANSWER section' },
+        { name: 'NSCOUNT', bytes: '2B', value: '0', color: 'neutral', description: 'Number of records in AUTHORITY section' },
+        { name: 'ARCOUNT', bytes: '2B', value: '2', color: 'neutral', description: 'Number of records in ADDITIONAL section (includes glue)' },
+      ],
+    },
+    {
+      label: 'Question section (one entry per QDCOUNT)',
+      fields: [
+        { name: 'QNAME', bytes: 'var', value: 'www.google.com', color: 'green', description: 'Domain name encoded as length-prefixed labels: 3www6google3com0' },
+        { name: 'QTYPE', bytes: '2B', value: '1 (A)', color: 'purple', description: 'Record type being requested: A=1, AAAA=28, MX=15, CNAME=5, TXT=16, NS=2' },
+        { name: 'QCLASS', bytes: '2B', value: '1 (IN)', color: 'neutral', description: 'Query class — IN (internet) for all practical purposes' },
+      ],
+    },
+    {
+      label: 'Answer resource record (one entry per ANCOUNT)',
+      fields: [
+        { name: 'NAME', bytes: 'var', value: 'www.google.com', color: 'green', description: 'The name this record answers for — often compressed via pointer to QNAME' },
+        { name: 'TYPE', bytes: '2B', value: '1 (A)', color: 'purple', description: 'Record type of this answer' },
+        { name: 'CLASS', bytes: '2B', value: '1 (IN)', color: 'neutral', description: 'Class — always IN for internet records' },
+        { name: 'TTL', bytes: '4B', value: '300', color: 'orange', description: 'Seconds this record may be cached. After expiry, resolvers must re-query.' },
+        { name: 'RDLENGTH', bytes: '2B', value: '4', color: 'neutral', description: 'Length in bytes of the RDATA field that follows' },
+        { name: 'RDATA', bytes: '4B', value: '142.250.80.46', color: 'blue', highlight: true, description: 'The actual data — for A records, 4 bytes encoding the IPv4 address' },
+      ],
+    },
+  ]}
+  caption="A DNS query and its response share the same binary layout. The ID field links them — the resolver matches incoming responses to outstanding queries by ID."
+/>
+
+A few things worth knowing about the wire format:
+
+- **Name compression** — DNS uses pointer references within the message to avoid repeating long names. `www.google.com` in the answer section typically stores a 2-byte pointer back to where the name appeared in the question section, saving bytes.
+- **UDP limit** — traditional DNS messages are limited to 512 bytes over UDP. Responses exceeding this set the TC (truncated) flag, and the client retries over TCP. EDNS0 (RFC 2671) extends this limit to 4096+ bytes, allowing larger responses (like DNSSEC signatures) over UDP.
+- **Port 53** — standard DNS uses port 53 for both UDP and TCP. DoH and DoT use different ports (443 and 853 respectively).
+
+---
+
+## DoH and DoT: Encrypting the Query
+
+Traditional DNS is plaintext UDP. Every DNS query you send is visible to your ISP, your network operator, and anyone observing your traffic. Your ISP can see every domain you look up — even if the subsequent connection is HTTPS.
+
+Two standards address this:
+
+**DNS over TLS (DoT)** wraps DNS in a TLS connection on **port 853**. The protocol is still DNS, just encrypted. Configured at the OS level (Android 9+ supports it natively via "Private DNS" settings; on Linux, via `systemd-resolved`).
+
+**DNS over HTTPS (DoH)** sends DNS queries as HTTPS requests to a resolver's HTTPS endpoint (typically `https://dns.google/dns-query`). From the network's perspective, it's indistinguishable from normal web traffic. Can be configured per-browser (Firefox and Chrome both support it) or at the OS level.
+
+| | DoT | DoH |
+|---|-----|-----|
+| Port | 853 (distinct, blockable) | 443 (same as HTTPS) |
+| Configured at | OS level | Browser or OS |
+| Visibility | Encrypted, but identifiable as DNS | Indistinguishable from HTTPS |
+| Provider | System resolver | Browser's chosen resolver |
+
+<Callout type="tip" title="The privacy / filtering trade-off">
+  DoH configured in the browser bypasses your OS's DNS settings entirely — including any network-level filtering your employer, school, or parent router applies. This is why some corporate networks block DoH endpoints. The flip side: on a hostile network (public WiFi), DoH in the browser protects your DNS queries even if the network's resolver is manipulating responses.
+</Callout>
+
+<Callout type="tip" title="The google.com thread">
+  Our running example used a traditional plaintext DNS query — resolver returned `142.250.80.46`. With DoH or DoT, the resolution journey is identical; only the transport is encrypted. The IP address we got is the same either way. Block 3 picks up here with the physical journey from your laptop to that address.
+</Callout>

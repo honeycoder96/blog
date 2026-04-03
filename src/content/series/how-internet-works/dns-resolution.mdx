@@ -1,0 +1,210 @@
+---
+title: "DNS Resolution: How google.com Becomes an IP Address"
+date: "Apr 2026"
+pubDate: 2026-04-10
+category: Deep Dive
+author: Honey Sharma
+summary: Your browser knows "google.com" but routers only understand IP addresses. DNS is the distributed translation system between the two — a 5-hop conversation that happens in under 20ms. This post traces every step.
+tags: [networking, dns, resolver, nameserver, ttl, dig, performance]
+---
+import NetworkPath from '../../../components/mdx/NetworkPath.astro';
+import SequenceDiagram from '../../../components/mdx/SequenceDiagram.astro';
+import Terminal from '../../../components/mdx/Terminal.astro';
+import Callout from '../../../components/mdx/Callout.astro';
+
+Routers don't speak English. Every packet on the internet needs a numeric destination — an IP address like `142.250.80.46`. But humans use names like `google.com`.
+
+**DNS** (Domain Name System) is the distributed database that translates one into the other. When your browser needs to connect to `google.com`, it runs a DNS lookup — a short conversation with a chain of servers that collectively know where every domain in the world points. The whole process typically completes in 20–80 milliseconds.
+
+This post traces that conversation, hop by hop.
+
+---
+
+## The Four Actors
+
+DNS resolution involves four distinct types of server. Understanding who each one is makes the rest of the post click.
+
+<NetworkPath
+  title="The DNS Resolution Chain"
+  nodes={[
+    { id: 'browser', label: 'Your Browser', sublabel: 'stub resolver', type: 'device' },
+    { id: 'resolver', label: 'Recursive Resolver', sublabel: '8.8.8.8 / ISP DNS', type: 'dns', highlight: true, annotation: 'does the work' },
+    { id: 'root', label: 'Root Nameserver', sublabel: '13 anycast IPs', type: 'dns' },
+    { id: 'tld', label: 'TLD Nameserver', sublabel: '.com registry', type: 'dns' },
+    { id: 'auth', label: 'Authoritative NS', sublabel: 'ns1.google.com', type: 'server' },
+  ]}
+  edges={[
+    { from: 'browser', to: 'resolver', label: 'query' },
+    { from: 'resolver', to: 'root', label: '① cache miss' },
+    { from: 'resolver', to: 'tld', label: '② root referral' },
+    { from: 'resolver', to: 'auth', label: '③ TLD referral' },
+    { from: 'auth', to: 'resolver', label: '④ answer' },
+  ]}
+  caption="The recursive resolver (highlighted) is the workhorse — it queries all three nameserver types and caches the result."
+/>
+
+**Your browser (stub resolver)** — knows only one thing: the address of a recursive resolver to ask. It delegates all the work.
+
+**Recursive resolver** — the server that actually does the resolution work. It queries root, TLD, and authoritative nameservers on your behalf, caches the results, and returns the final answer. Your ISP provides one by default; `8.8.8.8` (Google) and `1.1.1.1` (Cloudflare) are popular alternatives.
+
+**Root nameservers** — the starting point for any resolution. They don't know where `google.com` is, but they know who handles `.com`. There are 13 root nameserver addresses (labeled a through m), each backed by an anycast cluster of hundreds of physical servers worldwide.
+
+**TLD nameservers** — responsible for top-level domains like `.com`, `.org`, `.io`. They don't know Google's IP, but they know which nameservers are authoritative for `google.com`.
+
+**Authoritative nameservers** — the final authority for a domain. Google operates `ns1.google.com` through `ns4.google.com`. These servers hold the actual DNS records and return the definitive answer.
+
+<Callout type="tip" title="Root servers aren't 13 machines">
+  The 13 root nameserver *addresses* (a.root-servers.net through m.root-servers.net) correspond to 13 IP addresses — but each is served by a large anycast cluster. There are over 1,600 root server instances distributed across the globe. Your query reaches the nearest one, usually within a few milliseconds.
+</Callout>
+
+---
+
+## The Full Resolution Journey
+
+With the four actors clear, here is the complete lookup for `www.google.com` — including the cache checks that make real-world DNS fast.
+
+<SequenceDiagram
+  title="DNS resolution: www.google.com → 142.250.80.46"
+  actors={[
+    { id: 'browser', label: 'Browser', sublabel: 'stub resolver' },
+    { id: 'resolver', label: 'Recursive Resolver', sublabel: '8.8.8.8' },
+    { id: 'root', label: 'Root NS', sublabel: 'a.root-servers.net' },
+    { id: 'tld', label: 'TLD NS (.com)', sublabel: 'a.gtld-servers.net' },
+    { id: 'auth', label: 'Authoritative NS', sublabel: 'ns1.google.com' },
+  ]}
+  messages={[
+    { from: 'browser', to: 'resolver', label: 'resolve www.google.com A?', type: 'request' },
+    { from: 'resolver', to: 'resolver', label: 'cache lookup', type: 'note', sublabel: 'no cached entry found' },
+    { from: 'resolver', to: 'root', label: 'www.google.com A?', type: 'request', annotation: 'cache miss' },
+    { from: 'root', to: 'resolver', label: '.com NS: 192.203.230.10', type: 'response', sublabel: 'referral — root knows .com NS' },
+    { from: 'resolver', to: 'tld', label: 'www.google.com A?', type: 'request' },
+    { from: 'tld', to: 'resolver', label: 'ns1.google.com: 216.239.32.10', type: 'response', sublabel: 'referral + glue record' },
+    { from: 'resolver', to: 'auth', label: 'www.google.com A?', type: 'request', highlight: true },
+    { from: 'auth', to: 'resolver', label: 'A 142.250.80.46 TTL 300', type: 'response', highlight: true },
+    { from: 'resolver', to: 'browser', label: '142.250.80.46', type: 'response', annotation: 'cached for 300s' },
+  ]}
+  caption="The resolver queries each nameserver in sequence. Steps ①–④ only happen on a cache miss — subsequent lookups return instantly from the resolver's cache."
+/>
+
+### Step by step
+
+**Step 1** — Your browser sends the query to its configured recursive resolver. This is a UDP packet (usually, though TCP is used for larger responses).
+
+**Step 2** — The resolver checks its own cache. If it resolved `www.google.com` recently and the TTL hasn't expired, it returns immediately — no further network calls. For a first lookup, the cache misses.
+
+**Step 3** — The resolver asks a root nameserver. Root doesn't know Google's IP, but it knows which servers handle `.com`. It returns a referral to the `.com` TLD nameservers.
+
+**Step 4** — The resolver asks the `.com` TLD nameserver. TLD doesn't know the IP either, but it knows `ns1.google.com` is authoritative for `google.com`. It returns a referral — including **glue records** (the IP address of `ns1.google.com` itself, to avoid a circular dependency). More on glue records in the next post.
+
+**Step 5** — The resolver asks Google's authoritative nameserver directly. This server knows the answer: `142.250.80.46` with TTL 300 (5 minutes).
+
+**Step 6** — The resolver caches the answer and returns it to your browser.
+
+Total round trips: 3 network hops for a cold cache. In practice, root and TLD answers are cached for hours or days, so most real-world lookups require only the final hop to the authoritative server.
+
+---
+
+## TTL: Why DNS Changes Take Time
+
+Every DNS record has a TTL — a number (in seconds) set by the domain owner that tells resolvers how long to cache the answer.
+
+```
+www.google.com.   300   IN   A   142.250.80.46
+                  ↑↑↑
+                  TTL: 300 seconds (5 minutes)
+```
+
+Once a resolver has cached this record, it will serve that cached answer for up to 300 seconds without asking Google's nameserver again. If Google changes their IP during that window, resolvers serving cached answers will still point to the old address until their cached entry expires.
+
+This is what "DNS propagation" means — not a global sync that pushes changes out, but a collection of TTL timers draining across thousands of resolvers worldwide. A TTL of 300 seconds propagates fully in about 5 minutes. A TTL of 86400 (24 hours) means some users may see the old address for up to 24 hours.
+
+**Practical implication:** If you're planning a domain migration, lower the TTL to 60 seconds a day or two before switching. After the switch, raise it back. This minimises the exposure window.
+
+<Callout type="warning" title="There is no DNS propagation button">
+  "DNS propagation" is a common but misleading term. Changes don't propagate outward — they wait to be discovered. Each resolver keeps serving its cached answer until its TTL expires, then asks the authoritative server for a fresh answer. The only way to speed this up is to lower your TTL before making the change.
+</Callout>
+
+---
+
+## Reading a Real DNS Response
+
+The `dig` command is the standard tool for querying DNS. Every developer who works with domains should know it.
+
+<Terminal
+  title="dig www.google.com"
+  command="dig www.google.com"
+  language="dig"
+  highlight={[11]}
+  output={`; <<>> DiG 9.10.6 <<>> www.google.com
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 54321
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
+
+;; QUESTION SECTION:
+;www.google.com.                IN      A
+
+;; ANSWER SECTION:
+www.google.com.         300     IN      A       142.250.80.46
+
+;; Query time: 18 msec
+;; SERVER: 8.8.8.8#53(8.8.8.8)
+;; WHEN: Thu Apr 03 2026
+;; MSG SIZE  rcvd: 59`}
+/>
+
+Reading the output:
+
+- **`status: NOERROR`** — the query succeeded. Other values: `NXDOMAIN` (domain doesn't exist), `SERVFAIL` (nameserver error), `REFUSED`.
+- **`flags: qr rd ra`** — `qr` means this is a response (not a query), `rd` means recursion was desired, `ra` means recursion is available at this resolver.
+- **QUESTION SECTION** — what was asked: the A record for `www.google.com`.
+- **ANSWER SECTION** (highlighted) — the response: TTL 300, type A, value `142.250.80.46`.
+- **`SERVER: 8.8.8.8`** — which resolver answered. On your machine, this will be your configured DNS server.
+- **`Query time: 18 msec`** — resolver already had this cached. A cold cache would be 60–200ms.
+
+---
+
+## Watching the Hops Live
+
+The `+trace` flag tells `dig` to perform the full recursive resolution itself, showing each nameserver hop.
+
+<Terminal
+  title="dig www.google.com +trace — full recursive resolution"
+  command="dig www.google.com +trace"
+  language="dig"
+  highlight={[4, 9, 17, 19, 20]}
+  output={`.                       86400   IN      NS      a.root-servers.net.
+.                       86400   IN      NS      b.root-servers.net.
+.                       86400   IN      NS      e.root-servers.net.
+;; Received 525 bytes from 8.8.8.8#53(8.8.8.8) in 14 ms
+
+com.                    172800  IN      NS      a.gtld-servers.net.
+com.                    172800  IN      NS      b.gtld-servers.net.
+com.                    86400   IN      DS      30909 8 2 E2D3C916...
+;; Received 1174 bytes from 192.203.230.10#53(e.root-servers.net) in 22 ms
+
+google.com.             172800  IN      NS      ns1.google.com.
+google.com.             172800  IN      NS      ns2.google.com.
+google.com.             172800  IN      NS      ns3.google.com.
+google.com.             172800  IN      NS      ns4.google.com.
+ns1.google.com.         172800  IN      A       216.239.32.10
+ns2.google.com.         172800  IN      A       216.239.34.10
+;; Received 244 bytes from 192.5.6.30#53(a.gtld-servers.net) in 12 ms
+
+www.google.com.         300     IN      A       142.250.80.46
+;; Received 59 bytes from 216.239.32.10#53(ns1.google.com) in 8 ms`}
+/>
+
+Each highlighted `Received` line marks a hop:
+- **Hop 1** (14ms) — root nameserver returns the `.com` TLD NS addresses
+- **Hop 2** (22ms) — `.com` TLD returns Google's authoritative NS + glue A records for `ns1–ns2.google.com`
+- **Hop 3** (12ms) — Google's authoritative NS returns the final answer: `142.250.80.46`
+- **Final answer** (8ms) — the authoritative answer, TTL 300
+
+Total: ~56ms for a completely cold cache. Subsequent lookups skip the first two hops entirely.
+
+Notice lines 15–16: `ns1.google.com. 172800 IN A 216.239.32.10` — these are the glue records. The TLD included the IP addresses of Google's nameservers in the ADDITIONAL section so the resolver doesn't need to make a separate DNS lookup just to reach `ns1.google.com`. The next post explains glue records in full.
+
+<Callout type="tip" title="The google.com thread">
+  We now have `142.250.80.46` — the IP address of Google's nearest edge server. The DNS lookup is complete. Block 3 picks up here: the physical journey from your laptop to that server over WiFi, through your router, across your ISP, and onto the internet backbone.
+</Callout>

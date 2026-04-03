@@ -271,7 +271,6 @@ export const SeriesAccordion: React.FC<SeriesAccordionProps> = ({
 
   const handleCategoryChange = useCallback(
     (cat: string) => {
-      console.log("category changed", cat)
       if (cat === activeCategory) return;
       setActiveCategory(cat);
       setOpenIndex(null);
