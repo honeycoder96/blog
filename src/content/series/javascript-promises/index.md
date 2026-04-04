@@ -6,4 +6,5 @@ order: 2
 postOrder:
   - promises-in-depth
   - before-promises
+  - callbacks
 ---

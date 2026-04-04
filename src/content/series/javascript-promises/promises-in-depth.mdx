@@ -33,9 +33,9 @@ Before writing a single line of Promise code, it's worth understanding what worl
 
 | # | Post | Description |
 |---|------|-------------|
-| 01 | [The World Before Promises](#) | The JavaScript event loop, the call stack, and what it means to be single-threaded |
-| 02 | [Callbacks — The Original Async Pattern](#) | How callbacks work, callback hell, and the inversion of control problem |
-| 03 | [What Promises Set Out to Solve](#) | The mental model of a future value, and the history from jQuery Deferreds to the spec |
+| 01 | [The World Before Promises](/series/javascript-promises/before-promises) | The JavaScript event loop, the call stack, and what it means to be single-threaded |
+| 02 | [Callbacks — The Original Async Pattern](/series/javascript-promises/callbacks) | How callbacks work, callback hell, and the inversion of control problem |
+| 03 | What Promises Set Out to Solve | The mental model of a future value, and the history from jQuery Deferreds to the spec |
 
 ---
 
@@ -45,10 +45,10 @@ The beating heart of the series. This is where you learn exactly how a Promise w
 
 | # | Post | Description |
 |---|------|-------------|
-| 04 | [Anatomy of a Promise](#) | The three states, one-way state transitions, the executor, and what resolve/reject actually do |
-| 05 | [Consuming Promises with `.then()`](#) | The `.then()` signature, return values, why it always returns a new promise, and microtask scheduling |
-| 06 | [Error Handling and Cleanup — `.catch()` and `.finally()`](#) | How rejections propagate, recovering mid-chain, unhandled rejections, and `.finally()` gotchas |
-| 07 | [Promise Chaining In Depth](#) | Sequential async pipelines, thenable flattening, common chaining mistakes, and flat vs nested chains |
+| 04 | Anatomy of a Promise | The three states, one-way state transitions, the executor, and what resolve/reject actually do |
+| 05 | Consuming Promises with `.then()` | The `.then()` signature, return values, why it always returns a new promise, and microtask scheduling |
+| 06 | Error Handling and Cleanup — `.catch()` and `.finally()` | How rejections propagate, recovering mid-chain, unhandled rejections, and `.finally()` gotchas |
+| 07 | Promise Chaining In Depth | Sequential async pipelines, thenable flattening, common chaining mistakes, and flat vs nested chains |
 
 ---
 
@@ -58,11 +58,11 @@ Every static method on the `Promise` constructor deserves its own focused treatm
 
 | # | Post | Description |
 |---|------|-------------|
-| 08 | [`Promise.resolve()` and `Promise.reject()`](#) | Pre-settled promises, wrapping thenables, and the identity shortcut |
-| 09 | [`Promise.all()`](#) | Parallelising independent operations, fail-fast behaviour, and ordering guarantees |
-| 10 | [`Promise.allSettled()`](#) | Running promises regardless of individual failures and building resilient multi-fetch patterns |
-| 11 | [`Promise.race()`](#) | First-settled-wins semantics, timeout wrappers, and why losing promises aren't cancelled |
-| 12 | [`Promise.any()`](#) | First-fulfilled-wins, `AggregateError`, and how to choose between `any`, `race`, and `all` |
+| 08 | `Promise.resolve()` and `Promise.reject()` | Pre-settled promises, wrapping thenables, and the identity shortcut |
+| 09 | `Promise.all()` | Parallelising independent operations, fail-fast behaviour, and ordering guarantees |
+| 10 | `Promise.allSettled()` | Running promises regardless of individual failures and building resilient multi-fetch patterns |
+| 11 | `Promise.race()` | First-settled-wins semantics, timeout wrappers, and why losing promises aren't cancelled |
+| 12 | `Promise.any()` | First-fulfilled-wins, `AggregateError`, and how to choose between `any`, `race`, and `all` |
 
 ---
 
@@ -72,7 +72,7 @@ Every static method on the `Promise` constructor deserves its own focused treatm
 
 | # | Post | Description |
 |---|------|-------------|
-| 13 | [async/await — The Full Picture](#) | What `async` functions return, how `await` suspends execution, translating between chains and await, accidental serialisation in loops, the `await` in `forEach` trap, floating promises, and top-level await |
+| 13 | async/await — The Full Picture | What `async` functions return, how `await` suspends execution, translating between chains and await, accidental serialisation in loops, the `await` in `forEach` trap, floating promises, and top-level await |
 
 ---
 
@@ -82,11 +82,11 @@ The practical half of the series. Real patterns used in real codebases, explaine
 
 | # | Post | Description |
 |---|------|-------------|
-| 14 | [Execution Patterns and Concurrency Control](#) | Sequential tasks with `reduce`, parallelising with `Promise.all`, and building a promise pool / concurrency limiter from scratch |
-| 15 | [Retry, Timeout, and Fallback Patterns](#) | Exponential backoff, timeout wrappers with `Promise.race`, circuit breakers, and waterfall fallbacks |
-| 16 | [Deferred Pattern and Promise Factories](#) | Separating resolve/reject from the executor, lazy promises, and memoising async calls |
-| 17 | [Cancellation — The Gap Promises Leave](#) | Why the spec has no cancellation, AbortController in practice, and cooperative cancellation in chains |
-| 18 | [Promisifying Callback-based APIs](#) | Writing `promisify` by hand, `util.promisify` in Node.js, and promisifying event emitters |
+| 14 | Execution Patterns and Concurrency Control | Sequential tasks with `reduce`, parallelising with `Promise.all`, and building a promise pool / concurrency limiter from scratch |
+| 15 | Retry, Timeout, and Fallback Patterns | Exponential backoff, timeout wrappers with `Promise.race`, circuit breakers, and waterfall fallbacks |
+| 16 | Deferred Pattern and Promise Factories | Separating resolve/reject from the executor, lazy promises, and memoising async calls |
+| 17 | Cancellation — The Gap Promises Leave | Why the spec has no cancellation, AbortController in practice, and cooperative cancellation in chains |
+| 18 | Promisifying Callback-based APIs | Writing `promisify` by hand, `util.promisify` in Node.js, and promisifying event emitters |
 
 ---
 
@@ -96,8 +96,8 @@ Promises are powerful, but they have real constraints. This part is the honest a
 
 | # | Post | Description |
 |---|------|-------------|
-| 19 | [Promise Limitations and Pitfalls](#) | No cancellation, no progress, eager execution, silently swallowed rejections, and mixing `.then(null, fn)` with `.catch()` incorrectly |
-| 20 | [Memory and Performance Considerations](#) | Microtask queue pressure, long chains vs flat await, and avoiding memory leaks with settled promises |
+| 19 | Promise Limitations and Pitfalls | No cancellation, no progress, eager execution, silently swallowed rejections, and mixing `.then(null, fn)` with `.catch()` incorrectly |
+| 20 | Memory and Performance Considerations | Microtask queue pressure, long chains vs flat await, and avoiding memory leaks with settled promises |
 
 ---
 
@@ -107,12 +107,12 @@ The payoff. By this point in the series, you have enough context to read the Pro
 
 | # | Post | Description |
 |---|------|-------------|
-| 21 | [The Promises/A+ Specification — A Deep Read](#) | What the spec covers, the resolution procedure `[[Resolve]](promise, x)` line by line, and the microtask requirement |
-| 22 | [Scaffolding the Polyfill — State and Executor](#) | Representing state with closures, running the executor safely, and implementing single-fire resolve/reject |
-| 23 | [Implementing `.then()`](#) | Creating the chained promise, queueing pending handlers, and scheduling with `queueMicrotask` |
-| 24 | [Implementing the Resolution Procedure](#) | Thenable detection, adopting the state of returned promises, and guarding against circular resolution |
-| 25 | [Adding `.catch()`, `.finally()`, and Static Methods](#) | Deriving instance methods from `.then()` and implementing all four static combinators |
-| 26 | [Testing and Validating the Polyfill](#) | Running the official Promises/A+ compliance suite, fixing edge cases, and comparing against native `Promise` |
+| 21 | The Promises/A+ Specification — A Deep Read | What the spec covers, the resolution procedure `[[Resolve]](promise, x)` line by line, and the microtask requirement |
+| 22 | Scaffolding the Polyfill — State and Executor | Representing state with closures, running the executor safely, and implementing single-fire resolve/reject |
+| 23 | Implementing `.then()` | Creating the chained promise, queueing pending handlers, and scheduling with `queueMicrotask` |
+| 24 | Implementing the Resolution Procedure | Thenable detection, adopting the state of returned promises, and guarding against circular resolution |
+| 25 | Adding `.catch()`, `.finally()`, and Static Methods | Deriving instance methods from `.then()` and implementing all four static combinators |
+| 26 | Testing and Validating the Polyfill | Running the official Promises/A+ compliance suite, fixing edge cases, and comparing against native `Promise` |
 
 ---
 
@@ -122,10 +122,10 @@ These posts are written specifically for interview preparation. Each one is self
 
 | # | Post | Description |
 |---|------|-------------|
-| 27 | [Predict the Output — Promise Execution Order](#) | A curated set of tricky snippets involving microtasks, chaining, and async/await — with deep explanations of every output |
-| 28 | [The Most Common Promise Interview Questions](#) | The questions that come up repeatedly, answered properly — states, what `.then()` returns, difference between `all` and `allSettled`, and more |
-| 29 | [Implement These in an Interview — Promise Utilities](#) | Walking through live implementations of `promisify`, `retry`, a concurrency limiter, and `Promise.all` from scratch |
-| 30 | [async/await vs Promises — Interview Edition](#) | How to articulate the relationship clearly, what interviewers are actually testing, and the common misconceptions to avoid |
+| 27 | Predict the Output — Promise Execution Order | A curated set of tricky snippets involving microtasks, chaining, and async/await — with deep explanations of every output |
+| 28 | The Most Common Promise Interview Questions | The questions that come up repeatedly, answered properly — states, what `.then()` returns, difference between `all` and `allSettled`, and more |
+| 29 | Implement These in an Interview — Promise Utilities | Walking through live implementations of `promisify`, `retry`, a concurrency limiter, and `Promise.all` from scratch |
+| 30 | async/await vs Promises — Interview Edition | How to articulate the relationship clearly, what interviewers are actually testing, and the common misconceptions to avoid |
 
 ---
 
