@@ -1,4 +1,4 @@
-# GitHub Copilot Instructions for astro-cody-blog
+# GitHub Copilot Instructions for blog
 
 - This is an Astro 5 blog template with MDX content, client-side React UI, and static output. The project is designed for minimal runtime APIs: all page data is built at compile time via `astro:content` and `src/lib/content.ts`.
 - Source-of-truth site metadata: `src/config/site.ts`. Categories are in `src/config/categories.ts`. Do not hardcode author/site settings elsewhere.

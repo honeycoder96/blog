@@ -1,4 +1,4 @@
-# astro-cody-blog
+# Blog
 
 A minimal, fast, dark-mode-first engineering blog built with Astro 5, React, Tailwind CSS v4, and Pagefind. Clone it, edit one config file, and you have your own blog.
 
@@ -25,8 +25,8 @@ A minimal, fast, dark-mode-first engineering blog built with Astro 5, React, Tai
 
 
 ```bash
-git clone https://github.com/your-username/astro-cody-blog.git
-cd astro-cody-blog
+git clone https://github.com/your-username/blog.git
+cd blog
 npm install
 cp .env.example .env.development
 npm run dev
