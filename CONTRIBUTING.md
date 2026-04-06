@@ -49,8 +49,8 @@ The following are **out of scope** for pull requests:
 
 ```bash
 # 1. Fork the repo on GitHub, then:
-git clone https://github.com/<your-username>/astro-cody-blog.git
-cd astro-cody-blog
+git clone https://github.com/<your-username>/blog.git
+cd blog
 
 # 2. Install dependencies
 npm install

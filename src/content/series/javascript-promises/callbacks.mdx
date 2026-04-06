@@ -1,0 +1,343 @@
+---
+isVisible: true
+title: "Callbacks — The Original Async Pattern"
+date: "Mar 2026"
+pubDate: 2026-03-20
+category: JavaScript
+author: Honey Sharma
+summary: Callbacks were JavaScript's first answer to async programming. They worked — until they didn't. This post covers how callbacks actually work, why they collapse under complexity, and the two deeper problems that no amount of refactoring can fix.
+featured: false
+tags: [javascript, promises, callbacks, async, js-interview]
+---
+import Note from '../../../components/astro/Note.astro'
+
+---
+
+The event loop, as we saw in the last post, delivers async results by queuing tasks. A timer fires — its callback is queued. A network response arrives — its callback is queued. But we glossed over something: *how do you tell the event loop which function to queue?*
+
+You pass it. You hand a function to the async operation, and that operation calls it when it's done. That function is a callback.
+
+It is the simplest possible answer to async. Pass a function, get it called later. For a long time, it was the only answer JavaScript had.
+
+## What a Callback Actually Is
+
+The word "callback" makes people think "async". That association is wrong, and it matters to untangle it.
+
+A callback is just a function passed as an argument to another function, which then calls it. The mechanism is completely ordinary:
+
+```js
+// These are all callbacks. None of them are async.
+
+[3, 1, 2].sort((a, b) => a - b);
+// (a, b) => a - b is called synchronously by sort, many times
+
+[1, 2, 3, 4].filter(n => n % 2 === 0);
+// n => n % 2 === 0 is called synchronously by filter, once per element
+
+document.querySelectorAll('p').forEach(el => el.classList.add('highlight'));
+// el => ... is called synchronously by forEach, once per element
+```
+
+Nothing async has happened here. A function was passed in, and the receiving function called it. That's the whole pattern.
+
+What changes when the receiving function is async — a timer, a network request, a file read — is *when* your callback gets called. Not now. Later, when the operation completes and the event loop picks it up from the task queue.
+
+```js
+// The environment holds this callback until 1000ms passes.
+// Then it queues it. The event loop runs it when the stack is clear.
+setTimeout(function onTimeout() {
+  console.log('one second later');
+}, 1000);
+
+// XHR: callback runs when the server responds
+const xhr = new XMLHttpRequest();
+xhr.addEventListener('load', function onLoad() {
+  console.log(this.responseText);
+});
+xhr.open('GET', '/api/data');
+xhr.send();
+```
+
+The JS thread isn't blocked waiting. The environment tracks these operations independently, outside the JS engine. When they complete, their callbacks land in the task queue and the event loop delivers them to the call stack.
+
+This is genuinely elegant. A single-threaded language handles I/O without freezing because it hands the waiting to the environment and stays free to do other things. Callbacks are what make that handoff possible.
+
+<Note variant="info">
+Callbacks aren't an anti-pattern. Event listeners, array methods, timers, observer patterns — callbacks are the right tool for all of these. The problems emerge specifically when you need to *compose* multiple async operations: sequencing them, error handling across them, or running several in parallel.
+</Note>
+
+
+## Sequencing: The First Sign of Trouble
+
+A single async callback is fine. The problem arrives the moment one async operation depends on the result of another.
+
+Say you need to: read a config file, then fetch a user using the ID from that config, then save a report based on what you fetched. Three async steps. Each one needs the result of the previous.
+
+```js
+// Step 1: read the config
+fs.readFile('./config.json', 'utf8', function(err, configData) {
+  const config = JSON.parse(configData);
+
+  // Step 2: fetch the user — but only once we have config.userId
+  fetchUser(config.userId, function(err, user) {
+    const report = buildReport(user);
+
+    // Step 3: save the report — but only once we have the user data
+    fs.writeFile('./report.txt', report, function(err) {
+      console.log('report saved');
+    });
+  });
+});
+```
+
+Three levels. Still readable. The indentation mirrors the dependency: each step is nested inside the one it waits for. If you squint, the code structure looks like a flowchart.
+
+But this is already the shape that will cause problems. There's no other way to express "do B after A, then C after B" with callbacks — you must nest. Each new dependent step adds a level.
+
+
+## Callback Hell
+
+Now add the requirements a real feature actually has. Authenticate the user first. Check whether they have permission to run this report. Validate the data before writing. Log the access for the audit trail.
+
+```js
+authenticate(credentials, function(authErr, token) {
+  if (authErr) { handleError(authErr); return; }
+
+  getUser(token, function(userErr, user) {
+    if (userErr) { handleError(userErr); return; }
+
+    checkPermissions(user, 'generate:report', function(permErr, allowed) {
+      if (permErr) { handleError(permErr); return; }
+      if (!allowed) { handleError(new Error('Forbidden')); return; }
+
+      fetchReportData(user.id, function(fetchErr, data) {
+        if (fetchErr) { handleError(fetchErr); return; }
+
+        validateData(data, function(validErr, isValid) {
+          if (validErr) { handleError(validErr); return; }
+          if (!isValid) { handleError(new Error('Invalid data')); return; }
+
+          generateReport(data, function(genErr, report) {
+            if (genErr) { handleError(genErr); return; }
+
+            saveAuditLog(user.id, 'report:generated', function(logErr) {
+              if (logErr) console.error('Audit log failed:', logErr);
+              // non-fatal, so we continue regardless
+
+              res.json({ report });
+            });
+          });
+        });
+      });
+    });
+  });
+});
+```
+
+This is callback hell. Not because someone wrote careless code. Because eight sequential async operations, each dependent on the previous result, each requiring error handling, simply produce this shape with callbacks. There is no other way to write them.
+
+The visual indentation — the rightward drift, the triangular pyramid — is what gives it the name. But the shape is the least serious problem. This code is also:
+
+- **Unmaintainable** — inserting a step means restructuring the entire tree, touching every indentation level below it
+- **Untestable** — the inner callbacks are anonymous functions buried inside closures; you can't reach them directly
+- **Opaque in failure** — `handleError` is called from eight different places; a stack trace tells you it was called, not which step triggered it
+- **Error-prone** — every `if (err) { handleError(err); return; }` block is a place where a missing `return` silently continues execution into the next level with `undefined` data
+
+<Note variant="warning">
+You can flatten this structure by pulling each callback out into a named top-level function. That removes the indentation and makes the code readable line-by-line. What it does not fix are the two deeper problems in the next two sections — those are structural, not cosmetic.
+</Note>
+
+
+## Inversion of Control: The Trust Problem
+
+The nesting problem is a style problem. This one is not.
+
+When you pass a callback to a function you didn't write — a third-party library, an SDK, a framework hook — you hand that function control over your code. You are saying: *call this function for me, when you think the time is right.* The receiving function now owns:
+
+- **When** your callback is called
+- **How many times** it is called
+- **Whether** it is called at all
+- **What arguments** it receives
+- **What happens** if it throws
+
+Consider a payment flow. The outcome of this callback determines whether you fulfil an order.
+
+```js
+paymentProvider.charge(cart.total, function onCharged(err, receipt) {
+  if (err) {
+    showError('Payment failed.');
+    return;
+  }
+
+  // At this point you believe the charge succeeded.
+  fulfillOrder();
+  sendConfirmationEmail();
+  updateInventory();
+});
+```
+
+You've handed `onCharged` to `paymentProvider.charge`. You trust it will be called exactly once, after the charge attempt completes, with either an error or a valid receipt.
+
+Here are five things that could go wrong — all caused by bugs in the library, not in your code:
+
+```js
+// 1. Called twice
+//    A retry logic bug in the library calls onCharged on both the initial
+//    response and the retry response. fulfillOrder() runs twice.
+//    The customer receives two orders and is charged once.
+
+// 2. Never called
+//    A network timeout causes the library to swallow the result silently.
+//    The charge may have gone through on the server. You'll never know.
+//    The customer is waiting. Your server gives up.
+
+// 3. Called synchronously
+//    The library has a fast-path for cached payment instruments that resolves
+//    immediately, synchronously. onCharged fires before .charge() returns.
+//    Any code after .charge() that assumes the callback hasn't run yet is broken.
+
+// 4. Exception swallowed
+//    fulfillOrder() throws an exception — a database error, a null reference.
+//    The library wraps the callback call in try/catch and discards the throw.
+//    From your perspective, the payment succeeded and the order was never fulfilled.
+//    No error is reported anywhere.
+
+// 5. Called with unexpected arguments
+//    On certain failure modes, the library passes both err and receipt.
+//    Your if (err) check doesn't return early because receipt is also truthy.
+//    fulfillOrder() runs on a failed payment.
+```
+
+Every one of these bugs has shipped in real payment libraries. Some processors have had all five at different points in their history.
+
+You cannot defend against any of them from inside your callback. You are not in control. The library is.
+
+<Note variant="warning">
+This is not fixable with better callback code. The problem is the model itself: you've given your code to someone else to execute. The only solution is a system where *you* hold a handle to the result and attach your response code to it — on your own terms, not the async operation's. That is precisely what Promises are designed to provide.
+</Note>
+
+
+## Error-First Callbacks: The Attempted Standard
+
+Node.js recognised the error handling chaos and established a convention: every async callback receives `(err, result)` as its first two arguments. If something went wrong, `err` is a non-null `Error` object. If the operation succeeded, `err` is `null` and `result` holds the value.
+
+```js
+fs.readFile('./data.json', 'utf8', function(err, data) {
+  if (err) {
+    console.error('Read failed:', err.message);
+    return;
+  }
+
+  // err is null here — safe to use data
+  console.log(JSON.parse(data));
+});
+```
+
+This was a genuine improvement. Errors are explicit, predictable, always in the same position. You can write a linter rule to warn when the first argument is ignored. The entire Node.js standard library follows it.
+
+But three problems remain.
+
+**Problem 1 — The missing `return`**
+
+```js
+fetchUser(id, function(err, user) {
+  if (err) {
+    logError(err);
+    // Missing return. Execution falls through.
+  }
+
+  // This runs even when err is non-null. user is undefined.
+  renderProfile(user); // TypeError: Cannot read properties of undefined
+});
+```
+
+Nothing in the language catches this. There's no enforcement. Forget the `return` and you get two code paths running simultaneously: error handling *and* the success path. The resulting bugs are often subtle — silent failures or corrupted state rather than an obvious crash.
+
+**Problem 2 — Errors thrown inside your callback**
+
+The error-first convention handles errors *delivered to* your callback. It says nothing about errors *thrown inside* it.
+
+```js
+fs.readFile('./data.json', 'utf8', function(err, data) {
+  if (err) return handleError(err);
+
+  const parsed = JSON.parse(data); // Throws SyntaxError if data is malformed
+  renderTemplate(parsed);          // Throws TypeError if parsed is missing expected fields
+});
+```
+
+What happens to those thrown errors depends entirely on whether `fs.readFile`'s implementation wraps your callback in a `try/catch`. In most cases it does not. The exception propagates up to whatever invoked the event loop task, becomes an uncaught exception, and crashes the process — or, in a browser, disappears into the void.
+
+**Problem 3 — Still vulnerable to inversion of control**
+
+Error-first is a calling convention. It doesn't address who controls when or how many times your callback is called. A library that follows error-first perfectly can still call your callback twice, never call it, or swallow exceptions it throws. The trust problem is orthogonal to the argument layout.
+
+<details>
+<summary>What does this code output? Think before expanding.</summary>
+
+```js
+function loadUser(id, callback) {
+  setTimeout(function() {
+    if (id <= 0) {
+      callback(new Error('Invalid ID'));
+    }
+    callback(null, { id, name: 'Alice' });
+  }, 0);
+}
+
+loadUser(1, function(err, user) {
+  if (err) {
+    console.log('Error:', err.message);
+    return;
+  }
+  console.log('User:', user.name);
+});
+```
+
+**Output: `User: Alice`** — for `id: 1`, which is valid. But `loadUser` has a bug: when `id <= 0`, it calls `callback(new Error('Invalid ID'))` and then — because there's no `return` — falls through and calls `callback(null, { id, name: 'Alice' })` as well. The callback runs twice. If you change `id` to `-1`, you'll see both `Error: Invalid ID` and `User: Alice` printed in sequence. The bug is in the *producer* of the callback, not the consumer — and as a consumer, you have no way to detect or prevent it.
+
+</details>
+
+
+## What Callbacks Cannot Fix
+
+Pull it all together. The problems callbacks create fall into two categories.
+
+**Structural problems** — these are real, but addressable with discipline:
+
+| Problem | Mitigation |
+|---------|------------|
+| Rightward pyramid drift | Name your callbacks and hoist them to top-level functions |
+| Hard to read sequential flow | Sequence named functions in comments |
+| Variables leaking across closure levels | Limit what each callback closes over |
+
+**Fundamental problems** — these are not addressable without changing the model:
+
+| Problem | Why callbacks can't fix it |
+|---------|---------------------------|
+| Inversion of control | The async operation owns your callback — you can't change that |
+| No single-call guarantee | Nothing prevents a callback being called zero times or many times |
+| Sync/async inconsistency | A callback may fire now or later; you can't know without reading the source |
+| No error propagation | Thrown errors inside callbacks don't travel up the chain — they vanish or crash |
+| No way to compose | You can't `return` a value, can't use try/catch across steps, can't use a for loop to sequence async operations |
+
+The structural problems are a developer experience issue. The fundamental problems are bugs waiting to happen.
+
+
+## Why This Matters
+
+Callbacks failed not because developers misused them, but because the model itself has unavoidable limitations. The core issue is ownership: when you pass a function to an async operation, that operation owns your code. It can call it however it likes. You have no recourse.
+
+What if the model were reversed? What if the async operation, instead of taking your callback, handed *back* a value — a placeholder representing a result that doesn't exist yet? You'd hold that value. You'd attach your response code to it. When the async operation completed, it would fill the placeholder — and your code would run.
+
+You would be in control. Not the async operation.
+
+That is exactly what a Promise is. A value that represents an eventual result. One you hold. One you attach handlers to on your own terms.
+
+That's what the next post is about.
+
+## Further Reading
+
+- [Callback Hell](http://callbackhell.com/) — the canonical reference on the structural problem and the named-function mitigation
+- [You Don't Know JS: Async & Performance — Chapter 2](https://github.com/getify/You-Dont-Know-JS/blob/1st-ed/async%20%26%20performance/ch2.md) — Kyle Simpson's treatment of the inversion of control and trust problems in detail
+- [Designing APIs for Asynchrony](https://blog.izs.me/2013/08/designing-apis-for-asynchrony/) — Isaac Schlueter's original post naming the Zalgo problem (sync/async inconsistency) and why it matters
