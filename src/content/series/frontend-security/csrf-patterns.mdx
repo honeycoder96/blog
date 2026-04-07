@@ -8,6 +8,7 @@ summary: CSRF exploits the fact that browsers attach cookies to every cross-site
 tags: [security, csrf, tokens, cookies, same-site, frontend]
 ---
 import SequenceDiagram from '../../../components/mdx/SequenceDiagram.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
 import Callout from '../../../components/mdx/Callout.astro';
 import Lessons from '../../../components/mdx/Lessons.astro';
 import Lesson from '../../../components/mdx/Lesson.astro';
@@ -15,6 +16,7 @@ import Lesson from '../../../components/mdx/Lesson.astro';
 A DevForum user visits a forum on a completely unrelated site. The page looks normal — a discussion thread, a few images. Hidden in the HTML is this:
 
 ```html
+<!-- attacker's page — evil.com — do not ship this -->
 <form id="f" action="https://devforum.com/account/delete" method="POST">
   <input type="hidden" name="confirm" value="true" />
 </form>
@@ -53,7 +55,7 @@ The browser still *sends* the request. The form POST to `devforum.com/account/de
 
 ## Why CSRF Still Works in 2026
 
-Modern browsers defaulted `SameSite` to `Lax` starting in 2020, which blocks many CSRF vectors. But the attack is not solved. It survives in several real scenarios:
+Modern browsers defaulted `SameSite` to `Lax` starting in 2020, which blocks many CSRF vectors. (`SameSite` is a cookie attribute that controls when the browser includes cookies on cross-site requests — it's covered fully in the next post. For now: `Lax` means cookies are sent on top-level navigations but not on cross-site form POSTs or `fetch()` calls.) But the attack is not solved. It survives in several real scenarios:
 
 **Subdomain attacks.** If an attacker can run code on any subdomain of your domain, they can set cookies that scope to your apex domain — and those cookies are sent on same-site cross-origin requests that `SameSite=Lax` permits.
 
@@ -232,6 +234,24 @@ function validateDoubleSubmit(req, res, next) {
   An attacker who can set cookies on your domain (e.g. via a subdomain they control) can plant a known `csrfToken` cookie value — and then forge a request with that same value in the header. The double-submit pattern is most reliable when combined with `SameSite=Strict` on the CSRF cookie and when subdomain cookie injection is not possible. The next post covers how `__Host-` prefix eliminates the subdomain attack entirely.
 </Callout>
 
+<SequenceDiagram
+  title="Double-Submit Cookie — How the Same Value Proves Same Origin"
+  actors={[
+    { id: "server",  label: "DevForum Server", icon: "server", variant: "trusted" },
+    { id: "browser", label: "Legitimate Browser", icon: "browser" },
+    { id: "evil",    label: "evil.com", variant: "malicious" }
+  ]}
+  messages={[
+    { from: "server",  to: "browser", label: "Login response: Set-Cookie: csrfToken=abc (httpOnly: false)", type: "response", annotation: "JS-readable cookie" },
+    { from: "browser", to: "browser", label: "JS reads csrfToken cookie → adds X-CSRF-Token: abc header", type: "note" },
+    { from: "browser", to: "server",  label: "POST /account/settings", sublabel: "Cookie: csrfToken=abc | X-CSRF-Token: abc", type: "request", highlight: true },
+    { from: "server",  to: "browser", label: "Header matches cookie — 200 OK", type: "response", annotation: "values match → legitimate" },
+    { from: "evil",    to: "server",  label: "POST /account/settings (forged)", sublabel: "Cookie: csrfToken=abc (auto-sent) | X-CSRF-Token: ??? (cannot read cookie)", type: "attack" },
+    { from: "server",  to: "evil",    label: "Header missing or wrong — 403 Forbidden", type: "blocked", annotation: "SOP blocks evil.com from reading the cookie" }
+  ]}
+  caption="The attacker's browser sends the csrfToken cookie automatically — but evil.com's JavaScript cannot read it (SOP). Without the cookie's value, the attacker cannot forge a matching X-CSRF-Token header. The mismatch triggers a 403."
+/>
+
 ---
 
 ## Choosing Between the Two Patterns
@@ -245,6 +265,14 @@ function validateDoubleSubmit(req, res, next) {
 | **Complexity** | Moderate | Low |
 
 For most server-rendered apps: synchronizer tokens. For stateless APIs where server-side session storage is not available: double-submit cookies — paired with `SameSite=Strict` and the `__Host-` prefix covered in the next post.
+
+<Callout type="warning" title="Where you store your token matters as much as which CSRF pattern you use">
+  **Cookies** (with `HttpOnly`, `Secure`, `SameSite=Strict`): protected from JavaScript reads; auto-sent by the browser but `SameSite` blocks cross-site requests. The right default for session tokens.
+
+  **`localStorage`**: readable by any JavaScript on the page — so XSS immediately yields the token. Not auto-sent, so it survives CSRF from the browser side. But XSS grants the same access anyway. Trading one attack class for another is not a gain.
+
+  The practical rule: **store session tokens in cookies, never in `localStorage`**. CSRF protection (this post) and XSS protection (Post 1) together cover both attack vectors. Storing tokens in `localStorage` to "avoid CSRF" removes the XSS barrier and leaves you defenceless against the more common threat.
+</Callout>
 
 ---
 

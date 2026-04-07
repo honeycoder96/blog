@@ -121,14 +121,24 @@ DevForum has an internal package `@devforum/utils` published to a private GitHub
 
 Now consider a package named `devforum-utils` (no scope). If an attacker publishes this name on the public npm registry with a higher version number than the private `@devforum/utils`, some resolver configurations will prefer the public package — because the public registry is also consulted and the version is higher.
 
-<ArchFlow
-  title="Dependency Confusion — Two Packages, One Name Wins"
-  direction="horizontal"
-  nodes={[
-    { label: "@devforum/utils@1.4.0", sublabel: "Private GitHub Packages registry — legitimate" },
-    { label: "npm Resolver", sublabel: ".npmrc: registry + @devforum:registry" },
-    { label: "devforum-utils@9.9.9", sublabel: "Public npm registry — attacker-controlled" },
+<SequenceDiagram
+  title="Dependency Confusion — npm Resolves the Wrong Package"
+  actors={[
+    { id: "attacker", label: "Attacker", variant: "malicious" },
+    { id: "npm",      label: "npm Resolver", icon: "server" },
+    { id: "private",  label: "Private Registry (GitHub Packages)", icon: "server", variant: "trusted" },
+    { id: "public",   label: "Public npm Registry", icon: "server" },
+    { id: "ci",       label: "DevForum CI / Developer", icon: "browser" }
   ]}
+  messages={[
+    { from: "attacker", to: "public",  label: "Publishes devforum-utils@9.9.9", sublabel: "Malicious postinstall hook included", type: "attack" },
+    { from: "ci",       to: "npm",     label: "npm install (resolving @devforum/utils)", type: "request" },
+    { from: "npm",      to: "private", label: "Query: @devforum/utils → v1.4.0", type: "request" },
+    { from: "npm",      to: "public",  label: "Query: devforum-utils → v9.9.9 found", type: "request", highlight: true },
+    { from: "public",   to: "npm",     label: "Returns devforum-utils@9.9.9 (higher version wins)", type: "response", annotation: "attacker wins version race" },
+    { from: "npm",      to: "ci",      label: "Installs devforum-utils@9.9.9 + runs postinstall", type: "attack", annotation: "arbitrary code executes" }
+  ]}
+  caption="npm consults both registries. The attacker's higher version number (9.9.9 vs 1.4.0) wins the resolution race. The malicious package installs silently on every affected developer machine and CI run."
 />
 
 The attack is most effective when:

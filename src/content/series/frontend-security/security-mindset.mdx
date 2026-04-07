@@ -22,7 +22,7 @@ This post closes DevForum's story: the complete hardened security posture across
 
 ## DevForum's Complete Security Posture
 
-Across the series, DevForum moved from zero deliberate security posture to a layered defence across every attack surface. Here it is in one view.
+Across the series, DevForum moved from no deliberate security posture to a layered defence across every attack surface. Here it is in one view.
 
 <Comparison
   headers={["Attack vector", "Vulnerable state (post 0)", "Hardened state (post 9)", "Covered in"]}
@@ -121,7 +121,7 @@ This series repeated one pattern across every block:
 
 A defence that assumes it will never fail is a single point of failure. The correct posture is: "this layer will sometimes be bypassed — what catches it when it is?"
 
-This is not paranoia. It's the lesson from every security incident in this series. DOMPurify 3.0.7 had a mutation XSS edge case. The CSP caught it. The correct reaction to that story is not "we need a better sanitiser." It's "we need the CSP."
+This is not paranoia. It's the lesson from every security incident in this series. DOMPurify 3.0.8 had a mutation XSS edge case. The CSP caught it. The correct reaction to that story is not "we need a better sanitiser." It's "we need the CSP."
 
 ### 3. Attack first: understanding the mechanism beats memorising the fix
 
@@ -178,7 +178,7 @@ The series covered the browser security model, authentication attacks, and suppl
 
 **PortSwigger Web Security Academy** has free, interactive labs for every vulnerability class covered in this series — and many more. The XSS, CSRF, and CORS labs in particular let you exploit real vulnerable applications, which is the fastest way to move from "I understand this" to "I have instincts about this."
 
-**browser.security.im** (the browser security handbook by Google) covers the browser's security model in significantly more depth than this series — particularly the trust model for extensions, frames, and service workers that this series only touched on peripherally.
+**Google's Browser Security Handbook** (`code.google.com/archive/p/browsersec`) covers the browser's security model in significantly more depth than this series — particularly the trust model for extensions, frames, and service workers that this series only touched on peripherally.
 
 **Supply chain specifically:** Deps.dev (from Google) and Socket.dev both provide ongoing dependency intelligence that goes beyond `npm audit`. If your team ships a high-traffic application, these tools are worth integrating into the PR review pipeline permanently, not just during active security review cycles.
 

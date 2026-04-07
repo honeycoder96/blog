@@ -15,8 +15,9 @@ import Terminal from '../../../components/mdx/Terminal.astro';
 import Callout from '../../../components/mdx/Callout.astro';
 import Lessons from '../../../components/mdx/Lessons.astro';
 import Lesson from '../../../components/mdx/Lesson.astro';
+import StateMachine from '../../../components/mdx/StateMachine.astro';
 
-DOMPurify 3.0.8 had a mutation XSS edge case involving SVG foreign object elements. It was disclosed, patched, and fixed in 3.0.9. But DevForum was running 3.0.7, pinned, with no automated updates. A researcher found the edge case and submitted a payload through the comment form.
+DOMPurify 3.0.8 had a mutation XSS edge case involving SVG foreign object elements. It was disclosed, patched, and fixed in 3.0.9. But DevForum was running 3.0.8, pinned, with no automated updates. A researcher found the edge case and submitted a payload through the comment form.
 
 The payload passed DOMPurify. It landed in the DOM. It tried to execute.
 
@@ -194,6 +195,8 @@ Generate the hash for a specific inline script:
   language="openssl"
 />
 
+If you don't have `openssl` available locally, paste the script URL into [srihash.org](https://www.srihash.org) — it fetches the file and generates the hash for you.
+
 The resulting CSP directive:
 
 ```http
@@ -280,13 +283,30 @@ A violation report looks like this:
 }
 ```
 
-`blocked-uri: "inline"` means an inline script without a matching nonce would have been blocked. `violated-directive: "script-src-elem"` tells you which directive fired. `document-uri` tells you which page.
+`disposition: "report"` means the policy is in report-only mode — nothing was blocked, this is just a notification. `blocked-uri: "inline"` means an inline script without a matching nonce would have been blocked. `violated-directive: "script-src-elem"` tells you which directive fired. `document-uri` tells you which page.
 
 Run report-only for at least one full release cycle before switching to enforcement. Aggregate reports by `violated-directive` and `blocked-uri`. Fix every inline script that lacks a nonce. Add nonces to third-party script tags. Then flip to enforcement.
 
 <Callout type="tip" title="Report-only first, always">
   The cost of breaking a production app with an aggressive CSP is high. The cost of running report-only for two weeks is zero. The second step is never skipping the first.
 </Callout>
+
+<StateMachine
+  title="CSP Deployment Lifecycle — States and Transitions"
+  states={[
+    { id: "none",        label: "No CSP",          type: "error",    description: "No policy header set. All inline scripts execute. No violation data collected. XSS has no second line of defence." },
+    { id: "report_only", label: "Report-Only",                        description: "Content-Security-Policy-Report-Only active. Policy evaluated but nothing blocked. Violation reports collected for every would-be block." },
+    { id: "enforced",    label: "Enforced",         type: "terminal", description: "Content-Security-Policy active. Browser blocks violations before execution. Legitimate scripts must have nonces or hashes." },
+    { id: "incident",    label: "Broken in prod",   type: "error",    description: "Legitimate scripts blocked — users see broken features. Occurs when violations weren't fully resolved before switching to enforcement." },
+  ]}
+  transitions={[
+    { from: "none",        to: "report_only", label: "add CSP-Report-Only header" },
+    { from: "report_only", to: "enforced",    label: "violations resolved; switch header to CSP" },
+    { from: "report_only", to: "none",        label: "roll back (violation noise too high)" },
+    { from: "enforced",    to: "incident",    label: "unresolved violation blocks production script" },
+    { from: "incident",    to: "report_only", label: "revert to report-only; investigate" },
+  ]}
+/>
 
 ---
 

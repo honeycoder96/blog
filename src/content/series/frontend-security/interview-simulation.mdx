@@ -50,7 +50,16 @@ Four scenarios. Each one opens with a question you'll get. Each one has follow-u
   <A quality="strong">
     The biggest mistake is calling `DOMPurify.sanitize(input)` with no config and assuming the defaults are safe for your use case. They mostly are, but not always. I'd pass an explicit `ALLOWED_TAGS` list — `['p', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'blockquote', 'img', 'br']` — rather than relying on the deny-list default. An allow-list means new attack vectors are blocked by default; a deny-list means any vector you didn't think of gets through.
 
-    For links, I'd also pass `ALLOWED_ATTR: ['href', 'src', 'alt', 'title']` and make sure `ADD_ATTR: ['target']` is paired with `FORCE_ATTR: [['target', '_blank'], ['rel', 'noopener noreferrer']]` if you want links to open in a new tab safely.
+    For links, I'd also pass `ALLOWED_ATTR: ['href', 'src', 'alt', 'title']` and add `ADD_ATTR: ['target']` to permit the target attribute. To force `target="_blank"` and `rel="noopener noreferrer"` on every link after sanitisation, you'd use a DOMPurify hook rather than a config option — DOMPurify doesn't have a built-in "force attribute" config:
+
+    ```js
+    DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+      if (node.tagName === 'A') {
+        node.setAttribute('target', '_blank');
+        node.setAttribute('rel', 'noopener noreferrer');
+      }
+    });
+    ```
 
     The second mistake: running DOMPurify in Node.js without a real DOM. DOMPurify requires a browser DOM to sanitise correctly — in a Node environment you need jsdom and to pass it explicitly. Server-side sanitisation with an incorrect DOM can produce output that the browser then mutates into something unsafe — mutation XSS.
   </A>
@@ -211,7 +220,7 @@ Four scenarios. Each one opens with a question you'll get. Each one has follow-u
   <Q>Separately, the PR adds Stripe.js from `js.stripe.com` with no integrity attribute. Is that a concern?</Q>
 
   <A quality="strong">
-    It's a concern, yes, though Stripe.js is a case where there's a genuine operational reason for not pinning to an SRI hash. Stripe updates Stripe.js continuously and without versioned URLs — if you pin to a hash and Stripe pushes an update, your hash no longer matches and the payment form breaks. Stripe themselves document that SRI isn't compatible with their update model for the main `stripe.js` entry point.
+    It's a concern, yes, though Stripe.js is a case where there's a genuine operational reason for not pinning to an SRI hash. Stripe updates the content of `stripe.js` in place at the same URL without changing the path — if you pin to a hash and Stripe pushes an update, your hash no longer matches and the payment form breaks. Stripe themselves document that SRI isn't compatible with their update model for the main `stripe.js` entry point.
 
     That said, the concern is real: `js.stripe.com` is in your trust chain. If Stripe's CDN is compromised, the script executes with full origin access on your checkout page — including access to payment form fields.
 

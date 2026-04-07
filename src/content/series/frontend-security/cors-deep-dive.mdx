@@ -10,6 +10,7 @@ tags: [security, cors, same-origin-policy, preflight, http, headers, frontend]
 import SequenceDiagram from '../../../components/mdx/SequenceDiagram.astro';
 import PacketDiagram from '../../../components/mdx/PacketDiagram.astro';
 import Comparison from '../../../components/mdx/Comparison.astro';
+import DecisionFlow from '../../../components/mdx/DecisionFlow.astro';
 import Callout from '../../../components/mdx/Callout.astro';
 import Lessons from '../../../components/mdx/Lessons.astro';
 import Lesson from '../../../components/mdx/Lesson.astro';
@@ -61,6 +62,22 @@ The Same-Origin Policy restricts **JavaScript reading cross-origin responses**. 
 | `fetch()` or `XMLHttpRequest` — **sending** the request | Yes |
 | `fetch()` or `XMLHttpRequest` — **reading** the response | **No** — this is what SOP blocks |
 
+<SequenceDiagram
+  title="SOP Asymmetry — The Request Goes Through, the Read Does Not"
+  actors={[
+    { id: "evil",   label: "evil.com (malicious page)", variant: "malicious" },
+    { id: "browser", label: "Victim's Browser", icon: "browser" },
+    { id: "bank",   label: "yourbank.com", icon: "server", variant: "trusted" }
+  ]}
+  messages={[
+    { from: "evil",   to: "browser",  label: "fetch('https://yourbank.com/balance')", sublabel: "JavaScript running on evil.com", type: "attack" },
+    { from: "browser", to: "bank",    label: "GET /balance", sublabel: "Cookie: session=abc123 (auto-attached)", type: "request", highlight: true, annotation: "request goes through" },
+    { from: "bank",   to: "browser",  label: "200 OK — { balance: '$12,450' }", type: "response" },
+    { from: "browser", to: "evil",    label: "SOP blocks: evil.com cannot read response body", type: "blocked", annotation: "read is blocked" }
+  ]}
+  caption="SOP does not stop the request. The server receives it, processes it, and responds. SOP only prevents the originating page from reading the response. This is why CSRF is a separate problem — the state change happens before the read is blocked."
+/>
+
 The asymmetry is critical. The *request* goes through. The browser sends the POST to `api.devforum.com`. The server receives it and processes it. SOP blocks the JavaScript from *reading the response*. The state change already happened.
 
 This asymmetry is exactly why CSRF is a separate problem, not a CORS problem — and why we cover it in the next post.
@@ -101,7 +118,29 @@ What triggers a preflight:
 - `Content-Type: application/json` (or any non-simple type)
 - Any custom header (`Authorization`, `X-Request-ID`, `X-API-Key`)
 
-DevForum's API call: `fetch('https://api.devforum.com/v1/posts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' })` triggers a preflight because of the `application/json` content type.
+<DecisionFlow
+  title="Is This Request Simple or Preflighted?"
+  nodes={[
+    { id: "start",       type: "start",    label: "Cross-origin request" },
+    { id: "method",      type: "decision", label: "Method is GET, HEAD, or POST?" },
+    { id: "ctype",       type: "decision", label: "Content-Type is url-encoded, form-data, or text/plain?" },
+    { id: "headers",     type: "decision", label: "All headers are CORS-safelisted?", sublabel: "Accept, Content-Language, etc." },
+    { id: "simple",      type: "result",   label: "Simple request — no preflight" },
+    { id: "preflight",   type: "end",      label: "Preflighted — OPTIONS sent first" },
+  ]}
+  edges={[
+    { from: "start",   to: "method",    },
+    { from: "method",  to: "ctype",     label: "yes" },
+    { from: "method",  to: "preflight", label: "no" },
+    { from: "ctype",   to: "headers",   label: "yes" },
+    { from: "ctype",   to: "preflight", label: "no — e.g. application/json" },
+    { from: "headers", to: "simple",    label: "yes" },
+    { from: "headers", to: "preflight", label: "no — e.g. Authorization" },
+  ]}
+  caption="All three conditions must hold for a simple request. A single custom header or application/json Content-Type triggers a preflight. Most SPA API calls are preflighted."
+/>
+
+DevForum's API call: `fetch('https://api.devforum.com/v1/posts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' })` triggers a preflight because of the `application/json` content type. (`credentials: 'include'` means the browser will send cookies and `Authorization` headers with the request — a *credentialed* request. Credentialed requests are covered in detail in the next section.)
 
 <Callout type="tip" title="The preflight is working correctly">
   Developers sometimes treat the preflight OPTIONS request as overhead to eliminate. It exists to protect servers that weren't designed for cross-origin requests — the preflight lets the server consent before any state-changing request is sent. It is the spec working as intended.
@@ -177,6 +216,8 @@ If either is missing, the browser blocks the response from reaching JavaScript �
 ---
 
 ## `Vary: Origin` and CDN Caching
+
+CDNs (Content Delivery Networks) cache HTTP responses at edge servers close to your users — they store and replay responses rather than always hitting your origin server. This is what makes them fast, and it's what makes the next bug subtle.
 
 When `Access-Control-Allow-Origin` is set dynamically — different values for different requesting origins — the response must include `Vary: Origin`.
 

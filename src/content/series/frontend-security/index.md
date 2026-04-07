@@ -10,6 +10,7 @@ postOrder:
   - cors-deep-dive
   - csrf-patterns
   - cookie-security
+  - http-security-headers
   - supply-chain-risks
   - subresource-integrity
   - security-interview-playbook

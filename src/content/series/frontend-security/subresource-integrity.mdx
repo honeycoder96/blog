@@ -21,7 +21,7 @@ DevForum loads its analytics library from a CDN:
 <script src="https://cdn.analytics.io/track.min.js"></script>
 ```
 
-One Tuesday morning, a BGP route hijacking attack redirects traffic destined for `cdn.analytics.io` to an attacker-controlled server. The server responds to every request for `track.min.js` with a modified file — the original analytics code plus a keylogger that captures every keystroke on every page that loads the script.
+One Tuesday morning, a BGP route hijacking attack redirects traffic destined for `cdn.analytics.io` to an attacker-controlled server. (BGP — Border Gateway Protocol — is the system that determines which network path internet traffic takes. A misconfigured or malicious network operator can announce false routes that silently redirect traffic for a CDN's IP address to a different server entirely.) The server responds to every request for `track.min.js` with a modified file — the original analytics code plus a keylogger that captures every keystroke on every page that loads the script.
 
 DevForum's servers are fine. DevForum's code is unchanged. DevForum's database is untouched. But every user who visits DevForum that morning has their keystrokes recorded — including their passwords.
 
@@ -40,7 +40,7 @@ When you load a script from a CDN, you are implicitly trusting:
 
 A bug in any of these — a compromised CDN account, a BGP hijack, a cache poisoning attack — means your users execute whatever the CDN serves, with your site's full origin authority.
 
-**BGP hijacking** is the most technically sophisticated vector. BGP (Border Gateway Protocol) is the routing protocol that determines which network path traffic takes across the internet. A malicious or misconfigured network operator can announce false routes that redirect traffic for a CDN's IP range to a different server. The victim's DNS resolves correctly; the traffic takes a different physical path.
+**BGP hijacking** is the most technically sophisticated vector. BGP (Border Gateway Protocol) is the routing protocol that determines which network path traffic takes across the internet — think of it as the postal service's system of deciding which roads a letter travels, except the "roads" are network links between ISPs and data centres. A malicious or misconfigured network operator can announce false routes that redirect traffic for a CDN's IP range to a different server. The victim's DNS resolves correctly; the traffic takes a different physical path.
 
 **CDN account compromise** is the most common. The CDN account credentials are phished or credential-stuffed. The attacker uploads a modified version of the script and it propagates to CDN edge nodes within minutes.
 
@@ -185,6 +185,27 @@ Magecart is a collective term for a series of attacks targeting e-commerce check
 2. Compromise the CDN account or script hosting (via credential theft, supply chain injection)
 3. Add a card-skimming payload to the script — one that reads payment form fields and exfiltrates them
 4. Wait for users to check out
+
+<SequenceDiagram
+  title="Magecart Attack — CDN Compromise Skims Every Checkout"
+  actors={[
+    { id: "attacker", label: "Attacker", variant: "malicious" },
+    { id: "cdn",      label: "Third-Party CDN", icon: "server" },
+    { id: "browser",  label: "Victim's Browser", icon: "browser" },
+    { id: "site",     label: "shop.example.com", icon: "server", variant: "trusted" },
+    { id: "c2",       label: "attacker.com", icon: "server", variant: "malicious" }
+  ]}
+  messages={[
+    { from: "attacker", to: "cdn",     label: "Compromises CDN credentials", sublabel: "Modifies analytics.js to include card-skimmer payload", type: "attack" },
+    { from: "browser",  to: "site",    label: "GET /checkout", type: "request" },
+    { from: "site",     to: "browser", label: "200 OK — page with <script src='cdn.example.com/analytics.js'>", type: "response" },
+    { from: "browser",  to: "cdn",     label: "GET /analytics.js", type: "request" },
+    { from: "cdn",      to: "browser", label: "Returns analytics.js + hidden skimmer payload", type: "response", highlight: true, annotation: "shop.example.com not compromised" },
+    { from: "browser",  to: "browser", label: "Skimmer reads card number, CVV, billing address", type: "note", annotation: "full origin authority" },
+    { from: "browser",  to: "c2",      label: "POST — card data exfiltrated silently", type: "attack" }
+  ]}
+  caption="The shop's own server was never touched. The attack came through a script the checkout page loaded unconditionally. SRI would have blocked analytics.js the moment the CDN's content changed."
+/>
 
 The payload runs with the full origin authority of the compromised site. It can read every form field, every DOM element, every cookie. British Airways (2018, ~500,000 customers' card data), Ticketmaster (2018), and hundreds of smaller e-commerce sites were affected.
 

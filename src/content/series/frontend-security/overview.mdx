@@ -4,7 +4,7 @@ date: "Apr 2026"
 pubDate: 2026-04-07
 category: Security
 author: Honey Sharma
-summary: The attack surface map — four layers where a web app gets compromised, and the skills this series builds from scratch. Ten posts, one fictional app, every major frontend attack vector covered end to end. Start here.
+summary: The attack surface map — four layers where a web app gets compromised, and the skills this series builds from scratch. Eleven posts, one fictional app, every major frontend attack vector covered end to end. Start here.
 tags: [security, xss, csrf, cors, csp, supply-chain, sri, frontend]
 ---
 import Callout from '../../../components/mdx/Callout.astro';
@@ -27,6 +27,24 @@ This is the story of how well-intentioned frontend engineers get compromised by 
 **One fictional app, end to end.** Every post targets the same application: **DevForum** — a community forum where users register, post articles, comment, and manage profiles. Simple enough to stay out of the way. Realistic enough to make every attack immediately recognisable in your own code.
 
 **One vulnerability per post, completely owned.** A post on CSRF should leave you with a complete mental model of CSRF — not a surface-level summary that sends you to four other articles to finish the thought. Each post is complete on its own.
+
+## What You Need to Know First
+
+This series is written for frontend engineers who write React daily but have never thought about security systematically. You do not need any prior security knowledge — every concept is introduced from first principles.
+
+You do need three things:
+
+<Callout type="info" title="Prerequisites — the starting line">
+  **The browser DOM.** You know what `document.querySelector`, `innerHTML`, and event listeners are. You have used the browser DevTools at least to inspect elements and read console output.
+
+  **HTTP basics.** You know that a browser makes requests and servers send responses. You have seen a request header before — `Content-Type`, `Authorization` — even if you haven't thought deeply about them. You know what a cookie is and that the browser sends it automatically with requests to the same domain.
+
+  **Basic React.** You can read a React component and understand what gets rendered. You have used props, state, and at minimum seen `useEffect`. You do not need to know React internals.
+
+  That's it. If all three feel familiar, you are ready to start.
+</Callout>
+
+---
 
 ## The Attack Surface
 
@@ -64,12 +82,14 @@ Four layers. Four distinct ways the trust model breaks down. The series covers t
     **CORS** (Cross-Origin Resource Sharing) is widely misunderstood because it's actually two things: a browser restriction (Same-Origin Policy) and a relaxation mechanism (CORS headers). The post builds the Same-Origin Policy from first principles, explains the full preflight flow, and covers the wildcard trap and `Vary: Origin` CDN interaction most developers never encounter until they've already shipped a misconfiguration.
   </Step>
 
-  <Step title="Block 2 — Network & Auth Attacks (2 posts)">
+  <Step title="Block 2 — Network & Auth Attacks (3 posts)">
     Some attacks don't target the DOM at all. CSRF exploits the fact that browsers automatically attach cookies to every cross-site request — so a form on `evil.com` can POST to `devforum.com/account/delete` with the victim's valid session, and the server sees a legitimate-looking request.
 
     **CSRF: How Browsers Betray You** covers the attack mechanics and the server-side fixes: the synchronizer token pattern (the standard approach) and the double-submit cookie pattern (for stateless APIs). It also explains why CORS provides no CSRF protection, and why SameSite alone isn't the answer.
 
-    **Cookie Defences** takes the browser layer in full: every cookie security attribute (`HttpOnly`, `Secure`, `SameSite`), the `__Host-` and `__Secure-` prefixes that close the subdomain attack vector, cookie scoping, and the Fetch metadata request headers (`Sec-Fetch-Site`, `Sec-Fetch-Mode`, `Sec-Fetch-Dest`) that let servers reject cross-site state-changing requests before they reach business logic. The block closes with a defence-in-depth layer comparison showing what each mechanism stops — and what it misses.
+    **Cookie Defences** takes the browser layer in full: every cookie security attribute (`HttpOnly`, `Secure`, `SameSite`), the `__Host-` and `__Secure-` prefixes that close the subdomain attack vector, cookie scoping, and the Fetch metadata request headers (`Sec-Fetch-Site`, `Sec-Fetch-Mode`, `Sec-Fetch-Dest`) that let servers reject cross-site state-changing requests before they reach business logic.
+
+    **HTTP Security Headers** closes Block 2 with five response headers that each seal a distinct attack vector the previous posts leave open: clickjacking via transparent iframes (`X-Frame-Options` / `frame-ancestors`), SSL stripping on unencrypted connections (`Strict-Transport-Security`), MIME sniffing on uploaded files (`X-Content-Type-Options`), sensitive URL leakage to third-party analytics (`Referrer-Policy`), and cross-window scripted access via `window.opener` (`Cross-Origin-Opener-Policy`). Each header is a one-line server addition — the browser enforces it before any application code runs.
   </Step>
 
   <Step title="Block 3 — Supply Chain & Third-Party Trust (2 posts)">
@@ -154,6 +174,7 @@ The browser didn't do anything wrong by its own rules. The cookie was there, and
 |---|------|-------------------|
 | 4 | [CSRF: How Browsers Betray You (and the Token That Stops It)](/series/frontend-security/csrf-patterns) | CSRF mechanics, why CORS doesn't help, synchronizer token pattern, double-submit cookie pattern |
 | 5 | [Cookie Defences: SameSite, Prefixes, and Fetch Metadata](/series/frontend-security/cookie-security) | HttpOnly, Secure, SameSite variants, `__Host-` prefix, Fetch metadata resource isolation policy, defence-in-depth |
+| 6 | [HTTP Security Headers: Closing the Gaps CSP Doesn't Cover](/series/frontend-security/http-security-headers) | Clickjacking and frame-ancestors, HSTS and SSL stripping, X-Content-Type-Options, Referrer-Policy, Cross-Origin-Opener-Policy |
 
 ---
 
@@ -161,8 +182,8 @@ The browser didn't do anything wrong by its own rules. The cookie was there, and
 
 | # | Post | What you'll learn |
 |---|------|-------------------|
-| 6 | [Supply Chain Attacks: When Your Dependencies Attack You](/series/frontend-security/supply-chain-risks) | event-stream incident, typosquatting, dependency confusion, postinstall hooks, practical mitigations |
-| 7 | [Subresource Integrity & Third-Party Script Trust](/series/frontend-security/subresource-integrity) | CDN trust boundary, SRI hash generation, crossorigin requirement, Magecart attacks, Permissions-Policy |
+| 7 | [Supply Chain Attacks: When Your Dependencies Attack You](/series/frontend-security/supply-chain-risks) | event-stream incident, typosquatting, dependency confusion, postinstall hooks, practical mitigations |
+| 8 | [Subresource Integrity & Third-Party Script Trust](/series/frontend-security/subresource-integrity) | CDN trust boundary, SRI hash generation, crossorigin requirement, Magecart attacks, Permissions-Policy |
 
 ---
 
@@ -170,8 +191,8 @@ The browser didn't do anything wrong by its own rules. The cookie was there, and
 
 | # | Post | What you'll learn |
 |---|------|-------------------|
-| 8 | [The Frontend Security Interview Playbook](/series/frontend-security/security-interview-playbook) | Threat model framework, XSS mitigation decision tree, four scenario walkthroughs, tradeoff questions, code review red flags |
-| 9 | [Frontend Security: Live Interview Simulation](/series/frontend-security/interview-simulation) | Four complete interview dialogues — XSS/CSP, CORS, CSRF/cookies, supply chain — with escalating follow-ups and annotated strong/partial answers |
+| 9 | [The Frontend Security Interview Playbook](/series/frontend-security/security-interview-playbook) | Threat model framework, XSS mitigation decision tree, four scenario walkthroughs, tradeoff questions, code review red flags |
+| 10 | [Frontend Security: Live Interview Simulation](/series/frontend-security/interview-simulation) | Four complete interview dialogues — XSS/CSP, CORS, CSRF/cookies, supply chain — with escalating follow-ups and annotated strong/partial answers |
 
 ---
 
@@ -179,7 +200,7 @@ The browser didn't do anything wrong by its own rules. The cookie was there, and
 
 | # | Post | What you'll learn |
 |---|------|-------------------|
-| 10 | [The Security Mindset: From Checklist to Instinct](/series/frontend-security/security-mindset) | DevForum's complete hardened posture, four mental models that persist after the specifics fade, six evergreen code review questions, further reading |
+| 11 | [The Security Mindset: From Checklist to Instinct](/series/frontend-security/security-mindset) | DevForum's complete hardened posture, four mental models that persist after the specifics fade, six evergreen code review questions, further reading |
 
 ---
 
