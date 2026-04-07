@@ -1,0 +1,355 @@
+---
+type LayerVariant = 'reset' | 'base' | 'tokens' | 'components' | 'utilities' | 'unlayered';
+
+interface Layer {
+  /** Layer name exactly as written in @layer — use "(unlayered)" for styles outside any layer */
+  name: string;
+  /** One-line description shown beneath the name */
+  description?: string;
+  /** Representative rules to display inside the card */
+  rules?: string[];
+  /** Visual colour variant for the left accent bar */
+  variant?: LayerVariant;
+  /** Add a glow highlight to this layer */
+  highlight?: boolean;
+}
+
+interface Props {
+  layers: Layer[];
+  title?: string;
+  caption?: string;
+  /** Show a "↑ PRIORITY" sidebar on the right */
+  showPriorityArrow?: boolean;
+}
+
+const { layers, title, caption, showPriorityArrow = false } = Astro.props;
+
+// Input is ordered low-priority → high-priority (e.g. reset first, unlayered last).
+// We reverse so the visual order is high-priority on top, low-priority on bottom.
+const displayLayers = [...layers].reverse();
+---
+
+<div class="cls-wrap">
+  {title && <div class="cls-header">{title}</div>}
+
+  <div class="cls-body">
+    {/* ── Priority indicator labels ───────────────────────────── */}
+    {showPriorityArrow && (
+      <div class="cls-priority-labels">
+        <span class="cls-priority-label cls-priority-label--high">↑ high priority</span>
+        <span class="cls-priority-label cls-priority-label--low">↓ low priority</span>
+      </div>
+    )}
+
+    <div class:list={['cls-layout', showPriorityArrow && 'cls-layout--with-arrow']}>
+      {/* ── Layer stack ────────────────────────────────────────── */}
+      <div class="cls-stack">
+        {displayLayers.map((layer) => {
+          const v = layer.variant ?? 'base';
+          const isUnlayered = v === 'unlayered';
+          return (
+            <div
+              class:list={[
+                'cls-layer',
+                `cls-layer--${v}`,
+                layer.highlight && 'cls-layer--hl',
+                isUnlayered    && 'cls-layer--unlayered-card',
+              ]}
+            >
+              {/* Coloured left accent bar */}
+              <div class="cls-accent" aria-hidden="true" />
+
+              {/* Card content */}
+              <div class="cls-content">
+                <div class="cls-name-row">
+                  <code class="cls-name">
+                    {isUnlayered ? layer.name : `@layer ${layer.name}`}
+                  </code>
+                  {isUnlayered && (
+                    <span class="cls-always-wins-badge">always wins</span>
+                  )}
+                  {layer.highlight && !isUnlayered && (
+                    <span class="cls-hl-badge">active</span>
+                  )}
+                </div>
+
+                {layer.description && (
+                  <p class="cls-desc">{layer.description}</p>
+                )}
+
+                {layer.rules && layer.rules.length > 0 && (
+                  <div class="cls-rules">
+                    {layer.rules.map(rule => (
+                      <code class="cls-rule">{rule}</code>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Priority arrow sidebar ─────────────────────────────── */}
+      {showPriorityArrow && (
+        <div class="cls-arrow-col" aria-label="priority increases upward">
+          <span class="cls-arrow-text">PRIORITY</span>
+        </div>
+      )}
+    </div>
+  </div>
+
+  {caption && <div class="cls-caption">{caption}</div>}
+</div>
+
+<style>
+  /* ── Shell ────────────────────────────────────────────────────────────── */
+  .cls-wrap {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .cls-header {
+    padding: 0.625rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-fg-faint);
+  }
+
+  .cls-body {
+    background: var(--theme-bg-inset);
+    padding: 1rem;
+  }
+
+  .cls-caption {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--theme-fg-faint);
+    font-style: italic;
+    text-align: center;
+    border-top: 1px solid var(--theme-line);
+    background: var(--theme-bg-raised);
+  }
+
+  /* ── Priority edge labels ─────────────────────────────────────────────── */
+  .cls-priority-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.375rem;
+    padding: 0 0.25rem;
+  }
+
+  .cls-priority-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .cls-priority-label--high { color: rgba(34, 197, 94, 0.7); }
+  .cls-priority-label--low  { color: var(--theme-fg-ghost); }
+
+  /* ── Layout: stack + optional sidebar ────────────────────────────────── */
+  .cls-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .cls-layout--with-arrow {
+    grid-template-columns: 1fr auto;
+    gap: 0;
+  }
+
+  /* ── Layer stack ──────────────────────────────────────────────────────── */
+  .cls-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  /* ── Individual layer card ────────────────────────────────────────────── */
+  .cls-layer {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid var(--theme-line);
+    background: var(--theme-bg-raised);
+    transition: background 0.12s;
+  }
+
+  .cls-layer:last-child {
+    border-bottom: none;
+  }
+
+  /* "Unlayered" card gets a dashed top border for visual distinction */
+  .cls-layer--unlayered-card {
+    background: rgba(239, 68, 68, 0.04);
+    border-bottom-style: dashed;
+    border-bottom-color: rgba(239, 68, 68, 0.2);
+  }
+
+  .cls-layer--unlayered-card:first-child {
+    border-top: 1px dashed rgba(239, 68, 68, 0.2);
+  }
+
+  .cls-layer--hl {
+    background: var(--theme-bg-raised);
+  }
+
+  /* ── Colour accent bar ────────────────────────────────────────────────── */
+  .cls-accent {
+    width: 4px;
+    flex-shrink: 0;
+  }
+
+  .cls-layer--hl .cls-accent {
+    width: 5px;
+  }
+
+  /* Accent colours per variant */
+  .cls-layer--reset      .cls-accent { background: #6b7280; }
+  .cls-layer--base       .cls-accent { background: #6366f1; }
+  .cls-layer--tokens     .cls-accent { background: #a855f7; }
+  .cls-layer--components .cls-accent { background: #0ea5e9; }
+  .cls-layer--utilities  .cls-accent { background: #22c55e; }
+  .cls-layer--unlayered  .cls-accent { background: #ef4444; }
+
+  /* ── Card content ─────────────────────────────────────────────────────── */
+  .cls-content {
+    padding: 0.625rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .cls-name-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .cls-name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--theme-fg-default);
+  }
+
+  /* Tint @layer name to match accent colour */
+  .cls-layer--reset      .cls-name { color: #9ca3af; }
+  .cls-layer--base       .cls-name { color: #818cf8; }
+  .cls-layer--tokens     .cls-name { color: #c084fc; }
+  .cls-layer--components .cls-name { color: #38bdf8; }
+  .cls-layer--utilities  .cls-name { color: #4ade80; }
+  .cls-layer--unlayered  .cls-name { color: #f87171; }
+
+  .cls-always-wins-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.1rem 0.45rem;
+    border-radius: 4px;
+    background: rgba(239, 68, 68, 0.14);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.28);
+  }
+
+  .cls-hl-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.1rem 0.45rem;
+    border-radius: 4px;
+    background: rgba(34, 197, 94, 0.14);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.28);
+  }
+
+  .cls-desc {
+    font-size: 0.78rem;
+    color: var(--theme-fg-faint);
+    margin: 0;
+    line-height: 1.45;
+  }
+
+  .cls-rules {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 0.1rem;
+  }
+
+  .cls-rule {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.7rem;
+    color: var(--theme-fg-ghost);
+    background: var(--theme-bg-inset);
+    border: 1px solid var(--theme-line);
+    border-radius: 4px;
+    padding: 0.1rem 0.4rem;
+  }
+
+  /* ── Priority arrow sidebar ───────────────────────────────────────────── */
+  .cls-arrow-col {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    border-left: 1px solid var(--theme-line);
+    background: var(--theme-bg-raised);
+    position: relative;
+  }
+
+  /* Upward gradient line running the full height */
+  .cls-arrow-col::before {
+    content: '';
+    position: absolute;
+    top: 10%;
+    bottom: 10%;
+    left: 50%;
+    width: 1px;
+    background: linear-gradient(
+      to top,
+      var(--theme-line-strong),
+      rgba(34, 197, 94, 0.6)
+    );
+    transform: translateX(-50%);
+  }
+
+  /* Arrowhead at the top */
+  .cls-arrow-col::after {
+    content: '';
+    position: absolute;
+    top: calc(10% - 5px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 6px solid rgba(34, 197, 94, 0.6);
+  }
+
+  .cls-arrow-text {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--theme-fg-ghost);
+    position: relative;
+    z-index: 1;
+    background: var(--theme-bg-raised);
+    padding: 0.25rem 0;
+  }
+</style>

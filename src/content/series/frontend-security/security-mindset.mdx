@@ -1,0 +1,199 @@
+---
+title: "The Security Mindset: From Checklist to Instinct"
+date: "Jun 2026"
+pubDate: 2026-06-23
+category: Security
+author: Honey Sharma
+summary: The series is done. The practice isn't. This post closes DevForum's story with a complete before/after security posture, four mental models that outlast any specific vulnerability, the evergreen questions to ask in any code review, and where to go next.
+tags: [security, mindset, xss, csp, cors, csrf, supply-chain, sri, frontend]
+---
+import Comparison from '../../../components/mdx/Comparison.astro';
+import Callout from '../../../components/mdx/Callout.astro';
+import Lessons from '../../../components/mdx/Lessons.astro';
+import Lesson from '../../../components/mdx/Lesson.astro';
+
+When the series started, DevForum's comment renderer had `dangerouslySetInnerHTML` passing raw user input straight to the DOM. One comment field. One escape hatch. Hundreds of sessions hijacked.
+
+That version of DevForum still exists — in the same codebase, running the same React components. What changed isn't the code history. What changed is the mental model of the engineer who maintains it. They now know what they were sitting on.
+
+This post closes DevForum's story: the complete hardened security posture across all nine posts, the four mental models that stay useful after the specifics fade, the questions to ask in any code review from here on, and where to go next.
+
+---
+
+## DevForum's Complete Security Posture
+
+Across the series, DevForum moved from zero deliberate security posture to a layered defence across every attack surface. Here it is in one view.
+
+<Comparison
+  headers={["Attack vector", "Vulnerable state (post 0)", "Hardened state (post 9)", "Covered in"]}
+  rows={[
+    [
+      "Stored XSS via comment renderer",
+      "dangerouslySetInnerHTML with raw user input, no sanitisation",
+      "DOMPurify with explicit ALLOWED_TAGS allow-list; nonce-based CSP as backstop",
+      "XSS Anatomy + CSP"
+    ],
+    [
+      "Reflected XSS via URL parameters",
+      "URL params interpolated into server-rendered HTML without encoding",
+      "Framework-level output encoding (React) + CSP blocks any payload that survives encoding",
+      "XSS Anatomy + CSP"
+    ],
+    [
+      "DOM-based XSS via location.hash",
+      "Client-side JS reads location.hash and writes to innerHTML",
+      "DOM API replaced with textContent; no innerHTML for user-controlled values",
+      "XSS Anatomy"
+    ],
+    [
+      "Cross-origin data theft",
+      "API returns Access-Control-Allow-Origin: * on authenticated endpoints",
+      "Strict CORS: specific origins only, credentialed routes require explicit allowlist match, Vary: Origin set",
+      "CORS"
+    ],
+    [
+      "CSRF on account actions",
+      "POST /account/delete requires only a valid session cookie — no origin check",
+      "Synchronizer CSRF token on all state-changing endpoints + SameSite=Strict + Sec-Fetch-Site verification",
+      "CSRF + Cookie Defences"
+    ],
+    [
+      "Session cookie theft via network",
+      "Session cookie set without Secure or HttpOnly",
+      "__Host-session cookie: HttpOnly, Secure, SameSite=Strict, Path=/, no Domain attribute",
+      "Cookie Defences"
+    ],
+    [
+      "Supply chain compromise via npm",
+      "npm install in CI with no script restrictions; no lockfile integrity checks",
+      "npm ci --ignore-scripts in CI; lockfile committed; Socket.dev on PRs; private registry for internal scopes",
+      "Supply Chain"
+    ],
+    [
+      "CDN compromise on analytics script",
+      "<script src=cdn.analytics.io/track.min.js> with no integrity check",
+      "integrity=sha256-{hash} + crossorigin=anonymous; require-sri-for in CSP; connect-src restricts exfiltration",
+      "Subresource Integrity"
+    ],
+    [
+      "Injected script executing after bypass",
+      "No CSP — any script that lands in the DOM executes",
+      "script-src 'nonce-{random}' 'strict-dynamic'; base-uri 'self'; object-src 'none'",
+      "CSP"
+    ],
+    [
+      "Third-party script API access",
+      "Analytics script has unrestricted access to camera, payment APIs, geolocation",
+      "Permissions-Policy: camera=(), microphone=(), payment=(self), geolocation=()",
+      "Subresource Integrity"
+    ],
+  ]}
+  caption="Ten attack vectors. Each one was either present by default or undefended. Each one now has at least two layers of mitigation — one that prevents, one that contains."
+/>
+
+No single post in this series fixed everything. No single post was meant to. Security is additive: each layer assumes the previous one will sometimes fail.
+
+---
+
+## Four Mental Models That Outlast the Specifics
+
+Vulnerability names change. Browser behaviour evolves. Libraries get deprecated. But the reasoning patterns that produced the defences above don't change — they apply to any new attack surface you encounter.
+
+### 1. Every trust boundary is an attack surface
+
+A trust boundary is the line between "code I control" and "code or data I don't." DevForum has four of them:
+- The DOM: where user-supplied text meets executable context
+- The network: where cross-origin requests meet cookie attachment
+- The auth layer: where browser-sent cookies meet server-assumed intent
+- The dependency graph: where `npm install` meets arbitrary code execution
+
+The moment you identify a trust boundary, the attack question becomes: what happens when the thing on the other side of this boundary is controlled by an attacker? That question precedes any specific vulnerability name.
+
+When you start a new project, draw the trust boundaries before writing a line of code. The list of trust boundaries *is* the threat model.
+
+### 2. Defence-in-depth: every layer assumes the previous one fails
+
+This series repeated one pattern across every block:
+- DOMPurify sanitises. CSP catches what DOMPurify misses.
+- SameSite reduces the CSRF attack surface. CSRF tokens close it regardless of cookie settings.
+- SRI validates CDN content. CSP `connect-src` limits exfiltration if SRI is bypassed.
+- `npm ci --ignore-scripts` blocks postinstall attacks. Socket.dev catches suspicious packages before install.
+
+A defence that assumes it will never fail is a single point of failure. The correct posture is: "this layer will sometimes be bypassed — what catches it when it is?"
+
+This is not paranoia. It's the lesson from every security incident in this series. DOMPurify 3.0.7 had a mutation XSS edge case. The CSP caught it. The correct reaction to that story is not "we need a better sanitiser." It's "we need the CSP."
+
+### 3. Attack first: understanding the mechanism beats memorising the fix
+
+Every post in this series showed the attack before the defence. That sequence was deliberate. A developer who knows "add HttpOnly to cookies" without knowing *why* will remove it when it breaks something without understanding the consequence. A developer who has traced a session hijack through the XSS → `document.cookie` → exfiltration chain understands exactly why removing HttpOnly matters.
+
+When you encounter a new security concept — a new browser API, a new header, a new library — find the attack it defends against before reading the implementation guide. The attack tells you what you're actually protecting. The implementation tells you how. Without the first, the second is just configuration.
+
+### 4. Name the cost, or you won't deploy it
+
+Every defence in this series has a cost:
+- Nonce-based CSP requires SSR or a nonce injection step
+- SRI requires updating hashes when a CDN script changes
+- CSRF tokens add request complexity for stateless APIs
+- `npm ci --ignore-scripts` breaks dependencies with legitimate postinstall steps
+
+A defence you don't deploy because the operational cost surprised you at implementation time is no defence at all. Name the cost explicitly when proposing a defence. "We should add SRI to our CDN scripts — that means subscribing to release notifications from each CDN-hosted library and updating hashes as part of each release" is a proposal that can be planned and resourced. "We should add SRI" is a proposal that gets agreed to and forgotten.
+
+---
+
+## The Evergreen Questions
+
+These questions apply to any feature, any PR, any design review — not specific to any vulnerability, but derived from the series as a whole.
+
+<Lessons title="Questions to Ask in Any Code Review" type="recommendations">
+  <Lesson title="Where does user-controlled data enter the system, and where does it exit?">
+    Trace the data path from input to output. Every point where user-controlled data crosses a trust boundary — into the DOM, into a SQL query, into a cookie value, into a subprocess — is a potential injection vector. Name each crossing point explicitly.
+  </Lesson>
+  <Lesson title="What is the second layer if this defence fails?">
+    For every primary defence you deploy, ask what catches an attacker if that defence is bypassed. DOMPurify → CSP. SameSite cookies → CSRF tokens. SRI → connect-src exfiltration limits. If there is no second layer, the primary defence is a single point of failure.
+  </Lesson>
+  <Lesson title="Who controls the code that runs on this page?">
+    List every external JavaScript source: CDN-hosted libraries, analytics scripts, A/B testing tools, payment widgets, chat providers. Each one runs with your site's full origin authority. Each one extends your attack surface to include that provider's entire security posture. Is the operational risk of each one proportional to its value?
+  </Lesson>
+  <Lesson title="What does this cookie scope allow that it shouldn't?">
+    For every cookie: is it readable by JavaScript when it doesn't need to be (HttpOnly missing)? Is it sent over HTTP when it should require HTTPS (Secure missing)? Is it sent on cross-site requests when it shouldn't be (SameSite missing or None)? Could a subdomain set or override it (__Host- prefix missing)? Cookie scope bugs are consistently exploited because they're invisible until they're not.
+  </Lesson>
+  <Lesson title="What does this new dependency actually do on install?">
+    For every new npm package: does it have a postinstall script? What does that script do? How long has this maintainer owned this package? Has ownership changed recently? These questions take two minutes and catch the class of attack that npm audit never will.
+  </Lesson>
+  <Lesson title="What are the limits of this defence?">
+    Name explicitly what each defence does not protect against. SameSite=Lax doesn't protect GET state changes or subdomains. SRI doesn't protect against dynamically injected scripts. CSP script-src doesn't protect against XSS within an approved origin. If you can't name the limits, you don't fully understand the defence — and you'll rely on it past its boundary.
+  </Lesson>
+</Lessons>
+
+---
+
+## Where to Go Next
+
+The series covered the browser security model, authentication attacks, and supply chain risks. These are the right starting points. They're not the end.
+
+**OWASP Top 10** is the canonical list of the most critical web application security risks. The series covered several of them (Injection, Broken Access Control, Security Misconfiguration, Vulnerable and Outdated Components) but not all. Read the entries for the ones not covered here — particularly A02 (Cryptographic Failures) and A07 (Identification and Authentication Failures).
+
+**MDN Web Security** is the most reliable reference for the browser-level mechanisms covered in this series — the Same-Origin Policy, CORS, CSP, cookie attributes, and Fetch metadata headers. When you need to verify a specific detail, MDN's documentation is more reliable than most security blog posts.
+
+**PortSwigger Web Security Academy** has free, interactive labs for every vulnerability class covered in this series — and many more. The XSS, CSRF, and CORS labs in particular let you exploit real vulnerable applications, which is the fastest way to move from "I understand this" to "I have instincts about this."
+
+**browser.security.im** (the browser security handbook by Google) covers the browser's security model in significantly more depth than this series — particularly the trust model for extensions, frames, and service workers that this series only touched on peripherally.
+
+**Supply chain specifically:** Deps.dev (from Google) and Socket.dev both provide ongoing dependency intelligence that goes beyond `npm audit`. If your team ships a high-traffic application, these tools are worth integrating into the PR review pipeline permanently, not just during active security review cycles.
+
+<Callout type="tip" title="One thing to do this week">
+  Pick one PR from your team's recent history — a real one, already merged. Apply the six questions above to it. Not to find something to fix, but to practice the pattern. The habit of asking these questions during review is worth more than any single specific fix.
+</Callout>
+
+---
+
+## The Series Ends Here
+
+DevForum still runs. The comment renderer still renders markdown. The session cookie is still there on every authenticated request. The npm dependency tree still has 1,089 packages the team didn't write.
+
+But the engineer who maintains it now reads code differently. They see `dangerouslySetInnerHTML` and immediately ask: what data reaches this? They see a new `<script>` tag in a PR and immediately ask: does this have an integrity attribute? They see a state-changing API endpoint and immediately ask: is there a CSRF token check?
+
+That shift — from "I know the rules" to "I see the risk before being told to look for it" — is what this series was trying to build. Not a list of things to remember. An instinct for where things can go wrong.
+
+The series ends. The practice doesn't.

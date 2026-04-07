@@ -1,0 +1,126 @@
+---
+interface Props {
+  scenario: string;
+  context?: string;
+  topic?: 'xss' | 'csp' | 'cors' | 'csrf' | 'cookies' | 'supply-chain' | 'sri' | 'general';
+}
+
+const { scenario, context, topic = 'general' } = Astro.props;
+
+const topicColors: Record<string, { bg: string; badge: string }> = {
+  xss:            { bg: 'var(--iv-xss-bg)',    badge: 'var(--iv-xss-badge)' },
+  csp:            { bg: 'var(--iv-csp-bg)',    badge: 'var(--iv-csp-badge)' },
+  cors:           { bg: 'var(--iv-cors-bg)',   badge: 'var(--iv-cors-badge)' },
+  csrf:           { bg: 'var(--iv-csrf-bg)',   badge: 'var(--iv-csrf-badge)' },
+  cookies:        { bg: 'var(--iv-cookies-bg)', badge: 'var(--iv-cookies-badge)' },
+  'supply-chain': { bg: 'var(--iv-sc-bg)',     badge: 'var(--iv-sc-badge)' },
+  sri:            { bg: 'var(--iv-sri-bg)',    badge: 'var(--iv-sri-badge)' },
+  general:        { bg: 'var(--iv-gen-bg)',    badge: 'var(--iv-gen-badge)' },
+};
+
+const colors = topicColors[topic];
+---
+
+<div class="iv-scenario" style={`--iv-scenario-bg: ${colors.bg}; --iv-badge-color: ${colors.badge};`}>
+  <div class="iv-scenario-header">
+    <span class="iv-topic-badge">{topic === 'supply-chain' ? 'supply chain' : topic}</span>
+    <span class="iv-scenario-label">{scenario}</span>
+  </div>
+  {context && <p class="iv-scenario-context">{context}</p>}
+  <div class="iv-turns">
+    <slot />
+  </div>
+</div>
+
+<style is:global>
+  /* Topic colour tokens */
+  :root {
+    --iv-xss-bg:      oklch(97% 0.01 25);
+    --iv-xss-badge:   oklch(45% 0.18 25);
+    --iv-csp-bg:      oklch(97% 0.01 260);
+    --iv-csp-badge:   oklch(45% 0.18 260);
+    --iv-cors-bg:     oklch(97% 0.01 200);
+    --iv-cors-badge:  oklch(42% 0.16 200);
+    --iv-csrf-bg:     oklch(97% 0.01 320);
+    --iv-csrf-badge:  oklch(44% 0.18 320);
+    --iv-cookies-bg:  oklch(97% 0.01 160);
+    --iv-cookies-badge: oklch(40% 0.15 160);
+    --iv-sc-bg:       oklch(97% 0.01 60);
+    --iv-sc-badge:    oklch(43% 0.17 60);
+    --iv-sri-bg:      oklch(97% 0.01 130);
+    --iv-sri-badge:   oklch(41% 0.16 130);
+    --iv-gen-bg:      var(--theme-bg-raised);
+    --iv-gen-badge:   var(--theme-fg-muted);
+  }
+
+  [data-theme="dark"] {
+    --iv-xss-bg:      oklch(20% 0.04 25);
+    --iv-xss-badge:   oklch(72% 0.14 25);
+    --iv-csp-bg:      oklch(20% 0.04 260);
+    --iv-csp-badge:   oklch(72% 0.14 260);
+    --iv-cors-bg:     oklch(20% 0.04 200);
+    --iv-cors-badge:  oklch(72% 0.14 200);
+    --iv-csrf-bg:     oklch(20% 0.04 320);
+    --iv-csrf-badge:  oklch(72% 0.14 320);
+    --iv-cookies-bg:  oklch(20% 0.04 160);
+    --iv-cookies-badge: oklch(72% 0.14 160);
+    --iv-sc-bg:       oklch(20% 0.04 60);
+    --iv-sc-badge:    oklch(72% 0.14 60);
+    --iv-sri-bg:      oklch(20% 0.04 130);
+    --iv-sri-badge:   oklch(72% 0.14 130);
+    --iv-gen-bg:      var(--theme-bg-raised);
+    --iv-gen-badge:   var(--theme-fg-muted);
+  }
+
+  .iv-scenario {
+    margin: 2.5rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--iv-scenario-bg);
+  }
+
+  .iv-scenario-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--theme-line);
+    background: var(--theme-bg-raised);
+  }
+
+  .iv-topic-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--iv-badge-color);
+    background: color-mix(in oklch, var(--iv-badge-color) 12%, transparent);
+    border: 1px solid color-mix(in oklch, var(--iv-badge-color) 30%, transparent);
+    padding: 0.2em 0.6em;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .iv-scenario-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--theme-fg-default);
+    font-family: "Clash Display", sans-serif;
+  }
+
+  .iv-scenario-context {
+    margin: 0;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.825rem;
+    color: var(--theme-fg-muted);
+    line-height: 1.6;
+    border-bottom: 1px solid var(--theme-line);
+    background: color-mix(in oklch, var(--theme-bg-raised) 60%, transparent);
+    font-style: italic;
+  }
+
+  .iv-turns {
+    padding: 0.5rem 0;
+  }
+</style>

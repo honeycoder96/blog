@@ -1,0 +1,398 @@
+---
+title: "Cookie Defences: SameSite, Prefixes, and Fetch Metadata"
+date: "May 2026"
+pubDate: 2026-05-12
+category: Security
+author: Honey Sharma
+summary: Synchronizer tokens stop CSRF at the server. SameSite, __Host- prefix, and Fetch metadata stop it at the browser — before the forged request ever reaches business logic. This post covers every cookie security attribute and the Fetch metadata guard that completes the defence.
+tags: [security, csrf, cookies, samesite, fetch-metadata, headers, frontend]
+---
+import PacketDiagram from '../../../components/mdx/PacketDiagram.astro';
+import DecisionFlow from '../../../components/mdx/DecisionFlow.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import Callout from '../../../components/mdx/Callout.astro';
+import Lessons from '../../../components/mdx/Lessons.astro';
+import Lesson from '../../../components/mdx/Lesson.astro';
+
+The previous post ended with CSRF tokens — the server-side layer that validates every state-changing request carries a secret only the legitimate client could know.
+
+But tokens are not the only layer. Cookies themselves can be hardened so the browser refuses to send them on cross-site requests in the first place. Request headers set by the browser — headers the attacker cannot forge — can tell your server whether a request originated from your own site or from somewhere else. Used together, these layers mean a CSRF attack never reaches the token validator, never reaches the business logic, and in many cases never leaves the browser at all.
+
+---
+
+## The Three Cookie Security Flags
+
+Before covering SameSite, two other flags that every session cookie should carry:
+
+### `HttpOnly`
+
+```http
+Set-Cookie: session=abc123; HttpOnly
+```
+
+JavaScript cannot read an `HttpOnly` cookie. `document.cookie` will not include it. A DevTools console cannot inspect its value.
+
+This is primarily an XSS mitigation. The canonical XSS payload steals `document.cookie`. If the session cookie is `HttpOnly`, there is nothing to steal — the script can read every other cookie, but not the one that matters.
+
+<Callout type="info" title="HttpOnly does not prevent cookie transmission">
+  An `HttpOnly` cookie is still sent with every request — the browser just does not expose it to JavaScript. The CSRF attack still works because the browser attaches the cookie automatically; the attacker's forged form post receives the cookie even though their JavaScript could not read it. HttpOnly prevents XSS cookie theft, not CSRF.
+</Callout>
+
+### `Secure`
+
+```http
+Set-Cookie: session=abc123; Secure
+```
+
+The browser only sends a `Secure` cookie over HTTPS. It is never transmitted over HTTP, even if the user navigates to an `http://` URL of the same domain.
+
+This prevents the session cookie from being intercepted on an unencrypted connection — a real risk on public WiFi, where HTTP traffic is trivially observable. In 2026, HTTPS is essentially universal, but `Secure` remains mandatory — it is a hard guarantee, not a convention.
+
+<Callout type="warning" title="Secure does not mean encrypted at rest">
+  `Secure` controls transmission only. The cookie value is stored in the browser's cookie jar in plaintext. Other security mechanisms — rotating sessions, short TTLs, binding sessions to user-agent or IP fingerprints — protect the stored value against local access.
+</Callout>
+
+---
+
+## SameSite: How the Browser Filters Cross-Site Requests
+
+`SameSite` tells the browser which cross-site contexts should include the cookie. It has three values, each with very different behaviour.
+
+### `SameSite=Strict`
+
+The browser never sends the cookie on any cross-site request — not navigations, not form submissions, not fetches.
+
+```http
+Set-Cookie: session=abc123; SameSite=Strict; Secure; HttpOnly
+```
+
+If a user has a DevForum tab open and clicks a link to DevForum from another site, the browser sends them to DevForum without the session cookie. They arrive as a logged-out user and must authenticate before their session is attached. Only subsequent navigations *within* DevForum carry the cookie.
+
+This is complete CSRF protection — but the UX friction is real. Sharing a link to a DevForum post via email means every recipient arrives logged out, even if they have an active session.
+
+### `SameSite=Lax`
+
+The default in Chrome since 2020. `Lax` permits cookies on **top-level navigations using safe HTTP methods** (GET, HEAD) from cross-site contexts. It blocks cookies on all other cross-site requests — form POSTs, fetch calls, iframes, and non-navigational image loads.
+
+```http
+Set-Cookie: session=abc123; SameSite=Lax; Secure; HttpOnly
+```
+
+A user clicks a link from Twitter to DevForum — the cookie is sent. The link takes them to a DevForum page, which looks up their session, and they arrive logged in. A forged form POST from `evil.com` — no cookie.
+
+`Lax` eliminates most CSRF vectors while preserving the "click a link, stay logged in" behaviour that `Strict` breaks.
+
+### `SameSite=None`
+
+The cookie is sent on all cross-site requests. Requires `Secure`.
+
+```http
+Set-Cookie: session=abc123; SameSite=None; Secure; HttpOnly
+```
+
+This is the pre-2020 default and the setting required for third-party contexts: payment iframes, embedded widgets, cross-site SSO. A `SameSite=None` session cookie is fully vulnerable to CSRF — every defence from this post is necessary.
+
+<Comparison
+  headers={["Attribute", "Cross-site form POST", "Cross-site fetch()", "Cross-site top-level link", "Use case"]}
+  rows={[
+    ["SameSite=Strict", "Cookie not sent", "Cookie not sent", "Cookie not sent",                        "Maximum CSRF protection; breaks cross-site link sessions"],
+    ["SameSite=Lax",    "Cookie not sent", "Cookie not sent", "Cookie sent (safe methods only)",        "Good default; covers most CSRF; minor UX impact"],
+    ["SameSite=None",   "Cookie sent",     "Cookie sent",     "Cookie sent",                           "Third-party contexts only; requires full CSRF token defence"],
+  ]}
+  caption="Lax is the browser default since Chrome 80 (2020). Strict provides stronger CSRF protection at the cost of cross-site link UX. None requires all other defences to compensate."
+/>
+
+---
+
+## Why `SameSite=Lax` Is Not Sufficient Alone
+
+`Lax` handles the most common CSRF scenario. It does not handle all of them.
+
+**State-changing GET requests.** `Lax` permits cookies on cross-site top-level GET navigations. If your application performs a state change on a GET — an email confirmation link that directly activates the account, a "unsubscribe" link that performs the unsubscription in one click — an attacker can trigger it by embedding an `<img src="https://devforum.com/email/confirm?token=xxx">` or simply linking to it. Use POST for state changes. Always.
+
+**Subdomain attacks.** A script running on `blog.devforum.com` is considered "same-site" with `devforum.com`. If that subdomain is compromised or user-controllable, it can make same-site requests that `Lax` permits — with the session cookie attached. Subdomain isolation requires more than `SameSite`.
+
+**The two-minute Lax window.** Chrome applies a two-minute grace period: cookies without an explicit `SameSite` attribute are treated as `None` for two minutes after creation, then as `Lax` thereafter. This is for backward compatibility with single-sign-on flows. It means a freshly issued session cookie is briefly vulnerable to CSRF even in Chrome.
+
+**Legacy browsers.** Any browser that does not support `SameSite` ignores the attribute entirely. Enterprise environments often have older browser versions. Mobile browsers have inconsistent implementations.
+
+The conclusion: `SameSite=Lax` (or `Strict`) significantly reduces CSRF risk. It does not eliminate it. Layer it with synchronizer tokens and the mechanisms below.
+
+---
+
+## Cookie Prefixes: `__Host-` and `__Secure-`
+
+Cookie prefixes are browser-enforced invariants — constraints the browser validates on every `Set-Cookie` header before accepting the cookie.
+
+### `__Secure-`
+
+A cookie named `__Secure-session` must be:
+- Set over HTTPS (with the `Secure` attribute)
+
+```http
+Set-Cookie: __Secure-session=abc123; Secure; HttpOnly; SameSite=Lax
+```
+
+If the server tries to set a `__Secure-` cookie without `Secure`, the browser rejects it silently. This prevents downgrade attacks where an attacker injects a cookie over HTTP to override the HTTPS cookie.
+
+### `__Host-`
+
+Stricter. A cookie named `__Host-session` must be:
+- Set over HTTPS (with `Secure`)
+- Not have a `Domain` attribute
+- Have `Path=/`
+
+```http
+Set-Cookie: __Host-session=abc123; Secure; HttpOnly; SameSite=Strict; Path=/
+```
+
+By omitting `Domain`, the cookie is bound to the exact host that set it — `devforum.com`. It cannot be set by `blog.devforum.com` and it is not sent to `blog.devforum.com`. The subdomain attack vector that bypasses `SameSite=Lax` is eliminated.
+
+<Callout type="tip" title="Prefer __Host- for all authentication cookies">
+  `__Host-` is the strictest prefix and closes the subdomain cookie injection vector completely. There is almost no downside for session cookies — the restrictions it enforces (`Secure`, no `Domain`, `Path=/`) are what your session cookie should have anyway. Use it by default.
+</Callout>
+
+---
+
+## The Hardened Cookie Header
+
+Combining everything so far, a production session cookie for DevForum:
+
+<PacketDiagram
+  title="A Hardened Session Cookie — All Security Attributes Annotated"
+  rows={[
+    {
+      label: "Set-Cookie",
+      fields: [
+        { name: "__Host-session", value: "abc123…", color: "green", description: "__Host- prefix: browser enforces Secure + no Domain attribute + Path=/ — binds cookie to exact host, closes subdomain injection", highlight: true },
+        { name: "HttpOnly",       color: "green",   description: "JavaScript cannot read this cookie — blocks XSS-based session token theft via document.cookie" },
+        { name: "Secure",         color: "green",   description: "Only transmitted over HTTPS — never sent over HTTP, even if user navigates to http:// URL" },
+        { name: "SameSite=Strict",color: "green",   description: "Browser never sends this cookie on any cross-site request — strongest CSRF protection at the browser layer" },
+        { name: "Path=/",         color: "neutral", description: "Required by the __Host- prefix — cookie scopes to all paths on this host" },
+        { name: "Max-Age=86400",  color: "neutral", description: "Session expires after 24 hours — limits window of exposure from stolen or leaked token" },
+      ]
+    }
+  ]}
+  caption="Every attribute here is load-bearing. Removing any one of them re-opens a specific attack vector. The __Host- prefix enforces Secure and path=/ automatically — setting them explicitly is belt-and-suspenders."
+/>
+
+Setting this in Express:
+
+```js
+res.cookie('__Host-session', sessionToken, {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'strict',
+  path: '/',
+  maxAge: 86400 * 1000,  // 24 hours in milliseconds
+  // No domain: — required for __Host- prefix
+});
+```
+
+<Callout type="warning" title="You cannot set domain when using __Host-">
+  Many Express cookie libraries default to setting `domain: req.hostname`. With `__Host-`, any `Domain` attribute causes the browser to reject the cookie silently. Explicitly omit `domain`, or set it to `undefined`. Test with DevTools — if the cookie does not appear after `Set-Cookie`, the browser rejected it.
+</Callout>
+
+---
+
+## Cookie Scoping: Domain and Path
+
+Without any `Domain` attribute, a cookie is bound to the exact host that set it. Adding `Domain` widens the scope:
+
+```http
+Set-Cookie: pref=dark; Domain=devforum.com   # sent to devforum.com AND all subdomains
+Set-Cookie: pref=dark                        # sent only to the exact host that set it
+```
+
+`Domain=devforum.com` means the cookie is sent to `api.devforum.com`, `blog.devforum.com`, and any other subdomain. If any of those subdomains is compromised, the cookie is exposed.
+
+For session cookies, omit `Domain` — or use `__Host-`, which enforces the omission. For preference cookies that genuinely need to be shared across subdomains, `Domain` is appropriate, but those cookies should never carry security-sensitive values.
+
+`Path` scopes the cookie to a URL prefix. `Path=/admin` means the cookie is only sent on requests to `/admin/...`. This is a convenience feature, not a security one — JavaScript on the same origin can still read cookies regardless of `Path`. Do not use `Path` as a security boundary.
+
+---
+
+## Origin and Referer Header Verification
+
+Before Fetch metadata (covered next), the standard secondary check was verifying the `Origin` or `Referer` request header.
+
+The browser sets `Origin` on cross-origin requests and on same-site POST requests. An attacker on `evil.com` cannot forge this header — it is set by the browser, not by JavaScript.
+
+```js
+function verifyOrigin(req, res, next) {
+  const origin = req.headers.origin;
+  const referer = req.headers.referer;
+
+  // Origin is present on most CSRF-relevant requests
+  if (origin) {
+    const url = new URL(origin);
+    if (url.hostname !== 'devforum.com') {
+      return res.status(403).json({ error: 'Forbidden origin' });
+    }
+    return next();
+  }
+
+  // Fallback to Referer for browsers that omit Origin on same-origin POSTs
+  if (referer) {
+    const url = new URL(referer);
+    if (url.hostname !== 'devforum.com') {
+      return res.status(403).json({ error: 'Forbidden referer' });
+    }
+    return next();
+  }
+
+  // Neither header present — reject (conservative stance)
+  return res.status(403).json({ error: 'Missing origin headers' });
+}
+```
+
+<Callout type="warning" title="Origin and Referer can be omitted — do not use as the sole defence">
+  Some browsers, browser extensions, and privacy tools strip the `Referer` header. Some request types do not include `Origin`. Using either as your only CSRF defence means legitimate requests may be rejected for non-obvious reasons. Treat these as a secondary check that supplements token validation, not replaces it.
+</Callout>
+
+---
+
+## Fetch Metadata Headers
+
+Fetch metadata is a set of browser-generated request headers that describe the context of every outgoing request. They are set by the browser and cannot be forged by web page JavaScript.
+
+| Header | What it says |
+|--------|-------------|
+| `Sec-Fetch-Site` | Relationship between requester and target: `same-origin`, `same-site`, `cross-site`, or `none` (user navigation) |
+| `Sec-Fetch-Mode` | How the fetch was initiated: `navigate`, `cors`, `no-cors`, `same-origin`, `websocket` |
+| `Sec-Fetch-Dest` | The destination of the request: `document`, `script`, `image`, `empty`, etc. |
+
+A request from DevForum's own JavaScript to its own API:
+```http
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: cors
+Sec-Fetch-Dest: empty
+```
+
+A CSRF form post from `evil.com`:
+```http
+Sec-Fetch-Site: cross-site
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Dest: document
+```
+
+A user clicking a legitimate link from another site:
+```http
+Sec-Fetch-Site: cross-site
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Dest: document
+```
+
+The key insight: `Sec-Fetch-Site: cross-site` on a state-changing request (non-navigate mode, or navigate with a non-safe method) is a strong signal that the request did not originate from your application.
+
+### The Resource Isolation Policy
+
+Google's [Fetch Metadata guide](https://web.dev/fetch-metadata/) defines a server-side guard that uses these headers to reject illegitimate cross-site requests before they reach business logic:
+
+```js
+function resourceIsolationPolicy(req, res, next) {
+  const site = req.headers['sec-fetch-site'];
+  const mode = req.headers['sec-fetch-mode'];
+  const dest = req.headers['sec-fetch-dest'];
+
+  // Allow same-origin requests unconditionally
+  if (!site || site === 'same-origin') return next();
+
+  // Allow browser-initiated navigations (user clicked a link)
+  if (mode === 'navigate' && req.method === 'GET') return next();
+
+  // Allow requests from browsers that don't support Fetch metadata
+  // (site header absent — fall through to token validation)
+  if (!site) return next();
+
+  // Block all other cross-site requests to protected endpoints
+  if (site === 'cross-site') {
+    return res.status(403).json({ error: 'Cross-site request blocked by resource isolation policy' });
+  }
+
+  next();
+}
+```
+
+<DecisionFlow
+  title="Fetch Metadata Resource Isolation Policy"
+  nodes={[
+    { id: "start",       type: "start",    label: "Request" },
+    { id: "noHeader",    type: "decision", label: "Sec-Fetch-Site present?", sublabel: "absent = old browser" },
+    { id: "fallback",    type: "action",   label: "Fall through to token validation" },
+    { id: "sameOrigin",  type: "decision", label: "Sec-Fetch-Site = same-origin?" },
+    { id: "allow1",      type: "result",   label: "Allow" },
+    { id: "isNavigate",  type: "decision", label: "Mode = navigate AND method = GET?" },
+    { id: "allow2",      type: "result",   label: "Allow — user navigation" },
+    { id: "crossSite",   type: "decision", label: "Sec-Fetch-Site = cross-site?" },
+    { id: "block",       type: "end",      label: "403 BLOCKED" },
+    { id: "allow3",      type: "result",   label: "Allow" },
+  ]}
+  edges={[
+    { from: "start",      to: "noHeader",   },
+    { from: "noHeader",   to: "fallback",   label: "no" },
+    { from: "noHeader",   to: "sameOrigin", label: "yes" },
+    { from: "sameOrigin", to: "allow1",     label: "yes" },
+    { from: "sameOrigin", to: "isNavigate", label: "no" },
+    { from: "isNavigate", to: "allow2",     label: "yes" },
+    { from: "isNavigate", to: "crossSite",  label: "no" },
+    { from: "crossSite",  to: "block",      label: "yes" },
+    { from: "crossSite",  to: "allow3",     label: "no" },
+  ]}
+  caption="The policy allows same-origin requests and user-initiated navigations. Cross-site non-navigational requests are blocked before they reach any business logic. Old browsers without Sec-Fetch-Site fall through to token-based validation."
+/>
+
+<Callout type="info" title="Fetch metadata is a browser feature — not universally supported">
+  Sec-Fetch-* headers are supported in Chrome, Edge, and Firefox. Safari does not send them. The guard must handle the absent-header case (fall through to CSRF token validation) rather than rejecting requests that lack the headers — that would break Safari users. Fetch metadata is a defence enhancement, not a replacement for tokens.
+</Callout>
+
+---
+
+## Defence-in-Depth: All Layers Combined
+
+Each layer stops CSRF at a different point in the request lifecycle. No single layer covers every scenario. All layers together leave an attacker with no viable path.
+
+<Comparison
+  headers={["Layer", "What it stops", "What it misses", "Where it runs"]}
+  rows={[
+    ["Synchronizer token",    "Forged requests without the token — the primary check",                 "Requires correct implementation on every state-changing endpoint", "Server — request validation"],
+    ["SameSite=Strict",       "Cross-site form posts and fetches reaching the server with the cookie", "Top-level GET state changes; subdomain attacks; legacy browsers",   "Browser — cookie transmission"],
+    ["SameSite=Lax",          "Cross-site form posts and fetches",                                    "Top-level GET state changes; subdomain attacks; legacy browsers",   "Browser — cookie transmission"],
+    ["__Host- prefix",        "Subdomain cookie injection — cookie bound to exact host",               "Does not prevent cross-site requests — only locks cookie origin",   "Browser — cookie acceptance"],
+    ["Fetch metadata guard",  "Cross-site non-navigational requests before business logic",            "Safari; old browsers; requests without Sec-Fetch-Site header",      "Server — pre-validation"],
+    ["Origin/Referer check",  "Cross-origin requests from identifiable origins",                       "Privacy tools that strip headers; some browser edge cases",          "Server — pre-validation"],
+  ]}
+  caption="Layer these defences. Each one covers gaps the others leave. A complete implementation uses synchronizer tokens + SameSite=Strict + __Host- + Fetch metadata guard."
+/>
+
+The minimum viable combination:
+1. **Synchronizer tokens** (or double-submit with `__Host-`) on every state-changing endpoint
+2. **`SameSite=Lax`** on the session cookie (already the browser default since 2020 — set it explicitly regardless)
+3. **`__Host-` prefix** on the session cookie
+
+Add if you want the strongest posture:
+4. **`SameSite=Strict`** instead of `Lax` (eliminates the cross-site navigation session, worth it for high-security apps)
+5. **Fetch metadata resource isolation policy** as a pre-validation filter
+
+---
+
+<Lessons title="Cookie Security Checklist" type="recommendations">
+  <Lesson title="Set HttpOnly on every session cookie">
+    XSS cannot steal what JavaScript cannot read. There is no legitimate reason for JavaScript to access the session cookie. If a feature requires it, redesign the feature to use a separate readable token with limited scope.
+  </Lesson>
+  <Lesson title="Set Secure on every cookie that carries sensitive values">
+    HTTPS is table stakes in 2026. Secure ensures the cookie is never accidentally transmitted over HTTP — even if the user manually types http:// or a redirect momentarily lands on an insecure URL.
+  </Lesson>
+  <Lesson title="Use __Host- on session cookies, not just SameSite">
+    SameSite alone does not prevent subdomain cookie injection. __Host- does. The restrictions it enforces — Secure, no Domain, Path=/ — are what a session cookie should have regardless. Adopt it as the default.
+  </Lesson>
+  <Lesson title="Explicit SameSite beats the browser default">
+    Chrome defaults to Lax for cookies without an explicit SameSite, but only after a two-minute window where the cookie behaves as None. Set SameSite explicitly on every Set-Cookie. Never rely on browser defaults for security-relevant cookie behaviour.
+  </Lesson>
+  <Lesson title="Fetch metadata enhances but does not replace token validation">
+    The resource isolation policy blocks most CSRF before tokens are even checked — reducing latency and server load on attack traffic. But it misses Safari and old browsers. Tokens remain the primary defence. Fetch metadata is the filter before the gate.
+  </Lesson>
+  <Lesson title="Never use Path= as a security boundary">
+    Path scopes when a cookie is sent — but JavaScript on the same origin can read all cookies regardless of Path. Do not design a feature where security depends on a cookie being invisible to scripts at a different path.
+  </Lesson>
+</Lessons>

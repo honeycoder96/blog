@@ -3,7 +3,8 @@ interface Actor {
   id: string;
   label: string;
   sublabel?: string;
-  icon?: 'browser' | 'server' | 'dns' | 'ca' | 'router' | 'client';
+  icon?: 'browser' | 'server' | 'dns' | 'ca' | 'router' | 'client' | 'attacker' | 'cdn' | 'database';
+  variant?: 'default' | 'malicious' | 'trusted';
 }
 
 interface Message {
@@ -11,7 +12,7 @@ interface Message {
   to: string;
   label: string;
   sublabel?: string;
-  type?: 'request' | 'response' | 'note' | 'error';
+  type?: 'request' | 'response' | 'note' | 'error' | 'attack' | 'blocked';
   highlight?: boolean;
   annotation?: string;
 }
@@ -49,12 +50,16 @@ const TYPE_COLOR: Record<string, string> = {
   response: '#22c55e',
   note:     '#f59e0b',
   error:    '#ef4444',
+  attack:   '#ef4444',
+  blocked:  '#ef4444',
 };
 const TYPE_DASH: Record<string, string | undefined> = {
   request:  undefined,
   response: '6 3',
   note:     '3 3',
   error:    undefined,
+  attack:   undefined,
+  blocked:  '5 4',
 };
 
 const msgColor = (msg: Message): string =>
@@ -67,7 +72,7 @@ const markerId = (msg: Message): string =>
   `${uid}-${msg.highlight ? 'highlight' : (msg.type ?? 'request')}`;
 
 // All distinct marker IDs needed
-const markerTypes = ['request', 'response', 'note', 'error', 'highlight'] as const;
+const markerTypes = ['request', 'response', 'note', 'error', 'attack', 'blocked', 'highlight'] as const;
 type MarkerType = typeof markerTypes[number];
 
 const markerColor = (t: MarkerType): string =>
@@ -164,6 +169,16 @@ const markerColor = (t: MarkerType): string =>
               >{msg.sublabel}</text>
             )}
 
+            {/* Blocked ✕ mark at arrowhead */}
+            {msg.type === 'blocked' && (
+              <text
+                x={x2 - dir * 16}
+                y={y + 5}
+                class="seq-blocked-mark"
+                text-anchor="middle"
+              >✕</text>
+            )}
+
             {/* Side annotation */}
             {msg.annotation && (
               <text
@@ -181,6 +196,10 @@ const markerColor = (t: MarkerType): string =>
       {actors.map(actor => {
         const cx = actorX(actor.id);
         const bx = cx - ACTOR_BOX_W / 2;
+        const variantClass =
+          actor.variant === 'malicious' ? 'seq-actor-box seq-actor-malicious'
+          : actor.variant === 'trusted' ? 'seq-actor-box seq-actor-trusted'
+          : 'seq-actor-box';
         return (
           <>
             <rect
@@ -188,7 +207,7 @@ const markerColor = (t: MarkerType): string =>
               width={ACTOR_BOX_W}
               height={ACTOR_BOX_H - 4}
               rx="8"
-              class="seq-actor-box"
+              class={variantClass}
             />
             <text
               x={cx}
@@ -255,6 +274,24 @@ const markerColor = (t: MarkerType): string =>
     fill: var(--theme-bg-raised);
     stroke: var(--theme-line-strong);
     stroke-width: 1.5;
+  }
+
+  .seq-actor-malicious {
+    fill: rgba(239, 68, 68, 0.08);
+    stroke: rgba(239, 68, 68, 0.6);
+    stroke-width: 2;
+  }
+
+  .seq-actor-trusted {
+    fill: rgba(34, 197, 94, 0.08);
+    stroke: rgba(34, 197, 94, 0.6);
+    stroke-width: 2;
+  }
+
+  .seq-blocked-mark {
+    font-size: 13px;
+    font-weight: 700;
+    fill: #ef4444;
   }
 
   .seq-actor-label {

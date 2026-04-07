@@ -114,13 +114,15 @@ const jsonLd = JSON.stringify({
     <!-- Article header -->
     <header class="max-w-3xl mb-16">
       {seriesContext && (
-        <div class="flex items-center gap-3 mb-4 font-mono text-xs text-fg-faint uppercase tracking-widest">
-          <a href="/series" class="hover:text-fg transition-colors">Series</a>
-          <span>/</span>
-          <a href={`/series/${seriesContext.seriesSlug}`} class="hover:text-fg transition-colors">
-            {seriesContext.seriesTitle}
-          </a>
-          <span class="ml-2 flex gap-1.5 items-center">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 mb-4 font-mono text-xs text-fg-faint uppercase tracking-widest">
+          <div class="flex items-center gap-3 min-w-0">
+            <a href="/series" class="hover:text-fg transition-colors shrink-0">Series</a>
+            <span class="shrink-0">/</span>
+            <a href={`/series/${seriesContext.seriesSlug}`} class="hover:text-fg transition-colors truncate">
+              {seriesContext.seriesTitle}
+            </a>
+          </div>
+          <span class="flex gap-1.5 items-center shrink-0 sm:ml-2">
             {Array.from({ length: seriesContext.total }, (_, i) => (
               <span class={`w-1.5 h-1.5 rounded-full ${i + 1 === seriesContext.part ? 'bg-fg' : 'bg-line-strong'}`} />
             ))}

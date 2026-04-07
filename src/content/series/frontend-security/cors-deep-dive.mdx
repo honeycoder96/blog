@@ -1,0 +1,293 @@
+---
+title: "CORS: Beyond 'Just Add the Header'"
+date: "Apr 2026"
+pubDate: 2026-04-28
+category: Security
+author: Honey Sharma
+summary: Most CORS fixes are copied and pasted. This post builds the Same-Origin Policy from first principles, traces the full preflight, and shows the wildcard trap, Vary header problem, and CORS misconfigurations that ship to production.
+tags: [security, cors, same-origin-policy, preflight, http, headers, frontend]
+---
+import SequenceDiagram from '../../../components/mdx/SequenceDiagram.astro';
+import PacketDiagram from '../../../components/mdx/PacketDiagram.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import Callout from '../../../components/mdx/Callout.astro';
+import Lessons from '../../../components/mdx/Lessons.astro';
+import Lesson from '../../../components/mdx/Lesson.astro';
+
+DevForum's new frontend launches on `app.devforum.com`. The backend API stays on `api.devforum.com`. The developer opens the browser, loads the dashboard, and watches the network tab. Every API request returns 200. The JavaScript receives nothing. The console says:
+
+```
+Access to fetch at 'https://api.devforum.com/v1/posts' from origin 
+'https://app.devforum.com' has been blocked by CORS policy: No 
+'Access-Control-Allow-Origin' header is present on the requested resource.
+```
+
+Most developers respond by adding `Access-Control-Allow-Origin: *` to the API and moving on. This post is about understanding what you just did — and when that answer is the wrong one.
+
+---
+
+## The Same-Origin Policy, From First Principles
+
+Before CORS can make sense, the restriction it relaxes needs to be clear.
+
+### What is an "origin"?
+
+An origin is a triple: **scheme + host + port**. All three must match for two URLs to share an origin. The path, query string, and fragment are irrelevant.
+
+```
+Base URL: https://devforum.com
+
+https://devforum.com/posts           → Same origin   (path doesn't count)
+http://devforum.com                  → Different     (scheme: https ≠ http)
+https://app.devforum.com             → Different     (host: subdomain ≠ apex)
+https://api.devforum.com             → Different     (host: different subdomain)
+https://devforum.com:8080            → Different     (port: 443 ≠ 8080)
+https://devforum.com:443             → Same origin   (443 is the default HTTPS port)
+```
+
+<Callout type="info" title="Subdomains are different origins">
+  `app.devforum.com` and `devforum.com` are different origins. They cannot read each other's responses, share cookies across origins, or access each other's localStorage — not without explicit configuration. This surprises most developers the first time they split a frontend and API onto separate subdomains.
+</Callout>
+
+### What SOP restricts — and what it doesn't
+
+The Same-Origin Policy restricts **JavaScript reading cross-origin responses**. It does not restrict much else:
+
+| Action | Cross-origin allowed? |
+|--------|----------------------|
+| Navigate (`<a href>`, `window.location`) | Yes |
+| Form submission (`<form action>`) | Yes — response blocked, not request |
+| Embed resources (`<img src>`, `<script src>`, `<link href>`) | Yes |
+| `fetch()` or `XMLHttpRequest` — **sending** the request | Yes |
+| `fetch()` or `XMLHttpRequest` — **reading** the response | **No** — this is what SOP blocks |
+
+The asymmetry is critical. The *request* goes through. The browser sends the POST to `api.devforum.com`. The server receives it and processes it. SOP blocks the JavaScript from *reading the response*. The state change already happened.
+
+This asymmetry is exactly why CSRF is a separate problem, not a CORS problem — and why we cover it in the next post.
+
+**The threat SOP prevents:** without it, any malicious page could silently `fetch('https://yourbank.com/balance')` using your session cookie and read your account balance. Any site could read the contents of your authenticated sessions on any other site. SOP prevents cross-origin response reads by default.
+
+---
+
+## What CORS Actually Is
+
+CORS (Cross-Origin Resource Sharing) is not a security restriction. It's a relaxation of SOP.
+
+The browser's default is to block cross-origin response reads. CORS is the mechanism by which a server tells the browser: "I permit this specific origin to read my responses."
+
+<Callout type="warning" title="CORS is a browser-to-server contract, not a firewall">
+  CORS headers are instructions from the server to the browser. They control what the browser allows JavaScript to read. They do not restrict direct server-to-server calls, `curl`, Postman, or any non-browser client. A misconfigured CORS policy does not expose your server to attackers using direct HTTP clients — it exposes it to attacker-controlled web pages that your users might visit.
+</Callout>
+
+The right question when adding CORS is not "how do I make this work?" — it's "which origins should legitimately be able to read this API's responses?"
+
+---
+
+## Simple vs Preflighted Requests
+
+The browser splits cross-origin requests into two categories based on their risk profile.
+
+**Simple requests** are sent directly. The browser attaches the `Origin` header and checks the response's `Access-Control-Allow-Origin` header. If it matches, the response is given to JavaScript. If not, the response is blocked.
+
+A request is simple if it meets all three conditions:
+- Method is `GET`, `HEAD`, or `POST`
+- Content-Type is `application/x-www-form-urlencoded`, `multipart/form-data`, or `text/plain`
+- No custom headers beyond the [CORS-safelisted headers](https://fetch.spec.whatwg.org/#cors-safelisted-request-header)
+
+**Preflighted requests** trigger a preliminary `OPTIONS` request before the actual request is sent. The preflight asks the server: "will you allow this method, from this origin, with these headers?" Only if the server answers yes does the browser send the actual request.
+
+What triggers a preflight:
+- Any method other than `GET`, `HEAD`, or `POST`
+- `Content-Type: application/json` (or any non-simple type)
+- Any custom header (`Authorization`, `X-Request-ID`, `X-API-Key`)
+
+DevForum's API call: `fetch('https://api.devforum.com/v1/posts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' })` triggers a preflight because of the `application/json` content type.
+
+<Callout type="tip" title="The preflight is working correctly">
+  Developers sometimes treat the preflight OPTIONS request as overhead to eliminate. It exists to protect servers that weren't designed for cross-origin requests — the preflight lets the server consent before any state-changing request is sent. It is the spec working as intended.
+</Callout>
+
+---
+
+## The Preflight Flow in Full Detail
+
+<SequenceDiagram
+  title="CORS Preflight + Credentialed Request — Complete Flow"
+  actors={[
+    { id: "spa", label: "app.devforum.com", icon: "browser" },
+    { id: "api", label: "api.devforum.com", icon: "server", variant: "trusted" }
+  ]}
+  messages={[
+    { from: "spa", to: "api", label: "OPTIONS /v1/posts", sublabel: "Origin: app.devforum.com  AC-Request-Method: POST  AC-Request-Headers: Content-Type", type: "request", annotation: "① preflight" },
+    { from: "api", to: "spa", label: "204 No Content", sublabel: "AC-Allow-Origin: app.devforum.com  AC-Allow-Methods: GET,POST  AC-Max-Age: 86400", type: "response" },
+    { from: "spa", to: "api", label: "POST /v1/posts", sublabel: "Origin: app.devforum.com  Content-Type: application/json  Cookie: session=abc", type: "request", highlight: true, annotation: "② actual request" },
+    { from: "api", to: "spa", label: "201 Created", sublabel: "AC-Allow-Origin: app.devforum.com  AC-Allow-Credentials: true", type: "response", highlight: true }
+  ]}
+  caption="The preflight asks permission before any state-changing request is sent. The browser sends cookies on the actual request only after the server confirms it permits them."
+/>
+
+<PacketDiagram
+  title="Preflight Request / Response Headers — Annotated"
+  rows={[
+    {
+      label: "OPTIONS Request (browser-generated)",
+      fields: [
+        { name: "Origin", value: "app.devforum.com", color: "blue", description: "The requesting origin — set by the browser, not the developer. Cannot be forged by a web page." },
+        { name: "Access-Control-Request-Method", value: "POST", color: "orange", description: "The HTTP method the actual request will use" },
+        { name: "Access-Control-Request-Headers", value: "Content-Type", color: "orange", description: "Custom headers the actual request intends to send" }
+      ]
+    },
+    {
+      label: "Server Preflight Response",
+      fields: [
+        { name: "Access-Control-Allow-Origin", value: "app.devforum.com", color: "green", description: "The specific origin permitted. Must NOT be * when credentials are used.", highlight: true },
+        { name: "Access-Control-Allow-Methods", value: "GET, POST, PATCH", color: "green", description: "Methods the actual request may use from this origin" },
+        { name: "Access-Control-Allow-Headers", value: "Content-Type, Authorization", color: "green", description: "Custom headers the actual request may send" },
+        { name: "Access-Control-Max-Age", value: "86400", color: "neutral", description: "Cache this preflight response for 24 hours — avoids a preflight on every request" },
+        { name: "Vary", value: "Origin", color: "blue", description: "Tells CDNs and proxies to cache this response separately per Origin header value" }
+      ]
+    }
+  ]}
+  caption="The browser generates the OPTIONS request automatically. Three request headers describe the intended actual request; the server's response determines whether the browser sends it."
+/>
+
+---
+
+## Credentialed Requests and the Wildcard Trap
+
+By default, cross-origin `fetch()` calls do not include cookies or `Authorization` headers. To send credentials, you must opt in:
+
+```js
+fetch('https://api.devforum.com/v1/me', {
+  credentials: 'include'  // include cookies and auth headers
+});
+```
+
+When `credentials: 'include'` is set, the browser enforces two additional rules on the response:
+
+1. `Access-Control-Allow-Origin` must be a **specific origin** — not `*`
+2. `Access-Control-Allow-Credentials: true` must be present
+
+If either is missing, the browser blocks the response from reaching JavaScript — even though the server sent a 200.
+
+<Callout type="danger" title="Access-Control-Allow-Origin: * + credentials: 'include' is a browser error">
+  This combination is explicitly prohibited by the Fetch specification. The browser will block the response with a CORS error regardless of what the server returns. If you see this combination in production, either credentials are not actually being sent (and someone thinks they are), or the ACAO header needs to be changed to a specific origin.
+</Callout>
+
+---
+
+## `Vary: Origin` and CDN Caching
+
+When `Access-Control-Allow-Origin` is set dynamically — different values for different requesting origins — the response must include `Vary: Origin`.
+
+Without it, a CDN may cache the response for one origin and serve it to requests from a different origin. The cached response includes ACAO headers that permit `app.devforum.com`. A request from `otherdomain.com` gets the same cached response — with headers permitting the wrong origin.
+
+```js
+// Express — correct CORS + Vary header pattern
+const ALLOWED_ORIGINS = new Set([
+  'https://app.devforum.com',
+  'https://admin.devforum.com',
+]);
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  // Always set Vary when ACAO is dynamic
+  res.setHeader('Vary', 'Origin');
+  next();
+});
+```
+
+<Callout type="warning" title="Vary: Origin is required whenever ACAO is dynamic">
+  This is the bug that surfaces months after launch, after a CDN is added in front of the API. All cross-origin requests start failing intermittently — for some users, in some regions, depending on which CDN edge has cached what. The fix is one header. The diagnosis can take days.
+</Callout>
+
+---
+
+## What CORS Does Not Protect Against
+
+Two things developers routinely assume CORS handles that it does not:
+
+**CSRF.** A form on `evil.com` can POST to `api.devforum.com`. The browser sends the request — including any cookies attached to `api.devforum.com`. SOP blocks `evil.com`'s JavaScript from *reading* the response. The state change (delete account, transfer funds, post comment) has already happened. CORS does not prevent CSRF. That requires CSRF tokens or SameSite cookies — the subject of the next post.
+
+**Non-browser clients.** `curl`, Postman, Python's `requests`, any server-to-server HTTP call — these ignore CORS headers entirely. CORS is a browser contract. It tells browsers which origins may read responses. It tells nothing to any other HTTP client. If your API contains sensitive data, authentication and authorisation on every endpoint are still required independently of CORS configuration.
+
+---
+
+## Common Misconfigurations
+
+**Reflecting the Origin header verbatim.** The worst pattern — and surprisingly common:
+
+```js
+// Vulnerable — allows any origin to read the response
+res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+```
+
+Any site in the world can now read responses from your API as your authenticated users.
+
+**Overly broad regex.** An attempt to validate the origin that introduces a bypass:
+
+```js
+// Vulnerable — devforumevil.com passes this check
+if (/devforum/.test(req.headers.origin)) {
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+}
+
+// Fixed — exact set membership check
+const ALLOWED = new Set(['https://app.devforum.com', 'https://devforum.com']);
+if (ALLOWED.has(req.headers.origin)) {
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+}
+```
+
+**Missing `Vary: Origin`.** Covered above — dynamic ACAO headers without Vary creates CDN caching bugs. Always add it.
+
+**Wildcard with credentials.** `Access-Control-Allow-Origin: *` combined with `credentials: 'include'` — browser blocks the response per spec. This is a configuration error, not a browser bug.
+
+<Comparison
+  headers={["Pattern", "What it does", "The risk", "The fix"]}
+  rows={[
+    ["Reflect origin verbatim",   "res.set('ACAO', req.headers.origin) with no check",  "Any origin reads the API",                      "Validate against an explicit Set of allowed origins"],
+    ["Broad regex",               "/devforum/.test(origin)",                             "devforumevil.com passes",                       "Exact string match against a Set"],
+    ["Wildcard + credentials",    "ACAO: * + Allow-Credentials: true",                  "Browser blocks response — silent auth breakage", "Use specific origin when credentials: 'include'"],
+    ["Missing Vary: Origin",      "Dynamic ACAO without Vary header",                   "CDN serves stale CORS headers to wrong origin",  "Always add Vary: Origin on dynamic ACAO responses"],
+  ]}
+  caption="All four misconfigurations appear in production codebases. The regex bypass is the least obvious — it looks like a validation but isn't."
+/>
+
+---
+
+## Request Type Reference
+
+<Comparison
+  headers={["Type", "What triggers it", "Preflight?", "Credentials?", "Required server headers"]}
+  rows={[
+    ["Simple",       "GET/HEAD/POST + safe content-type + no custom headers", "No",  "Only with credentials: include", "Access-Control-Allow-Origin"],
+    ["Preflighted",  "application/json, custom headers, or non-simple method", "Yes — OPTIONS first", "Only with credentials: include", "Access-Control-Allow-Origin + Methods + Headers"],
+    ["Credentialed", "credentials: 'include' on any request",                 "If non-simple", "Yes — cookies and auth headers sent", "Specific ACAO (not *) + Allow-Credentials: true"],
+  ]}
+  caption="Credentialed is not a third category — any simple or preflighted request can also be credentialed. The credentials flag changes what the server must return, not whether a preflight fires."
+/>
+
+---
+
+<Lessons title="CORS Deployment Checklist" type="recommendations">
+  <Lesson title="Validate Origin against an explicit allowlist, not a regex">
+    Maintain a Set of permitted origins and check with .has(). Regex patterns on origin values introduce substring bypass vulnerabilities. Exact string matching does not.
+  </Lesson>
+  <Lesson title="Add Vary: Origin whenever Access-Control-Allow-Origin is dynamic">
+    If your ACAO value changes per request (different values for different origins), every CORS response must include Vary: Origin. Without it, CDN or proxy caching will serve the wrong ACAO header to the wrong origin.
+  </Lesson>
+  <Lesson title="Never use Access-Control-Allow-Origin: * for authenticated APIs">
+    Wildcard is appropriate for public read APIs: fonts, public datasets, open image CDNs. Any endpoint that reads session state, user data, or authenticated content needs a specific allowed origin.
+  </Lesson>
+  <Lesson title="CORS does not replace CSRF protection">
+    SOP blocks the response read, not the request. A cross-site POST to a state-changing endpoint still executes — it just can't read the response. State-changing endpoints need CSRF tokens or SameSite cookie attributes regardless of CORS configuration.
+  </Lesson>
+  <Lesson title="CORS headers have no effect on non-browser clients">
+    curl, Postman, and server-to-server requests ignore CORS entirely. Authentication and authorisation on every endpoint are independently required. CORS is a browser contract, not an API access control mechanism.
+  </Lesson>
+</Lessons>

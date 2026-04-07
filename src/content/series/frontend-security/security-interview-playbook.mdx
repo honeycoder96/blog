@@ -1,0 +1,291 @@
+---
+title: "The Frontend Security Interview Playbook"
+date: "Jun 2026"
+pubDate: 2026-06-09
+category: Security
+author: Honey Sharma
+summary: Senior frontend security interviews don't test recall — they test structured reasoning. This post gives you the threat-model framework, a repeatable audit answer structure, decision tools for XSS mitigation choices, four scenario walkthroughs, and a code review red flags checklist.
+tags: [security, interview, xss, csp, cors, csrf, supply-chain, sri, frontend]
+---
+import DecisionFlow from '../../../components/mdx/DecisionFlow.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import Callout from '../../../components/mdx/Callout.astro';
+import Lessons from '../../../components/mdx/Lessons.astro';
+import Lesson from '../../../components/mdx/Lesson.astro';
+
+A candidate walks into a senior frontend interview. The interviewer asks: "Walk me through how you'd look for XSS in a React codebase." The candidate lists every XSS variant correctly — reflected, stored, DOM-based, mutation. They mention `dangerouslySetInnerHTML`. They mention `eval()`. They've clearly read the posts.
+
+Then: "What would you actually do first?" Silence.
+
+Knowing the vocabulary is not the same as being able to reason. Senior security interviews test the second thing — structured thinking about systems, not recall of a threat taxonomy. This post gives you the structure.
+
+---
+
+## What Interviewers Are Actually Testing
+
+A mid-level interview question is "What is XSS?" A senior interview question is "You're joining a team that's been shipping features for two years without thinking about security. Where do you start?"
+
+The senior version has no single right answer. The interviewer is watching for:
+
+- **Framing before diving** — do you identify what you're protecting before naming the attack?
+- **Attack-first reasoning** — do you think like an attacker or like a checklist reader?
+- **Explicit tradeoffs** — do you acknowledge that defences have costs, or do you pretend everything is free?
+- **Defence-in-depth instinct** — do you describe one fix and stop, or do you layer defences?
+- **Knowing the limits** — do you know what each defence *doesn't* protect against?
+
+The candidate who says "add DOMPurify" passes a junior bar. The one who says "DOMPurify as sanitisation, nonce-based CSP as the second line in case DOMPurify misses something, and then `connect-src` to limit what an attacker can do even if a script runs" is thinking at the right level.
+
+---
+
+## The 5-Minute Audit Answer Structure
+
+Every "walk me through a security audit" question has the same underlying shape. Answer it in this order, every time:
+
+**1. Name the asset.** What are we protecting? Session tokens, payment data, user-generated content, API credentials, PII. Name it explicitly before naming any attack.
+
+**2. Map the entry points.** Where does attacker-controlled data enter the system? URL parameters, form inputs, API responses, `postMessage`, WebSockets, third-party scripts. Be exhaustive here — each entry point is a potential injection vector.
+
+**3. Name the attack per entry point.** For each entry point, what's the attack? URL param rendered to HTML → reflected XSS. Stored user content rendered to DOM → stored XSS. `location.hash` written to `innerHTML` → DOM-based XSS. Cross-site state-changing form → CSRF.
+
+**4. Describe the defence chain.** For each attack, what stops it — and at which layer? Input validation, output encoding, framework-level escaping, DOMPurify, CSP, SameSite cookies, CSRF tokens. Note that these are layers, not alternatives.
+
+**5. State the tradeoff.** Every defence has a cost. Nonces require SSR. SRI requires update coordination with every CDN version bump. CSRF tokens add request complexity for stateless APIs. Name the cost so the interviewer knows you've thought it through.
+
+This structure works for a 5-minute verbal answer and for a 30-minute whiteboard session. The depth changes; the shape doesn't.
+
+---
+
+## Threat Model Framework
+
+Before any specific attack, here's the full grid for frontend threat modelling:
+
+<Comparison
+  headers={["Asset", "Entry Points", "Attack", "Primary Defence", "Second Line"]}
+  rows={[
+    [
+      "Session cookie",
+      "Any script that executes on the page (XSS)",
+      "Cookie theft via document.cookie or fetch() exfiltration",
+      "HttpOnly cookie (no JS access)",
+      "CSP connect-src to restrict exfiltration destinations"
+    ],
+    [
+      "User-generated content",
+      "Comment fields, profile bios, rich text editors",
+      "Stored XSS — payload saved to DB, executes for all viewers",
+      "DOMPurify sanitisation before rendering",
+      "Nonce-based CSP as backstop if sanitiser is bypassed"
+    ],
+    [
+      "Account state (delete, email change)",
+      "Cross-site form submissions, fetch() from evil.com",
+      "CSRF — browser auto-attaches session cookie to cross-site POST",
+      "Synchronizer CSRF token in every state-changing request",
+      "SameSite=Strict cookie + Sec-Fetch-Site verification"
+    ],
+    [
+      "API response data",
+      "Cross-origin fetch() calls",
+      "Cross-origin data theft — script on evil.com reads your API",
+      "Same-Origin Policy (built-in browser restriction)",
+      "Strict CORS — no wildcard for credentialed routes"
+    ],
+    [
+      "Dependency code",
+      "npm install, CDN script tags",
+      "Supply chain compromise — malicious code in a dependency",
+      "Lockfile + npm install --ignore-scripts in CI",
+      "SRI on CDN scripts + CSP connect-src to block exfiltration"
+    ],
+    [
+      "Sensitive form fields (payment, password)",
+      "Third-party scripts loaded on checkout pages",
+      "Magecart-style skimming — third-party script reads form fields",
+      "SRI on every third-party script + Permissions-Policy",
+      "Sandboxed iframe for payment widget isolation"
+    ],
+  ]}
+  caption="Every interview question about frontend security maps to a cell in this grid. Identify the asset first, then the entry point, then everything else follows."
+/>
+
+---
+
+## Choosing the Right XSS Mitigation
+
+When the interviewer asks "how would you fix XSS here?", the answer depends on the context. This is the decision tree:
+
+<DecisionFlow
+  title="Choosing an XSS Mitigation Strategy"
+  nodes={[
+    { id: "start",       type: "start",    label: "XSS Risk Identified" },
+    { id: "q1",         type: "decision", label: "Is the content server-rendered?" },
+    { id: "q2",         type: "decision", label: "Is the content static (never changes per request)?" },
+    { id: "q3",         type: "decision", label: "Does user-controlled HTML need to render?" },
+    { id: "hashcsp",    type: "action",   label: "Hash-based CSP\nSHA-256 the exact script content; add to policy" },
+    { id: "noncecsp",   type: "action",   label: "Nonce-based CSP\nGenerate per-request; nonce attr on every <script>" },
+    { id: "q4",         type: "decision", label: "Rich text editor (bold, links, images)?" },
+    { id: "encode",     type: "result",   label: "Output encode only\nEscape HTML entities; no DOM injection needed" },
+    { id: "purify",     type: "action",   label: "DOMPurify + allow-list\nSanitise before rendering; CSP as backstop" },
+    { id: "sandbox",    type: "result",   label: "Sandboxed iframe\nPreview rendered HTML in isolated context" },
+  ]}
+  edges={[
+    { from: "start",    to: "q1" },
+    { from: "q1",       to: "q2",       label: "yes" },
+    { from: "q1",       to: "q3",       label: "no (SPA/CSR)" },
+    { from: "q2",       to: "hashcsp",  label: "yes" },
+    { from: "q2",       to: "noncecsp", label: "no" },
+    { from: "q3",       to: "encode",   label: "no" },
+    { from: "q3",       to: "q4",       label: "yes (raw HTML)" },
+    { from: "q4",       to: "purify",   label: "yes" },
+    { from: "q4",       to: "sandbox",  label: "no (arbitrary HTML)" },
+  ]}
+  caption="The right answer is always context-dependent. Interviewers who get 'just use DOMPurify' are listening for the follow-up: 'and CSP as the backstop in case it's bypassed'."
+/>
+
+---
+
+## Four Scenario Walkthroughs
+
+### Scenario 1 — Auditing a React App for XSS
+
+**The question:** "You're joining a team that's been shipping features for two years without thinking about security. Walk me through how you'd look for XSS."
+
+**The structured answer:**
+
+Start with the asset: session tokens, stored user data, third-party integrations. Then map the entry points — URL params, form inputs, API response data that gets rendered.
+
+For a React app, the automated-scan phase is fast: grep for `dangerouslySetInnerHTML`, `document.write()`, `eval()`, `setTimeout(string)`, `new Function()`, `.innerHTML =`, and `insertAdjacentHTML`. These are sinks. Each one is a candidate XSS vector.
+
+The manual phase is slower but necessary: trace user-controlled data from its source (URL params, form values, API responses) through the component tree to where it's rendered. A URL param fed to a template string fed to `dangerouslySetInnerHTML` two components later is XSS even if neither component looks dangerous in isolation.
+
+Then check the markdown and rich-text rendering path if one exists. This is where mutation XSS lives — DOMPurify can be bypassed by certain SVG/MathML mutations in specific browser versions if it's misconfigured.
+
+Finally: is there a CSP? If not, there's no second line of defence. Any bypass of the sanitiser (a DOMPurify edge case, a mutation XSS) lands directly. Recommend nonce-based CSP as a deployment step alongside the fixes.
+
+**What makes this answer strong:** starts with asset identification, covers sinks *and* sources, includes the manual tracing step most candidates miss, and ends with defence-in-depth rather than "just fix the sinks."
+
+---
+
+### Scenario 2 — Deploying CSP with Google Analytics and Stripe
+
+**The question:** "We want to add a Content Security Policy. We use Google Analytics and Stripe.js. Where do you start?"
+
+**The structured answer:**
+
+Start with `Content-Security-Policy-Report-Only`, never enforcement. Flipping to enforcement before you've seen what breaks is how you take down a production app.
+
+For the policy itself: nonce-based `script-src` with `'strict-dynamic'` is the right posture. Domain allowlists are bypassable via JSONP endpoints that exist on almost every major CDN. `'strict-dynamic'` lets your nonce-bearing entry script load further chunks dynamically, which is how both React bundles and Stripe's script loader work.
+
+For Google Analytics: the analytics script gets a nonce. Its dynamic loads are permitted by `'strict-dynamic'`. The `connect-src` directive needs `google-analytics.com` and `analytics.google.com` for the outbound beacon.
+
+For Stripe.js: same nonce pattern. Stripe's script loader injects frames — `frame-src` needs `js.stripe.com`. Their checkout form fields live in iframes from `js.stripe.com`, so that gets `frame-src` too.
+
+Run in report-only for a full release cycle. Aggregate violations by `violated-directive`. Fix each inline script that lacks a nonce. Then enforce.
+
+**What makes this answer strong:** report-only first without being told, explains *why* nonces over domain allowlist (JSONP bypass), addresses both third-party scripts specifically, and frames enforcement as a staged process.
+
+---
+
+### Scenario 3 — Building a User HTML Editor
+
+**The question:** "A user can paste HTML into our editor and preview it. What's your security model?"
+
+**The structured answer:**
+
+This is the hardest case. The user needs real HTML to render — bold, links, images, maybe tables. You cannot simply encode the output. You need a sanitiser.
+
+DOMPurify with an explicit allow-list configuration: permit `<p>`, `<strong>`, `<em>`, `<a href>`, `<img src>`, `<ul>`, `<ol>`, `<li>`, `<blockquote>`. Deny everything else. Critically — deny `<script>`, `<style>`, `<iframe>`, `on*` event attributes, `javascript:` href values. DOMPurify's default config does most of this, but you should pass an explicit `ALLOWED_TAGS` and `ALLOWED_ATTR` list rather than relying on the deny-list default, because deny-lists miss new vectors.
+
+CSP is the backstop: even if DOMPurify is bypassed by a mutation XSS edge case (and there have been several), a nonce-based CSP means the injected script has no nonce and the browser blocks it before it runs.
+
+The preview itself is a risk surface. Render the preview in a sandboxed iframe — `sandbox="allow-same-origin"` without `allow-scripts` means the HTML renders but no script executes inside it. The user sees the visual output without the execution risk.
+
+The edit store (what gets saved to the database) should store the *sanitised* output, not the raw input. Do not sanitise on read — sanitise on write, so a future DOMPurify vulnerability doesn't retroactively expose stored content.
+
+**What makes this answer strong:** identifies the right tool (DOMPurify), specifies explicit allow-list over deny-list, layers CSP as backstop, uses sandboxed iframe for preview isolation, and makes the sanitise-on-write vs sanitise-on-read distinction.
+
+---
+
+### Scenario 4 — "Why Isn't CORS a Security Feature?"
+
+**The question:** "A colleague says 'we have CORS configured, so we're protected against cross-site attacks.' What's wrong with that statement?"
+
+**The structured answer:**
+
+CORS is a relaxation mechanism, not a restriction. The browser's Same-Origin Policy already restricts cross-origin data reads by default — JavaScript on `evil.com` cannot read the response from `devforum.com/api/user` without an explicit CORS grant. CORS is the opt-in that *allows* cross-origin reads when the server decides it's safe. You cannot get "more protection" from CORS — you can only grant more access.
+
+More specifically: CORS controls whether the *response* from a cross-origin request can be read by the requesting script. It says nothing about whether the *request* is sent. A CSRF attack from `evil.com` POSTing to `devforum.com/account/delete` — the POST goes through. The browser attaches the session cookie. The server processes the request. CORS only blocks `evil.com` from reading the response. The account is still deleted.
+
+So the colleague is correct that CORS provides some protection — it prevents cross-origin response reads. But it provides zero protection against state-changing cross-site requests, which is what CSRF is. Those require CSRF tokens, SameSite cookies, and Fetch metadata verification.
+
+**What makes this answer strong:** distinguishes SOP (built-in restriction) from CORS (opt-in relaxation), names specifically what CORS does and doesn't block, and names the actual mitigation for the threat CORS doesn't cover.
+
+---
+
+## Common Tradeoff Questions
+
+<Comparison
+  headers={["Question", "Option A", "Option B", "The real answer"]}
+  rows={[
+    [
+      "CSP: nonces vs hashes vs unsafe-inline?",
+      "Nonces — per-request, works with dynamic content, requires SSR",
+      "Hashes — per-content, works in CDN/static, breaks on any script change",
+      "unsafe-inline defeats CSP entirely — never. Nonces for SSR apps. Hashes for truly static scripts. Use both if you have static init scripts + dynamic app code."
+    ],
+    [
+      "SameSite=Lax vs CSRF tokens?",
+      "SameSite=Lax — browser-enforced, no server changes needed, free",
+      "CSRF tokens — explicit, works for all browsers and request types, requires state",
+      "Use both. Lax is now the browser default but doesn't protect GET-based state changes or older browsers. Tokens are the reliable layer. SameSite is defence-in-depth."
+    ],
+    [
+      "SRI: always, never, or selectively?",
+      "Always — maximum integrity, zero CDN trust required",
+      "Never — operational pain from hash updates on CDN version bumps",
+      "Selectively: always on payment/checkout pages and high-sensitivity scripts. Optional for internal scripts you control. The operational cost is proportional to the blast radius of a compromise."
+    ],
+    [
+      "DOMPurify allow-list vs block-list?",
+      "Allow-list — only what you explicitly permit renders; new vectors are blocked by default",
+      "Block-list — permit everything except what you deny; simpler to configure initially",
+      "Always allow-list. Block-lists miss new vectors by definition — there will always be an attack vector you didn't add to the deny-list. Allow-list means new vectors are blocked by default."
+    ],
+  ]}
+  caption="Tradeoff questions test whether you've shipped these defences in production, not just read about them. The 'real answer' column is always 'it depends on X — here's what I'd ask about X'."
+/>
+
+---
+
+## Code Review Red Flags
+
+<Lessons title="Frontend Security Code Review Checklist" type="recommendations">
+  <Lesson title="[Browser] dangerouslySetInnerHTML without an explicit sanitiser">
+    Every occurrence needs a DOMPurify call with an allow-list config immediately before the render. A comment saying "safe, no user input" is not a sanitiser — inputs change, code paths change.
+  </Lesson>
+  <Lesson title="[Browser] document.write(), innerHTML =, insertAdjacentHTML with non-literal content">
+    Any assignment to a DOM sink with a variable value is a potential XSS vector. Trace the variable to its source. If it can come from URL params, API responses, or user input, it needs sanitisation or a DOM API alternative (textContent, createElement).
+  </Lesson>
+  <Lesson title="[Browser] CSP header missing base-uri and object-src">
+    A CSP without base-uri 'self' is vulnerable to base-tag hijacking. A CSP without object-src 'none' leaves the plugin execution context open. These two should be present on every policy without exception.
+  </Lesson>
+  <Lesson title="[Browser] Access-Control-Allow-Origin: * on a credentialed route">
+    Wildcard CORS with credentialed requests is both a browser spec violation (the browser will reject it) and a signal that the developer doesn't understand CORS. Find every route with credentials: 'include' on the frontend and verify the corresponding server sends a specific origin, not a wildcard.
+  </Lesson>
+  <Lesson title="[Auth] Session cookie missing HttpOnly, Secure, or SameSite">
+    A cookie without HttpOnly is readable by JavaScript — any XSS becomes session theft. Without Secure, it can be intercepted over HTTP. Without SameSite (or with SameSite=None), it's sent on cross-site requests. All three should be present on every session cookie.
+  </Lesson>
+  <Lesson title="[Auth] State-changing endpoint with no CSRF protection">
+    Any POST, PUT, PATCH, or DELETE endpoint that reads from a cookie-based session needs either a CSRF token in the request body/header or Sec-Fetch-Site verification on the server. SameSite alone is not sufficient for all browsers and all request types.
+  </Lesson>
+  <Lesson title="[Supply Chain] postinstall script in a new dependency">
+    Any dependency with a postinstall, preinstall, or prepare script gets access to the developer's machine and CI environment on npm install. Audit what the script does. If it's not clearly necessary (native compilation, code generation), flag it.
+  </Lesson>
+  <Lesson title="[Supply Chain] CDN script tag without integrity attribute">
+    Every &lt;script src="..."&gt; or &lt;link rel="stylesheet" href="..."&gt; pointing to a third-party CDN should have integrity="sha256-..." and crossorigin="anonymous". No integrity attribute means whatever the CDN serves executes — including a compromised version.
+  </Lesson>
+</Lessons>
+
+<Callout type="tip" title="In an interview, the checklist is a starting point, not the answer">
+  If the question is "what would you look for in a code review?", listing the items above gets you to mid-level. What gets you to senior is framing each item as a threat: "I'd look for dangerouslySetInnerHTML because it's the React escape hatch that undoes framework-level XSS protection — I'd trace any occurrence back to its data source to check if user-controlled content can reach it." The why and the reasoning chain matter as much as the what.
+</Callout>

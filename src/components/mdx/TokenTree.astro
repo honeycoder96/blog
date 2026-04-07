@@ -1,0 +1,409 @@
+---
+type Tier = 'base' | 'semantic' | 'component';
+
+interface TokenNode {
+  /** Dot-notation token name, e.g. "color.brand.primary" */
+  name: string;
+  /** Raw value ("#0057d9") or alias reference ("{color.blue.600}") */
+  value: string;
+  /** CSS custom property name, e.g. "--color-brand-primary" */
+  cssVar?: string;
+  /** Which tier this token lives in */
+  tier: Tier;
+  /**
+   * Names of tokens that this token directly aliases (its upstream sources).
+   * A semantic token `color.interactive.default` with children `["color.blue.600"]`
+   * means it resolves to the base token `color.blue.600`.
+   */
+  children?: string[];
+  /**
+   * When true, this token AND its full upstream chain are highlighted in accent colour.
+   */
+  highlight?: boolean;
+}
+
+interface Props {
+  tokens: TokenNode[];
+  title?: string;
+  caption?: string;
+  /** Show the CSS custom property name inside each card */
+  showCssVars?: boolean;
+}
+
+const { tokens, title, caption, showCssVars = false } = Astro.props;
+
+// ── Layout constants ────────────────────────────────────────────────────────
+const SVG_W    = 860;
+const CARD_W   = 220;
+const CARD_H   = showCssVars ? 76 : 58;
+const ROW_GAP  = 14;
+const HEADER_H = 46;   // Space for column heading text + rule
+const BOT_PAD  = 24;
+
+// Column centre x positions: base | semantic | component
+const COL_X: Record<Tier, number> = {
+  base:      130,
+  semantic:  430,
+  component: 730,
+};
+
+// ── Group tokens by tier ────────────────────────────────────────────────────
+const byTier: Record<Tier, TokenNode[]> = {
+  base:      tokens.filter(t => t.tier === 'base'),
+  semantic:  tokens.filter(t => t.tier === 'semantic'),
+  component: tokens.filter(t => t.tier === 'component'),
+};
+
+// ── Compute card positions ──────────────────────────────────────────────────
+interface Pos { cx: number; y: number }
+const positions = new Map<string, Pos>();
+
+for (const tier of ['base', 'semantic', 'component'] as Tier[]) {
+  let yOffset = HEADER_H;
+  for (const t of byTier[tier]) {
+    positions.set(t.name, { cx: COL_X[tier], y: yOffset });
+    yOffset += CARD_H + ROW_GAP;
+  }
+}
+
+// ── Compute SVG height ──────────────────────────────────────────────────────
+const maxBottom = Math.max(
+  ...Array.from(positions.values()).map(p => p.y + CARD_H),
+  HEADER_H + CARD_H,
+);
+const SVG_H = maxBottom + BOT_PAD;
+
+// ── Highlighted chain ───────────────────────────────────────────────────────
+// Walk upstream from any token with highlight:true and mark all ancestors.
+const highlighted = new Set<string>();
+
+function traceUpstream(name: string): void {
+  if (highlighted.has(name)) return;
+  highlighted.add(name);
+  const t = tokens.find(t => t.name === name);
+  if (t?.children) t.children.forEach(traceUpstream);
+}
+
+tokens.filter(t => t.highlight).forEach(t => traceUpstream(t.name));
+
+// ── Connection lines ────────────────────────────────────────────────────────
+// For each semantic/component token, draw a bezier from each parent's right
+// edge to this token's left edge.
+interface Connection {
+  x1: number; y1: number;
+  x2: number; y2: number;
+  isHl: boolean;
+}
+const connections: Connection[] = [];
+
+for (const t of tokens) {
+  if (!t.children?.length) continue;
+  const toPos = positions.get(t.name);
+  if (!toPos) continue;
+
+  for (const parentName of t.children) {
+    const fromPos = positions.get(parentName);
+    if (!fromPos) continue;
+
+    const x1 = fromPos.cx + CARD_W / 2;          // right edge of parent card
+    const y1 = fromPos.y  + CARD_H / 2;           // vertical centre of parent
+    const x2 = toPos.cx   - CARD_W / 2;           // left edge of this card
+    const y2 = toPos.y    + CARD_H / 2;           // vertical centre of this
+
+    connections.push({
+      x1, y1, x2, y2,
+      isHl: highlighted.has(t.name) && highlighted.has(parentName),
+    });
+  }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function looksLikeColor(v: string): boolean {
+  const t = v.trim();
+  return /^#[0-9a-f]{3,8}$/i.test(t) ||
+         t.startsWith('rgb')          ||
+         t.startsWith('hsl')          ||
+         t.startsWith('oklch')        ||
+         t.startsWith('color(');
+}
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
+
+const CONN_DEFAULT = 'rgba(99,102,241,0.18)';
+const CONN_HL      = '#818cf8';
+const CONN_MID_X: Record<string, number> = {
+  'base-semantic':    (COL_X.base + CARD_W / 2 + COL_X.semantic - CARD_W / 2) / 2,
+  'semantic-component': (COL_X.semantic + CARD_W / 2 + COL_X.component - CARD_W / 2) / 2,
+};
+
+function midX(x1: number): number {
+  return x1 > 300 ? CONN_MID_X['semantic-component'] : CONN_MID_X['base-semantic'];
+}
+
+const COL_LABELS: Array<{ tier: Tier; label: string }> = [
+  { tier: 'base',      label: 'Base Tokens' },
+  { tier: 'semantic',  label: 'Semantic Tokens' },
+  { tier: 'component', label: 'Component Tokens' },
+];
+
+const uid = `tt-${Math.random().toString(36).slice(2, 7)}`;
+---
+
+<div class="tt-wrap">
+  {title && <div class="tt-header">{title}</div>}
+
+  <div class="tt-body">
+    <svg
+      viewBox={`0 0 ${SVG_W} ${SVG_H}`}
+      xmlns="http://www.w3.org/2000/svg"
+      class="tt-svg"
+      role="img"
+      aria-label={title ?? 'Token hierarchy diagram'}
+    >
+      <defs>
+        <marker
+          id={`${uid}-arrow`}
+          markerWidth="7" markerHeight="7"
+          refX="6" refY="3.5"
+          orient="auto"
+        >
+          <polygon points="0 0, 7 3.5, 0 7" fill={CONN_DEFAULT} />
+        </marker>
+        <marker
+          id={`${uid}-arrow-hl`}
+          markerWidth="7" markerHeight="7"
+          refX="6" refY="3.5"
+          orient="auto"
+        >
+          <polygon points="0 0, 7 3.5, 0 7" fill={CONN_HL} />
+        </marker>
+      </defs>
+
+      {/* ── Column header labels + divider lines ──────────────────────── */}
+      {COL_LABELS.map(({ tier, label }) => (
+        <>
+          <text
+            x={COL_X[tier]}
+            y={18}
+            class="tt-col-label"
+            text-anchor="middle"
+          >{label}</text>
+          <line
+            x1={COL_X[tier] - CARD_W / 2}
+            y1={28}
+            x2={COL_X[tier] + CARD_W / 2}
+            y2={28}
+            class="tt-col-rule"
+          />
+        </>
+      ))}
+
+      {/* ── Connection lines (drawn behind cards) ─────────────────────── */}
+      {connections.map(conn => {
+        const mx = midX(conn.x1);
+        const d  = `M ${conn.x1} ${conn.y1} C ${mx} ${conn.y1}, ${mx} ${conn.y2}, ${conn.x2} ${conn.y2}`;
+        return (
+          <path
+            d={d}
+            fill="none"
+            stroke={conn.isHl ? CONN_HL : CONN_DEFAULT}
+            stroke-width={conn.isHl ? 2 : 1.5}
+            stroke-dasharray={conn.isHl ? undefined : '4 2'}
+            marker-end={`url(#${conn.isHl ? `${uid}-arrow-hl` : `${uid}-arrow`})`}
+          />
+        );
+      })}
+
+      {/* ── Token cards ───────────────────────────────────────────────── */}
+      {tokens.map(t => {
+        const pos = positions.get(t.name);
+        if (!pos) return null;
+
+        const isHl      = highlighted.has(t.name);
+        const hasColor  = looksLikeColor(t.value);
+        const cardX     = pos.cx - CARD_W / 2;
+        const cardY     = pos.y;
+
+        // Text x offsets: leave room for swatch if present
+        const nameX     = hasColor ? cardX + 32 : cardX + 10;
+        const valueX    = cardX + 10;
+
+        // Y baselines within the card
+        const nameY     = showCssVars ? cardY + 19 : cardY + 20;
+        const valueY    = showCssVars ? cardY + 36 : cardY + 38;
+        const cssVarY   = cardY + 58;
+
+        return (
+          <>
+            {/* Card rectangle */}
+            <rect
+              x={cardX}
+              y={cardY}
+              width={CARD_W}
+              height={CARD_H}
+              rx="7"
+              class:list={['tt-card', isHl && 'tt-card--hl']}
+            />
+
+            {/* Highlight chain left border bar */}
+            {isHl && (
+              <rect
+                x={cardX}
+                y={cardY}
+                width={3}
+                height={CARD_H}
+                rx="2"
+                class="tt-card-bar"
+              />
+            )}
+
+            {/* Colour swatch */}
+            {hasColor && (
+              <rect
+                x={cardX + 10}
+                y={cardY + CARD_H / 2 - 8}
+                width={14}
+                height={14}
+                rx="3"
+                style={`fill: ${t.value}`}
+              />
+            )}
+
+            {/* Token name */}
+            <text
+              x={nameX}
+              y={nameY}
+              class:list={['tt-name', isHl && 'tt-name--hl']}
+            >
+              {truncate(t.name, 26)}
+            </text>
+
+            {/* Token value */}
+            <text
+              x={valueX}
+              y={valueY}
+              class="tt-value"
+            >
+              {truncate(t.value, 28)}
+            </text>
+
+            {/* CSS variable (optional) */}
+            {showCssVars && t.cssVar && (
+              <text
+                x={valueX}
+                y={cssVarY}
+                class="tt-cssvar"
+              >
+                {truncate(t.cssVar, 30)}
+              </text>
+            )}
+          </>
+        );
+      })}
+    </svg>
+  </div>
+
+  {caption && <div class="tt-caption">{caption}</div>}
+</div>
+
+<style>
+  /* ── Shell ────────────────────────────────────────────────────────────── */
+  .tt-wrap {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .tt-header {
+    padding: 0.625rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-fg-faint);
+  }
+
+  .tt-body {
+    background: var(--theme-bg-inset);
+    overflow-x: auto;
+    padding: 0.75rem;
+  }
+
+  .tt-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-width: 520px;
+  }
+
+  .tt-caption {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--theme-fg-faint);
+    font-style: italic;
+    text-align: center;
+    border-top: 1px solid var(--theme-line);
+    background: var(--theme-bg-raised);
+  }
+
+  /* ── Column headers ───────────────────────────────────────────────────── */
+  .tt-col-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    fill: var(--theme-fg-ghost);
+  }
+
+  .tt-col-rule {
+    stroke: var(--theme-line-strong);
+    stroke-width: 1;
+  }
+
+  /* ── Token cards ──────────────────────────────────────────────────────── */
+  .tt-card {
+    fill: var(--theme-bg-raised);
+    stroke: var(--theme-line-strong);
+    stroke-width: 1.5;
+    transition: stroke 0.12s;
+  }
+
+  .tt-card--hl {
+    fill: rgba(99, 102, 241, 0.08);
+    stroke: rgba(99, 102, 241, 0.42);
+  }
+
+  .tt-card-bar {
+    fill: #818cf8;
+  }
+
+  /* ── Card text ────────────────────────────────────────────────────────── */
+  .tt-name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 700;
+    fill: var(--theme-fg-default);
+  }
+
+  .tt-name--hl {
+    fill: #818cf8;
+  }
+
+  .tt-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 10.5px;
+    fill: var(--theme-fg-faint);
+  }
+
+  .tt-cssvar {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 9.5px;
+    fill: var(--theme-fg-ghost);
+  }
+</style>
