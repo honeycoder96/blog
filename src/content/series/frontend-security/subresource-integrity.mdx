@@ -47,8 +47,6 @@ A bug in any of these — a compromised CDN account, a BGP hijack, a cache poiso
 
 **Cache poisoning** exploits CDN caching logic to cause one user's response (containing a malicious payload) to be cached and served to other users.
 
----
-
 ## What Subresource Integrity Does
 
 Subresource Integrity (SRI) addresses all three scenarios with the same mechanism: lock the `<script>` or `<link>` to the expected content hash. If the CDN serves a different file — for any reason — the browser refuses to execute it.
@@ -66,8 +64,6 @@ Subresource Integrity (SRI) addresses all three scenarios with the same mechanis
 ```
 
 The `integrity` attribute contains an algorithm prefix (`sha256-`) and a base64-encoded hash. The browser downloads the file, computes the hash, and compares. If they match, the script executes. If not, the browser treats it as a network error — no execution, no partial execution, no fallback.
-
----
 
 ## Generating SRI Hashes
 
@@ -104,8 +100,6 @@ Multiple algorithms can be specified for forward compatibility:
 
 The browser uses the strongest algorithm it supports.
 
----
-
 ## The `crossorigin` Requirement
 
 SRI only works when the resource is fetched with CORS. The `crossorigin="anonymous"` attribute is mandatory — without it, the browser cannot read the response body to compute the hash in a cross-origin-safe context.
@@ -115,8 +109,6 @@ SRI only works when the resource is fetched with CORS. The `crossorigin="anonymo
 </Callout>
 
 This also means the CDN must send CORS headers (`Access-Control-Allow-Origin: *`) on the resource. Most major CDNs do. If a CDN does not send CORS headers, SRI cannot be used with it.
-
----
 
 ## How the Browser Validates
 
@@ -151,8 +143,6 @@ When a mismatch occurs, the browser fires a `SecurityPolicyViolation` event and 
   caption="The browser computed the hash of what it received and compared it to the integrity attribute. They didn't match — the CDN served a different file than the one the developer approved."
 />
 
----
-
 ## SRI Limitations and Blind Spots
 
 SRI is effective against a compromised CDN serving a different file at the same URL. It does not help in several important scenarios:
@@ -175,8 +165,6 @@ document.head.appendChild(s);
 <Callout type="warning" title="SRI requires a deployment step on every CDN update">
   When analytics.io releases a new version of their script, your SRI-protected `<script>` tag continues to pass the old hash — and blocks the new file until you update your HTML. Plan for this operationally: subscribe to release notifications from third-party CDN-hosted libraries, or use a hash auto-generation step in your build pipeline.
 </Callout>
-
----
 
 ## The Magecart Attacks: Third-Party Scripts in Practice
 
@@ -216,8 +204,6 @@ In every case, the site's own server was not compromised. The attack came throug
   A `<script src="...">` is not a static include. It is a live connection to a third party's infrastructure that runs arbitrary code with your site's full origin authority — including access to every form field, every cookie, every DOM element. Treat adding a third-party script with the same due diligence as adding a new employee who has root access.
 </Callout>
 
----
-
 ## The `data:` Exfiltration Gap
 
 Even a correctly configured SRI check does not prevent a compromised script from loading further payloads dynamically. Once a script executes, it can use `import()`, `fetch()`, `createElement('script')`, or `data:` URIs to pull in additional attacker-controlled code:
@@ -239,7 +225,6 @@ This technique bypasses SRI because:
 
 This is why SRI alone is insufficient for high-risk third-party scripts. CSP `script-src` restrictions and `connect-src` limits on outbound fetches are the next layer.
 
----
 
 ## Combining SRI with CSP
 
@@ -262,8 +247,6 @@ Content-Security-Policy:
 
 The `connect-src` restriction limits where scripts can make outbound network requests — blocking the exfiltration step even if a compromised script executes.
 
----
-
 ## `Permissions-Policy`
 
 Beyond SRI and CSP, the `Permissions-Policy` header controls which browser APIs third-party scripts and iframes can access:
@@ -284,8 +267,6 @@ Permissions-Policy:
 ```
 
 Only `self` and Stripe's checkout domain may use the Payment Request API. No other script on the page — regardless of how it was loaded — can invoke it.
-
----
 
 ## Principle of Least Privilege for Third-Party Scripts
 
@@ -317,8 +298,6 @@ document.getElementById('chat-btn').addEventListener('click', () => {
 ```
 
 The script is never loaded for users who don't click the chat button. Those users are never exposed to the chat provider's attack surface.
-
----
 
 <Comparison
   headers={["Mechanism", "What it protects against", "What it cannot protect against", "Where it runs"]}

@@ -44,8 +44,6 @@ You do need three things:
   That's it. If all three feel familiar, you are ready to start.
 </Callout>
 
----
-
 ## The Attack Surface
 
 Before looking at any individual vulnerability, here is the full picture — every layer of DevForum where an attacker can find a foothold.
@@ -115,8 +113,6 @@ Four layers. Four distinct ways the trust model breaks down. The series covers t
   </Step>
 </Steps>
 
----
-
 ## What You'll Be Able to Do After This Series
 
 By the end, you should be able to:
@@ -128,8 +124,6 @@ By the end, you should be able to:
 5. Audit a `package.json` file and understand what supply chain risks exist in the dependency tree
 6. Write `<script>` and `<link>` tags with SRI hashes and explain what they protect against
 7. Walk through a security-focused code review in an interview without memorising a checklist
-
----
 
 ## How DevForum Gets Attacked (A Preview)
 
@@ -152,11 +146,7 @@ Every post in this series shows the attack before the defence. Here's one previe
 
 The browser didn't do anything wrong by its own rules. The cookie was there, and it was sent. The failure was in the server not checking where the request *came from* — which is exactly what Block 2 fixes.
 
----
-
 ## The Complete Post List
-
-*Posts are published and linked here as they go live.*
 
 ### Block 1 — Browser Attacks
 
@@ -176,7 +166,6 @@ The browser didn't do anything wrong by its own rules. The cookie was there, and
 | 5 | [Cookie Defences: SameSite, Prefixes, and Fetch Metadata](/series/frontend-security/cookie-security) | HttpOnly, Secure, SameSite variants, `__Host-` prefix, Fetch metadata resource isolation policy, defence-in-depth |
 | 6 | [HTTP Security Headers: Closing the Gaps CSP Doesn't Cover](/series/frontend-security/http-security-headers) | Clickjacking and frame-ancestors, HSTS and SSL stripping, X-Content-Type-Options, Referrer-Policy, Cross-Origin-Opener-Policy |
 
----
 
 ### Block 3 — Supply Chain & Third-Party Trust
 
@@ -185,7 +174,6 @@ The browser didn't do anything wrong by its own rules. The cookie was there, and
 | 7 | [Supply Chain Attacks: When Your Dependencies Attack You](/series/frontend-security/supply-chain-risks) | event-stream incident, typosquatting, dependency confusion, postinstall hooks, practical mitigations |
 | 8 | [Subresource Integrity & Third-Party Script Trust](/series/frontend-security/subresource-integrity) | CDN trust boundary, SRI hash generation, crossorigin requirement, Magecart attacks, Permissions-Policy |
 
----
 
 ### Interview Wrap
 
@@ -194,15 +182,12 @@ The browser didn't do anything wrong by its own rules. The cookie was there, and
 | 9 | [The Frontend Security Interview Playbook](/series/frontend-security/security-interview-playbook) | Threat model framework, XSS mitigation decision tree, four scenario walkthroughs, tradeoff questions, code review red flags |
 | 10 | [Frontend Security: Live Interview Simulation](/series/frontend-security/interview-simulation) | Four complete interview dialogues — XSS/CSP, CORS, CSRF/cookies, supply chain — with escalating follow-ups and annotated strong/partial answers |
 
----
 
 ### Conclusion
 
 | # | Post | What you'll learn |
 |---|------|-------------------|
 | 11 | [The Security Mindset: From Checklist to Instinct](/series/frontend-security/security-mindset) | DevForum's complete hardened posture, four mental models that persist after the specifics fade, six evergreen code review questions, further reading |
-
----
 
 <Callout type="tip" title="The DevForum thread">
   Every post in this series uses the same running example: a request to or an attack on DevForum. When you finish the series, you will have seen every vulnerability demonstrated against the same codebase — the same comment renderer for XSS, the same session cookie for CSRF, the same `package.json` for supply chain. That continuity is the point. Security is a systems problem, not a list of isolated issues.

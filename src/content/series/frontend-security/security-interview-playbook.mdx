@@ -35,8 +35,6 @@ The senior version has no single right answer. The interviewer is watching for:
 
 The candidate who says "add DOMPurify" passes a junior bar. The one who says "DOMPurify as sanitisation, nonce-based CSP as the second line in case DOMPurify misses something, and then `connect-src` to limit what an attacker can do even if a script runs" is thinking at the right level.
 
----
-
 ## The 5-Minute Audit Answer Structure
 
 Every "walk me through a security audit" question has the same underlying shape. Answer it in this order, every time:
@@ -52,8 +50,6 @@ Every "walk me through a security audit" question has the same underlying shape.
 **5. State the tradeoff.** Every defence has a cost. Nonces require SSR. SRI requires update coordination with every CDN version bump. CSRF tokens add request complexity for stateless APIs. Name the cost so the interviewer knows you've thought it through.
 
 This structure works for a 5-minute verbal answer and for a 30-minute whiteboard session. The depth changes; the shape doesn't.
-
----
 
 ## Threat Model Framework
 
@@ -108,8 +104,6 @@ Before any specific attack, here's the full grid for frontend threat modelling:
   caption="Every interview question about frontend security maps to a cell in this grid. Identify the asset first, then the entry point, then everything else follows."
 />
 
----
-
 ## Choosing the Right XSS Mitigation
 
 When the interviewer asks "how would you fix XSS here?", the answer depends on the context. This is the decision tree:
@@ -142,8 +136,6 @@ When the interviewer asks "how would you fix XSS here?", the answer depends on t
   caption="The right answer is always context-dependent. Interviewers who get 'just use DOMPurify' are listening for the follow-up: 'and CSP as the backstop in case it's bypassed'."
 />
 
----
-
 ## Four Scenario Walkthroughs
 
 ### Scenario 1 — Auditing a React App for XSS
@@ -164,8 +156,6 @@ Finally: is there a CSP? If not, there's no second line of defence. Any bypass o
 
 **What makes this answer strong:** starts with asset identification, covers sinks *and* sources, includes the manual tracing step most candidates miss, and ends with defence-in-depth rather than "just fix the sinks."
 
----
-
 ### Scenario 2 — Deploying CSP with Google Analytics and Stripe
 
 **The question:** "We want to add a Content Security Policy. We use Google Analytics and Stripe.js. Where do you start?"
@@ -183,8 +173,6 @@ For Stripe.js: same nonce pattern. Stripe's script loader injects frames — `fr
 Run in report-only for a full release cycle. Aggregate violations by `violated-directive`. Fix each inline script that lacks a nonce. Then enforce.
 
 **What makes this answer strong:** report-only first without being told, explains *why* nonces over domain allowlist (JSONP bypass), addresses both third-party scripts specifically, and frames enforcement as a staged process.
-
----
 
 ### Scenario 3 — Building a User HTML Editor
 
@@ -204,8 +192,6 @@ The edit store (what gets saved to the database) should store the *sanitised* ou
 
 **What makes this answer strong:** identifies the right tool (DOMPurify), specifies explicit allow-list over deny-list, layers CSP as backstop, uses sandboxed iframe for preview isolation, and makes the sanitise-on-write vs sanitise-on-read distinction.
 
----
-
 ### Scenario 4 — "Why Isn't CORS a Security Feature?"
 
 **The question:** "A colleague says 'we have CORS configured, so we're protected against cross-site attacks.' What's wrong with that statement?"
@@ -219,8 +205,6 @@ More specifically: CORS controls whether the *response* from a cross-origin requ
 So the colleague is correct that CORS provides some protection — it prevents cross-origin response reads. But it provides zero protection against state-changing cross-site requests, which is what CSRF is. Those require CSRF tokens, SameSite cookies, and Fetch metadata verification.
 
 **What makes this answer strong:** distinguishes SOP (built-in restriction) from CORS (opt-in relaxation), names specifically what CORS does and doesn't block, and names the actual mitigation for the threat CORS doesn't cover.
-
----
 
 ## Common Tradeoff Questions
 
@@ -254,8 +238,6 @@ So the colleague is correct that CORS provides some protection — it prevents c
   ]}
   caption="Tradeoff questions test whether you've shipped these defences in production, not just read about them. The 'real answer' column is always 'it depends on X — here's what I'd ask about X'."
 />
-
----
 
 ## Code Review Red Flags
 

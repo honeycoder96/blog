@@ -73,8 +73,6 @@ Four scenarios. Each one opens with a question you'll get. Each one has follow-u
   </A>
 </Interview>
 
----
-
 ## Scenario 2 — CORS
 
 <Interview
@@ -114,8 +112,6 @@ Four scenarios. Each one opens with a question you'll get. Each one has follow-u
     For cross-site attacks that matter in practice — CSRF, clickjacking, third-party script execution — CORS does nothing. CSRF needs CSRF tokens and SameSite cookies. Clickjacking needs `X-Frame-Options` or `frame-ancestors` in CSP. Third-party script trust needs SRI and CSP `script-src`. The colleague's mental model conflates "we've configured CORS correctly" (meaning we haven't accidentally opened cross-origin reads we didn't intend) with "we've protected against cross-site attacks" (which is a much broader and different problem).
   </A>
 </Interview>
-
----
 
 ## Scenario 3 — CSRF and Cookie Security
 
@@ -182,8 +178,6 @@ Four scenarios. Each one opens with a question you'll get. Each one has follow-u
   </A>
 </Interview>
 
----
-
 ## Scenario 4 — Supply Chain and SRI
 
 <Interview
@@ -239,8 +233,6 @@ Four scenarios. Each one opens with a question you'll get. Each one has follow-u
     For Stripe.js specifically: CSP `script-src js.stripe.com` allows execution from that domain but doesn't catch a CDN compromise serving a modified file. SRI would catch the CDN compromise but breaks on every Stripe update. Since SRI isn't viable here, CSP origin restriction plus `connect-src` exfiltration blocking is the practical layer — it doesn't prevent the script from running, but it limits what a compromised script can do.
   </A>
 </Interview>
-
----
 
 ## What Strong Answers Have in Common
 

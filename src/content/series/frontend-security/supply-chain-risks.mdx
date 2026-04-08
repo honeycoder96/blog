@@ -46,15 +46,11 @@ At the bottom of that chain are approximately 900 individual people whose securi
 
 You installed a lockfile. You did not install trust.
 
----
-
 ## What a Supply Chain Attack Is
 
 A supply chain attack compromises software *upstream* — at the source, the build tool, the package registry, or the package maintainer — so every downstream consumer is affected automatically. No user of the compromised package needs to do anything wrong. They just run `npm install`.
 
 The defining property: **the attack vector is the trust chain itself, not a vulnerability in the application's own code.**
-
----
 
 ## The event-stream Incident (2018)
 
@@ -90,8 +86,6 @@ The most instructive supply chain attack in the npm ecosystem. Walked through st
   </Step>
 </Steps>
 
----
-
 ## Typosquatting
 
 A simpler, less sophisticated attack: register a package name that looks like a well-known package, wait for developers to mistype it during `npm install`.
@@ -111,8 +105,6 @@ The attack requires no sophistication — just patience and a name that looks pl
 <Callout type="tip" title="Copy package names from package.json, not from memory">
   Typosquatting attacks rely on manual typing. Never type a package name from memory into the terminal. Copy it from the official documentation page or from an existing `package.json` that you trust. Check the published date and weekly download count before installing unfamiliar packages — a new package with zero history is a red flag.
 </Callout>
-
----
 
 ## Dependency Confusion
 
@@ -157,8 +149,6 @@ registry=https://registry.npmjs.org
 
 With this configuration, anything in the `@devforum` scope is fetched exclusively from GitHub Packages. A public `devforum-utils` package is a different name and a different scope — no confusion is possible.
 
----
-
 ## `postinstall` Hooks: The Silent Attack Vector
 
 When npm installs a package, it automatically runs lifecycle scripts defined in that package's `package.json` — `preinstall`, `install`, `postinstall`, and `prepare`. These scripts execute with the same permissions as the `npm install` command itself. No sandbox. No prompt.
@@ -197,8 +187,6 @@ The output shows the postinstall line. Most engineers scroll past it. The `found
   `npm audit` compares your installed package versions against a database of disclosed vulnerabilities. A package that exfiltrates environment variables but has no disclosed CVE produces zero findings. The event-stream attack, typosquatting packages, and most real supply chain attacks are invisible to `npm audit`.
 </Callout>
 
----
-
 ## The Scale of Transitive Dependencies
 
 To make the exposure concrete — this is what one direct dependency (`react`) pulls into a typical project:
@@ -227,8 +215,6 @@ To make the exposure concrete — this is what one direct dependency (`react`) p
 
 Each of those packages has its own maintainer, its own release cycle, and its own `postinstall` script capability. `react` itself is thoroughly audited. The 47 Babel runtime helpers it pulls in — somewhat less so. The packages *those* pull in — you are trusting individuals you have never heard of.
 
----
-
 ## Why Lockfiles Help — and Where They Stop
 
 A lockfile (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`) pins every package to an exact version and content hash. It means `npm install` in CI installs exactly the same code that ran on the developer's machine.
@@ -241,8 +227,6 @@ This prevents *version drift* — where a new version with a vulnerability gets 
 <Callout type="info" title="Commit your lockfile and review changes to it">
   Always commit `package-lock.json`. In code review, treat changes to the lockfile as security-relevant changes — not noise to skip over. A PR that modifies only the lockfile and adds no visible code change is a meaningful signal worth examining. Check that the package name, version, and resolved URL match what the `npm install` log shows.
 </Callout>
-
----
 
 ## `npm audit` Limitations
 
@@ -258,8 +242,6 @@ What it misses:
 - **Ownership transfers** — a package with a legitimate history, now under new malicious ownership, looks identical to a safe package
 
 Use `npm audit` to track *known* vulnerabilities. Do not use it to assess supply chain risk.
-
----
 
 ## Practical Mitigations
 
@@ -295,8 +277,6 @@ Before installing an unfamiliar package or approving a dependency update PR, che
 - **Repository mismatch.** Does the npm package link to a legitimate GitHub repo? Is the repo's code consistent with what's in the published tarball?
 - **Dependency additions.** If a patch-level version bump adds a new dependency, ask why. Patch versions should not add dependencies.
 
----
-
 ## Private Registries and Scope Isolation
 
 For internal packages, a private registry eliminates the dependency confusion vector entirely. Configure your `.npmrc` to route scoped packages to your private registry and use a registry proxy for public packages:
@@ -312,8 +292,6 @@ registry=https://verdaccio.internal.devforum.com
 ```
 
 With a proxy registry (Verdaccio, Artifactory, Nexus), you can maintain an explicit allowlist of approved packages. Any package not on the list fails to install — typosquatting and dependency confusion cannot reach packages that are simply not in the allowlist.
-
----
 
 ## The Future: Sigstore and Package Provenance
 
@@ -334,8 +312,6 @@ This doesn't prevent a malicious maintainer from publishing a malicious package 
   Major packages in the npm ecosystem (including React, Next.js, and most of the Astro ecosystem) now publish with provenance. When evaluating a dependency, check whether it has a provenance attestation. A package that can prove it was built from auditable source code in a public CI run is meaningfully more trustworthy than one that cannot.
 </Callout>
 
----
-
 <Comparison
   headers={["Tool / Technique", "What it catches", "What it misses", "Cost"]}
   rows={[
@@ -348,8 +324,6 @@ This doesn't prevent a malicious maintainer from publishing a malicious package 
   ]}
   caption="No single tool covers everything. Use --ignore-scripts in CI as the baseline, socket.dev for behavioural analysis, and a private proxy registry for the strongest isolation."
 />
-
----
 
 <Lessons title="Supply Chain Security Checklist" type="recommendations">
   <Lesson title="Run npm ci --ignore-scripts in every CI pipeline">

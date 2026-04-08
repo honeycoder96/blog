@@ -84,8 +84,6 @@ This asymmetry is exactly why CSRF is a separate problem, not a CORS problem —
 
 **The threat SOP prevents:** without it, any malicious page could silently `fetch('https://yourbank.com/balance')` using your session cookie and read your account balance. Any site could read the contents of your authenticated sessions on any other site. SOP prevents cross-origin response reads by default.
 
----
-
 ## What CORS Actually Is
 
 CORS (Cross-Origin Resource Sharing) is not a security restriction. It's a relaxation of SOP.
@@ -97,8 +95,6 @@ The browser's default is to block cross-origin response reads. CORS is the mecha
 </Callout>
 
 The right question when adding CORS is not "how do I make this work?" — it's "which origins should legitimately be able to read this API's responses?"
-
----
 
 ## Simple vs Preflighted Requests
 
@@ -146,8 +142,6 @@ DevForum's API call: `fetch('https://api.devforum.com/v1/posts', { method: 'POST
   Developers sometimes treat the preflight OPTIONS request as overhead to eliminate. It exists to protect servers that weren't designed for cross-origin requests — the preflight lets the server consent before any state-changing request is sent. It is the spec working as intended.
 </Callout>
 
----
-
 ## The Preflight Flow in Full Detail
 
 <SequenceDiagram
@@ -190,8 +184,6 @@ DevForum's API call: `fetch('https://api.devforum.com/v1/posts', { method: 'POST
   caption="The browser generates the OPTIONS request automatically. Three request headers describe the intended actual request; the server's response determines whether the browser sends it."
 />
 
----
-
 ## Credentialed Requests and the Wildcard Trap
 
 By default, cross-origin `fetch()` calls do not include cookies or `Authorization` headers. To send credentials, you must opt in:
@@ -212,8 +204,6 @@ If either is missing, the browser blocks the response from reaching JavaScript �
 <Callout type="danger" title="Access-Control-Allow-Origin: * + credentials: 'include' is a browser error">
   This combination is explicitly prohibited by the Fetch specification. The browser will block the response with a CORS error regardless of what the server returns. If you see this combination in production, either credentials are not actually being sent (and someone thinks they are), or the ACAO header needs to be changed to a specific origin.
 </Callout>
-
----
 
 ## `Vary: Origin` and CDN Caching
 
@@ -246,8 +236,6 @@ app.use((req, res, next) => {
   This is the bug that surfaces months after launch, after a CDN is added in front of the API. All cross-origin requests start failing intermittently — for some users, in some regions, depending on which CDN edge has cached what. The fix is one header. The diagnosis can take days.
 </Callout>
 
----
-
 ## What CORS Does Not Protect Against
 
 Two things developers routinely assume CORS handles that it does not:
@@ -255,8 +243,6 @@ Two things developers routinely assume CORS handles that it does not:
 **CSRF.** A form on `evil.com` can POST to `api.devforum.com`. The browser sends the request — including any cookies attached to `api.devforum.com`. SOP blocks `evil.com`'s JavaScript from *reading* the response. The state change (delete account, transfer funds, post comment) has already happened. CORS does not prevent CSRF. That requires CSRF tokens or SameSite cookies — the subject of the next post.
 
 **Non-browser clients.** `curl`, Postman, Python's `requests`, any server-to-server HTTP call — these ignore CORS headers entirely. CORS is a browser contract. It tells browsers which origins may read responses. It tells nothing to any other HTTP client. If your API contains sensitive data, authentication and authorisation on every endpoint are still required independently of CORS configuration.
-
----
 
 ## Common Misconfigurations
 
@@ -299,8 +285,6 @@ if (ALLOWED.has(req.headers.origin)) {
   caption="All four misconfigurations appear in production codebases. The regex bypass is the least obvious — it looks like a validation but isn't."
 />
 
----
-
 ## Request Type Reference
 
 <Comparison
@@ -312,8 +296,6 @@ if (ALLOWED.has(req.headers.origin)) {
   ]}
   caption="Credentialed is not a third category — any simple or preflighted request can also be credentialed. The credentials flag changes what the server must return, not whether a preflight fires."
 />
-
----
 
 <Lessons title="CORS Deployment Checklist" type="recommendations">
   <Lesson title="Validate Origin against an explicit allowlist, not a regex">

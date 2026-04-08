@@ -21,8 +21,6 @@ The developer who built the comment renderer used React. They assumed React prot
 
 That's XSS. Not a theoretical vulnerability — a routine consequence of trusting user content in the wrong place.
 
----
-
 ## The Browser's Trust Model
 
 Before looking at how XSS happens, you need to understand *why* it's so damaging.
@@ -32,8 +30,6 @@ JavaScript that runs inside a page has full access to everything on that page's 
 The browser cannot distinguish your JavaScript from injected JavaScript. They run under the same origin, with the same permissions. There's no flag on a DOM node that says "this script was trusted by the developer." If a script executes on `devforum.com`, it has `devforum.com`'s full authority.
 
 That's what XSS exploits: the browser's complete trust in anything that runs inside the page.
-
----
 
 ## Reflected XSS
 
@@ -86,8 +82,6 @@ The fix is one line: HTML-encode the parameter before rendering it. `req.query.q
 
 **Why it's called "reflected":** the payload is sent to the server and reflected straight back in the response. The server is a mirror, not a target.
 
----
-
 ## Stored XSS
 
 Reflected XSS requires the victim to click a crafted link. Stored XSS is more dangerous: the attacker injects the payload once, and it fires for every user who loads the page — no link required.
@@ -125,8 +119,6 @@ The server stores this string in MongoDB. The server renders it into every respo
 />
 
 This is the attack that hit DevForum at the start of this post. One comment. Forty sessions in an hour. The payload keeps firing until someone notices and deletes it.
-
----
 
 ## DOM-Based XSS
 
@@ -194,8 +186,6 @@ The server sees a completely normal request for article 123. Its response contai
   Any input that flows from `location.search`, `location.hash`, `document.referrer`, or `postMessage` into a DOM sink (`innerHTML`, `outerHTML`, `document.write`, `eval`) is a DOM XSS vector. Sanitise it on the client, at the point of insertion.
 </Callout>
 
----
-
 ## Mutation XSS (mXSS)
 
 Mutation XSS exploits a gap between what a sanitiser considers safe and what the browser's HTML parser actually produces.
@@ -226,8 +216,6 @@ The sanitiser saw a `<style>` block with what looked like text. The browser's pa
   Sanitising before browser parsing means the sanitiser and the parser see different DOM trees. DOMPurify addresses this by running the parser internally and sanitising the *parsed result* — not the raw string. Never write your own HTML allowlist.
 </Callout>
 
----
-
 ## Where Attacker Input Enters — and Where It Explodes
 
 Every XSS attack has two ends. At one end, attacker-controlled text gets into your application — through a URL parameter, a database value, a `postMessage` event, something the user typed. At the other end, that text lands somewhere the browser interprets it as code: `innerHTML`, `eval()`, an element's `href`. Nothing bad happens unless these two ends connect without sanitisation in between.
@@ -249,8 +237,6 @@ Security literature calls these ends **sources** (where attacker input enters) a
 />
 
 In code review, the exercise is: trace every source. Follow it through the callstack. Does it reach a sink? If yes, is it sanitised before it gets there?
-
----
 
 ## `postMessage`: The Cross-Frame Source
 
@@ -286,8 +272,6 @@ Two changes matter: the `event.origin` check rejects any sender that isn't the e
   Some code checks `event.source === someIframeElement.contentWindow` instead of checking `event.origin`. This is not safe — an attacker can spoof `event.source` in certain browser contexts. Always validate `event.origin` against an explicit string. Never use `.startsWith()` or `.includes()` on origins; use strict equality so `https://payments.devforum.com.evil.com` does not pass.
 </Callout>
 
----
-
 ## SVG and Markdown Vectors
 
 Two vectors that bypass filters that only check HTML tags:
@@ -313,8 +297,6 @@ This passes sanitisers that only look for HTML tags. The link renders cleanly. W
 <Callout type="warning" title="Markdown renderers output HTML sinks">
   If your markdown renderer produces HTML, its output is a sink. Apply DOMPurify to the rendered HTML output — not to the markdown source. Also explicitly check that your renderer does not allow `javascript:` scheme in href attributes.
 </Callout>
-
----
 
 ## React, Vue, Angular: The Escape Hatches
 
@@ -371,8 +353,6 @@ this.safeHtml = this.sanitizer.bypassSecurityTrustHtml(comment.body);
   `dangerouslySetInnerHTML`, `v-html`, `bypassSecurityTrustHtml` — these APIs are named as warnings. Every occurrence in a codebase should be treated as a security checkpoint in code review. Ask: where does this HTML come from, and is it sanitised before it arrives here?
 </Callout>
 
----
-
 ## DOMPurify in Practice
 
 DOMPurify is the standard client-side sanitiser. It works by parsing the input using the browser's own HTML parser, walking the resulting DOM, and removing anything that doesn't pass its allowlist — then serialising the safe DOM back to a string.
@@ -411,8 +391,6 @@ DOMPurify.sanitize(dirty, { FORCE_BODY: false });
   DOMPurify has had mXSS bypass vulnerabilities. They are discovered, disclosed responsibly, and patched — usually within days. But if you're on an old pinned version and haven't updated in a year, you may be running a version with a known bypass. Pin to a specific version in `package.json`, and treat DOMPurify updates as security patches.
 </Callout>
 
----
-
 ## XSS Variant Comparison
 
 <Comparison
@@ -425,8 +403,6 @@ DOMPurify.sanitize(dirty, { FORCE_BODY: false });
   ]}
   caption="All four variants result in attacker-controlled JavaScript executing under your origin's trust. The entry path and persistence differ — the damage does not."
 />
-
----
 
 ## Open Redirect: The Attack that Chains With Everything
 

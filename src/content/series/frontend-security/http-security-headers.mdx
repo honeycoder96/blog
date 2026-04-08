@@ -29,8 +29,6 @@ The previous posts built defences against specific attack categories: XSS, CSRF,
 
 This post is different. The five headers it covers are HTTP response headers — the server sends them, the browser enforces them, and none of your application code is involved in that enforcement. Each header closes a specific attack vector that the previous defences do not address. They are not substitutes for what came before. They are the remaining gaps.
 
----
-
 ## Clickjacking and Frame Control
 
 ### The Attack
@@ -145,8 +143,6 @@ Content-Security-Policy: frame-ancestors 'self' https://admin.devforum.com
   Modern browsers see `frame-ancestors` and ignore `X-Frame-Options` when both are present. Older browsers that do not support CSP Level 2 (IE, older Edge) fall back to `X-Frame-Options`. Setting both headers costs nothing and covers the entire browser population. Never rely on only one.
 </Callout>
 
----
-
 ## Strict-Transport-Security: Enforcing HTTPS at the Browser Level
 
 ### The Connection to Cookie Security
@@ -208,8 +204,6 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
   The `max-age` directive only protects users who have already visited your site and received the HSTS header. A brand-new user's first request is still vulnerable to SSL stripping — they have no stored policy yet. The HSTS preload list solves this: browsers ship with a built-in list of HTTPS-only domains. Submit your domain at `hstspreload.org` (requirements: `max-age` ≥ 31536000, `includeSubDomains`, `preload`, and all subdomains must serve valid HTTPS). Once included, every user on every browser connects over HTTPS on their very first visit.
 </Callout>
 
----
-
 ## `X-Content-Type-Options`: Stopping MIME Sniffing
 
 ### The Attack: When the Browser Overrules the Server
@@ -249,8 +243,6 @@ With `nosniff`, the attacker's file is served as `text/plain` and displayed as r
 <Callout type="tip" title="Set X-Content-Type-Options globally — there are no tradeoffs">
   Unlike most headers in this post, `X-Content-Type-Options: nosniff` has no configuration decision and no meaningful tradeoffs. If your server sets correct `Content-Type` headers (it should), `nosniff` changes nothing for legitimate users. Set it once in your global middleware and it never needs revisiting.
 </Callout>
-
----
 
 ## `Referrer-Policy`: Controlling What URLs Leak to Third Parties
 
@@ -327,8 +319,6 @@ app.use('/email-confirm', (req, res, next) => {
 
 The URL of a password reset page, an email confirmation page, or a payment callback should never appear in any server's access log other than your own.
 
----
-
 ## `Cross-Origin-Opener-Policy`: Severing the Cross-Window Reference
 
 ### The Problem: `window.opener`
@@ -390,8 +380,6 @@ For most applications, `same-origin` is the right setting. The exception: if you
   Setting `Cross-Origin-Opener-Policy: same-origin` alongside `Cross-Origin-Embedder-Policy: require-corp` enables **cross-origin isolation** — a browser security mode required to use `SharedArrayBuffer` and high-resolution `performance.now()` timers. These APIs were restricted after the Spectre CPU vulnerability class was disclosed, because high-resolution timers can be used to measure cache-timing side channels. If your application uses WebAssembly, audio worklets, or performance-sensitive parallel computation, cross-origin isolation is a prerequisite — and COOP is half of it.
 </Callout>
 
----
-
 ## All Five Headers in One View
 
 DevForum's hardened response headers for an authenticated page:
@@ -413,8 +401,6 @@ DevForum's hardened response headers for an authenticated page:
   ]}
   caption="Each header is independent — each one closes a different attack vector. The browser enforces all of them before any application code runs."
 />
-
----
 
 ## Defence-in-Depth: What Each Header Stops
 
@@ -454,8 +440,6 @@ DevForum's hardened response headers for an authenticated page:
   ]}
   caption="None of these headers replaces the defences from previous posts — they close the gaps that XSS prevention, CSRF tokens, cookie attributes, and CSP leave open."
 />
-
----
 
 ## Setting All Headers in Express
 

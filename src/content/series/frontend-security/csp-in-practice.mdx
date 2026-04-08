@@ -35,8 +35,6 @@ The browser enforces this at execution time. Not the server, not a proxy, not a 
 
 This is what makes CSP a meaningful second line of defence. Even if an attacker gets a payload into the DOM, they cannot execute it without also being able to bypass the browser's own enforcement.
 
----
-
 ## Header Anatomy
 
 The policy is a single response header. Its value is a semicolon-separated list of directives, each of which is a directive name followed by a space-separated list of source values.
@@ -70,8 +68,6 @@ A few directives deserve extra attention:
 
 **`object-src 'none'`** eliminates the entire plugin execution context. Flash is dead, but `<object>` and `<embed>` remain valid HTML. Set this to `'none'` and forget about it.
 
----
-
 ## The `'unsafe-inline'` Problem
 
 Before covering the right way to allow scripts, it's worth being explicit about the wrong way.
@@ -83,8 +79,6 @@ Adding `'unsafe-inline'` to `script-src` means any inline script on the page may
 </Callout>
 
 Similarly, `'unsafe-eval'` allows `eval()`, `setTimeout(string)`, and `new Function(string)`. Unless you have a bundler that requires it (some older webpack configs do), this should never appear in a production policy.
-
----
 
 ## How the Browser Evaluates CSP
 
@@ -116,8 +110,6 @@ When a script wants to execute, the browser runs this decision tree:
 />
 
 The check happens at execution time, for every script — inline and external. The browser does not distinguish between "trusted" and "injected" scripts in the HTML. The policy does.
-
----
 
 ## Nonce-Based CSP
 
@@ -209,8 +201,6 @@ The browser will only execute inline scripts whose content hashes to this exact 
   Use hashes for static bootstrap scripts, analytics initialisation, or feature flag snippets that are version-controlled and change infrequently. For anything that varies with user session data or personalisation, nonces are the right tool — a hash of dynamic content would need to be recalculated on every request, which is effectively a nonce.
 </Callout>
 
----
-
 ## Strict CSP vs Domain Allowlists
 
 Most CSP tutorials tell you to list the domains your scripts come from:
@@ -241,8 +231,6 @@ Your React or Vite bundle loads via a nonce-bearing `<script>`. It dynamically i
 
 **`<base>` tag hijacking.** An injected `<base href="https://evil.com/">` rewrites all relative URLs before the script loads. `./bundle.js` becomes `https://evil.com/bundle.js`. Without `base-uri 'self'` in your policy, this bypasses `script-src 'self'` entirely. This is why `base-uri 'self'` is not optional.
 
----
-
 ## CSP Strategy Comparison
 
 <Comparison
@@ -255,8 +243,6 @@ Your React or Vite bundle loads via a nonce-bearing `<script>`. It dynamically i
   ]}
   caption="Nonce + strict-dynamic is the recommended posture for server-rendered apps. Pure SPAs should use hashes for the initial bundle and strict-dynamic for dynamic imports."
 />
-
----
 
 ## Report-Only Mode
 

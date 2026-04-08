@@ -55,8 +55,6 @@ This prevents the session cookie from being intercepted on an unencrypted connec
   `Secure` controls transmission only. The cookie value is stored in the browser's cookie jar in plaintext. Other security mechanisms — rotating sessions, short TTLs, binding sessions to user-agent or IP fingerprints — protect the stored value against local access.
 </Callout>
 
----
-
 ## SameSite: How the Browser Filters Cross-Site Requests
 
 `SameSite` tells the browser which cross-site contexts should include the cookie. It has three values, each with very different behaviour.
@@ -133,8 +131,6 @@ This is the pre-2020 default and the setting required for third-party contexts: 
   ]}
 />
 
----
-
 ## Why `SameSite=Lax` Is Not Sufficient Alone
 
 `Lax` handles the most common CSRF scenario. It does not handle all of them.
@@ -148,8 +144,6 @@ This is the pre-2020 default and the setting required for third-party contexts: 
 **Legacy browsers.** Any browser that does not support `SameSite` ignores the attribute entirely. Enterprise environments often have older browser versions. Mobile browsers have inconsistent implementations.
 
 The conclusion: `SameSite=Lax` (or `Strict`) significantly reduces CSRF risk. It does not eliminate it. Layer it with synchronizer tokens and the mechanisms below.
-
----
 
 ## Cookie Prefixes: `__Host-` and `__Secure-`
 
@@ -182,8 +176,6 @@ By omitting `Domain`, the cookie is bound to the exact host that set it — `dev
 <Callout type="tip" title="Prefer __Host- for all authentication cookies">
   `__Host-` is the strictest prefix and closes the subdomain cookie injection vector completely. There is almost no downside for session cookies — the restrictions it enforces (`Secure`, no `Domain`, `Path=/`) are what your session cookie should have anyway. Use it by default.
 </Callout>
-
----
 
 ## The Hardened Cookie Header
 
@@ -223,8 +215,6 @@ res.cookie('__Host-session', sessionToken, {
 <Callout type="warning" title="You cannot set domain when using __Host-">
   Many Express cookie libraries default to setting `domain: req.hostname`. With `__Host-`, any `Domain` attribute causes the browser to reject the cookie silently. Explicitly omit `domain`, or set it to `undefined`. Test with DevTools — if the cookie does not appear after `Set-Cookie`, the browser rejected it.
 </Callout>
-
----
 
 ## Cookie Scoping: Domain and Path
 
@@ -287,8 +277,6 @@ For session cookies, omit `Domain` — or use `__Host-`, which enforces the omis
 
 `Path` scopes the cookie to a URL prefix. `Path=/admin` means the cookie is only sent on requests to `/admin/...`. This is a convenience feature, not a security one — JavaScript on the same origin can still read cookies regardless of `Path`. Do not use `Path` as a security boundary.
 
----
-
 ## Origin and Referer Header Verification
 
 Before Fetch metadata (covered next), the standard secondary check was verifying the `Origin` or `Referer` request header.
@@ -326,8 +314,6 @@ function verifyOrigin(req, res, next) {
 <Callout type="warning" title="Origin and Referer can be omitted — do not use as the sole defence">
   Some browsers, browser extensions, and privacy tools strip the `Referer` header. Some request types do not include `Origin`. Using either as your only CSRF defence means legitimate requests may be rejected for non-obvious reasons. Treat these as a secondary check that supplements token validation, not replaces it.
 </Callout>
-
----
 
 ## Fetch Metadata Headers
 
@@ -439,8 +425,6 @@ function resourceIsolationPolicy(req, res, next) {
   note="Safari does not send Sec-Fetch-* headers. The resource isolation policy must treat absent headers as a pass-through to CSRF token validation, not as a reason to block. Do not use Fetch metadata as a sole defence."
 />
 
----
-
 ## Defence-in-Depth: All Layers Combined
 
 Each layer stops CSRF at a different point in the request lifecycle. No single layer covers every scenario. All layers together leave an attacker with no viable path.
@@ -466,8 +450,6 @@ The minimum viable combination:
 Add if you want the strongest posture:
 4. **`SameSite=Strict`** instead of `Lax` (eliminates the cross-site navigation session, worth it for high-security apps)
 5. **Fetch metadata resource isolation policy** as a pre-validation filter
-
----
 
 <Lessons title="Cookie Security Checklist" type="recommendations">
   <Lesson title="Set HttpOnly on every session cookie">

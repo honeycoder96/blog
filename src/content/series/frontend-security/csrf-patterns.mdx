@@ -29,8 +29,6 @@ The user never clicked anything on DevForum. The attacker's site never received 
 
 This is Cross-Site Request Forgery. The server did exactly what it was told — by the attacker.
 
----
-
 ## Why the Browser Does This
 
 Browsers were designed to attach cookies to requests unconditionally. When `devforum.com` set a session cookie, the browser committed to sending it with every future request to `devforum.com` — regardless of which page initiated the request.
@@ -38,8 +36,6 @@ Browsers were designed to attach cookies to requests unconditionally. When `devf
 This behaviour is fundamental to how the web works. Without it, clicking a link from a Google search result to a site where you're already logged in would require you to log in again. Every navigation would lose session state.
 
 CSRF is not a browser bug. It is the intentional default behaviour of cookies, used against you.
-
----
 
 ## Why CORS Doesn't Save You
 
@@ -50,8 +46,6 @@ The browser still *sends* the request. The form POST to `devforum.com/account/de
 <Callout type="warning" title="CORS blocks response reads — the request still fires">
   SOP and CORS operate on responses. A cross-origin form POST reaches its target server before any CORS check runs. By the time the browser decides whether `evil.com` can read the response, the account is already deleted. CSRF protection must operate on the server side, at request validation time.
 </Callout>
-
----
 
 ## Why CSRF Still Works in 2026
 
@@ -70,8 +64,6 @@ Modern browsers defaulted `SameSite` to `Lax` starting in 2020, which blocks man
 <Callout type="info" title="SameSite=Lax reduces the attack surface — it does not eliminate it">
   SameSite is one layer of defence, not a complete solution. The right approach is defence-in-depth: synchronizer tokens or double-submit cookies on the server, SameSite on the cookie, and Fetch metadata on the request. The next post covers the cookie and browser layers in full.
 </Callout>
-
----
 
 ## The Attack in Full
 
@@ -94,8 +86,6 @@ Modern browsers defaulted `SameSite` to `Lax` starting in 2020, which blocks man
 The server's perspective: a POST arrived with a valid session cookie, the right `Content-Type`, and a `confirm=true` body parameter. It looked identical to a legitimate account deletion request. Without an additional check that the server itself issued, there is no way to tell the difference.
 
 That additional check is the synchronizer token.
-
----
 
 ## The Synchronizer Token Pattern
 
@@ -186,8 +176,6 @@ fetch('/api/account/delete', {
 
 The forged request from `evil.com` arrives without `_csrf` — the attacker never loaded the settings page from DevForum's server. The `validateCsrfToken` middleware returns 403 before any business logic runs.
 
----
-
 ## The Double-Submit Cookie Pattern
 
 The synchronizer token pattern requires server-side session storage to hold the token. For stateless APIs that do not maintain session state server-side, there is an alternative: the double-submit cookie.
@@ -251,8 +239,6 @@ function validateDoubleSubmit(req, res, next) {
   ]}
   caption="The attacker's browser sends the csrfToken cookie automatically — but evil.com's JavaScript cannot read it (SOP). Without the cookie's value, the attacker cannot forge a matching X-CSRF-Token header. The mismatch triggers a 403."
 />
-
----
 
 ## Choosing Between the Two Patterns
 

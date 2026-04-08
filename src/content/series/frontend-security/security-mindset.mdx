@@ -93,8 +93,6 @@ Across the series, DevForum moved from no deliberate security posture to a layer
 
 No single post in this series fixed everything. No single post was meant to. Security is additive: each layer assumes the previous one will sometimes fail.
 
----
-
 ## Four Mental Models That Outlast the Specifics
 
 Vulnerability names change. Browser behaviour evolves. Libraries get deprecated. But the reasoning patterns that produced the defences above don't change — they apply to any new attack surface you encounter.
@@ -139,8 +137,6 @@ Every defence in this series has a cost:
 
 A defence you don't deploy because the operational cost surprised you at implementation time is no defence at all. Name the cost explicitly when proposing a defence. "We should add SRI to our CDN scripts — that means subscribing to release notifications from each CDN-hosted library and updating hashes as part of each release" is a proposal that can be planned and resourced. "We should add SRI" is a proposal that gets agreed to and forgotten.
 
----
-
 ## The Evergreen Questions
 
 These questions apply to any feature, any PR, any design review — not specific to any vulnerability, but derived from the series as a whole.
@@ -166,8 +162,6 @@ These questions apply to any feature, any PR, any design review — not specific
   </Lesson>
 </Lessons>
 
----
-
 ## Where to Go Next
 
 The series covered the browser security model, authentication attacks, and supply chain risks. These are the right starting points. They're not the end.
@@ -185,8 +179,6 @@ The series covered the browser security model, authentication attacks, and suppl
 <Callout type="tip" title="One thing to do this week">
   Pick one PR from your team's recent history — a real one, already merged. Apply the six questions above to it. Not to find something to fix, but to practice the pattern. The habit of asking these questions during review is worth more than any single specific fix.
 </Callout>
-
----
 
 ## The Series Ends Here
 
