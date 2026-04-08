@@ -86,6 +86,53 @@ The most instructive supply chain attack in the npm ecosystem. Walked through st
   </Step>
 </Steps>
 
+## The Axios Attack (March 2026)
+
+Eight years after event-stream, the same playbook ran again — at a scale that made the earlier incident look contained.
+
+Axios is one of the most downloaded npm packages in the ecosystem: roughly 100 million weekly installs. It is used in frontend apps, backend services, and CI/CD pipelines at virtually every company that runs JavaScript. An attacker compromised a maintainer's npm account and published two malicious versions — `axios@1.14.1` and `axios@0.30.4` — on March 31, 2026. The packages were live for approximately two to three hours before npm removed them.
+
+<Steps>
+  <Step title="Account compromise — same root cause, larger target">
+    An attacker gained control of an Axios maintainer's npm account. The exact method has not been fully disclosed, but credential theft or phishing is consistent with the pattern. With publish access, they pushed two new versions to the registry.
+
+    Crucially, they did not modify Axios source code. The package itself was unchanged — which is why static analysis and diff tools would not have flagged anything unusual.
+  </Step>
+
+  <Step title="A hidden dependency added">
+    The malicious versions introduced a single new dependency: `plain-crypto-js`. This package had no legitimate purpose in Axios. It was published by the attacker specifically for this attack, designed to look like an innocuous cryptography utility.
+
+    The attack vector was not in `axios/lib/`. It was in `package.json`, in a line that most developers never look at after initial install.
+  </Step>
+
+  <Step title="postinstall delivers a RAT">
+    `plain-crypto-js` contained a malicious `postinstall` script. When `npm install axios` resolved the dependency tree and installed `plain-crypto-js`, npm executed the script automatically — no prompt, no sandbox, no user interaction required.
+
+    The script was a dropper. It detected the host operating system and downloaded a platform-specific payload:
+    - **Windows** — PowerShell-based Remote Access Trojan
+    - **macOS** — C++ binary RAT
+    - **Linux** — Python-based RAT
+
+    Once installed, the RAT established a connection to an attacker-controlled C2 server and provided persistent remote access: arbitrary command execution, filesystem access, and the ability to read environment variables, SSH keys, cloud credentials, and any secret accessible to the process running `npm install`.
+  </Step>
+
+  <Step title="Self-cleaning — no trace in node_modules">
+    After the payload was delivered, the dropper script deleted itself and replaced tampered files with clean-looking versions. Inspecting `node_modules` after the fact would not reveal the compromise. The only reliable indicators were the version numbers in the lockfile and the presence of `plain-crypto-js` as a transitive dependency.
+  </Step>
+
+  <Step title="Detection, removal, and attribution">
+    Security researchers at Palo Alto Unit 42 identified the malicious packages within hours of publication. npm removed `axios@1.14.1`, `axios@0.30.4`, and `plain-crypto-js` from the registry. Google Cloud's Threat Intelligence team attributed the campaign to **UNC1069**, a North Korea-linked threat actor known for financially motivated supply chain attacks.
+
+    Any system that ran `npm install axios` during the ~2–3 hour window — including CI/CD pipelines operating overnight — should be treated as fully compromised. Lockfile entries for either malicious version, or any entry for `plain-crypto-js`, are a confirmed indicator of exposure.
+  </Step>
+</Steps>
+
+<Callout type="danger" title="Check your lockfile right now if you use Axios">
+  Search your `package-lock.json` or `yarn.lock` for `axios@1.14.1`, `axios@0.30.0` or `plain-crypto-js`. If either appears, treat the system as compromised: rotate all credentials accessible to the process that ran `npm install` — GitHub tokens, AWS keys, API secrets, SSH keys — and audit your CI/CD environment for persistence mechanisms.
+</Callout>
+
+The event-stream attack targeted one app. The axios attack targeted every JavaScript developer. The attack vector — maintainer account compromise leading to a malicious transitive dependency with a `postinstall` hook — is identical. The blast radius is not.
+
 ## Typosquatting
 
 A simpler, less sophisticated attack: register a package name that looks like a well-known package, wait for developers to mistype it during `npm install`.
