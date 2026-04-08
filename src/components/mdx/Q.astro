@@ -1,0 +1,100 @@
+---
+interface Props {
+  label?: string;
+}
+
+const { label = 'Interviewer' } = Astro.props;
+---
+
+<div class="iv-turn iv-turn-q">
+  <div class="iv-turn-meta">
+    <span class="iv-speaker iv-speaker-q">
+      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="8" r="5"/>
+        <path d="M20 21a8 8 0 1 0-16 0"/>
+      </svg>
+      {label}
+    </span>
+  </div>
+  <div class="iv-bubble iv-bubble-q">
+    <slot />
+  </div>
+</div>
+
+<style is:global>
+  .iv-turn {
+    display: flex;
+    flex-direction: column;
+    padding: 0.75rem 1.25rem;
+    gap: 0.3rem;
+  }
+
+  .iv-turn + .iv-turn {
+    border-top: 1px solid var(--theme-line);
+  }
+
+  .iv-turn-meta {
+    display: flex;
+    align-items: center;
+  }
+
+  .iv-speaker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .iv-speaker-q {
+    color: var(--theme-fg-muted);
+  }
+
+  .iv-bubble {
+    font-size: 0.9rem;
+    line-height: 1.75;
+    color: var(--theme-fg-default);
+  }
+
+  .iv-bubble p {
+    margin: 0.25rem 0;
+    font-size: 0.9rem;
+    line-height: 1.75;
+    color: var(--theme-fg-default);
+  }
+
+  .iv-bubble p:first-child {
+    margin-top: 0;
+  }
+
+  .iv-bubble p:last-child {
+    margin-bottom: 0;
+  }
+
+  .iv-bubble code {
+    font-size: 0.82em;
+  }
+
+  .iv-bubble ul,
+  .iv-bubble ol {
+    margin: 0.25rem 0;
+    padding-left: 1.4em;
+    font-size: 0.9rem;
+    color: var(--theme-fg-default);
+    line-height: 1.75;
+  }
+
+  .iv-bubble li {
+    margin: 0.2rem 0;
+  }
+
+  .iv-bubble-q {
+    padding: 0.6rem 0.875rem;
+    background: var(--theme-bg-raised);
+    border: 1px solid var(--theme-line);
+    border-radius: 0 8px 8px 8px;
+    max-width: 88%;
+  }
+</style>

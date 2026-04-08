@@ -3,18 +3,36 @@ type Status = 'full' | 'partial' | 'flag' | 'none';
 type Browser = 'chrome' | 'firefox' | 'safari' | 'edge' | 'node';
 
 interface BrowserEntry {
-  browser: Browser;
+  browser?: Browser;
+  name?: string;
   version?: string;
-  status: Status;
+  status?: Status;
+  supported?: boolean;
   note?: string;
 }
 
 interface Props {
   feature: string;
-  data: BrowserEntry[];
+  data?: BrowserEntry[];
+  browsers?: BrowserEntry[];
+  note?: string;
 }
 
-const { feature, data } = Astro.props;
+const { feature, data, browsers, note: topLevelNote } = Astro.props;
+
+const nameToKey: Record<string, Browser> = {
+  chrome: 'chrome', firefox: 'firefox', safari: 'safari', edge: 'edge',
+  'node.js': 'node', node: 'node',
+};
+
+const rawEntries = data ?? browsers ?? [];
+const entries = rawEntries.map((e) => {
+  const browserKey: Browser =
+    e.browser ?? nameToKey[(e.name ?? '').toLowerCase()] ?? 'chrome';
+  const status: Status =
+    e.status ?? (e.supported === false ? 'none' : 'full');
+  return { browser: browserKey, version: e.version, status, note: e.note };
+});
 
 const browserMeta: Record<Browser, { name: string; icon: string }> = {
   chrome: {
@@ -50,7 +68,7 @@ const statusMeta: Record<Status, { symbol: string; label: string; cls: string }>
 <div class="bs-block">
   <div class="bs-header">{feature}</div>
   <div class="bs-grid">
-    {data.map((entry) => {
+    {entries.map((entry) => {
       const bm = browserMeta[entry.browser];
       const sm = statusMeta[entry.status];
       return (
@@ -88,6 +106,7 @@ const statusMeta: Record<Status, { symbol: string; label: string; cls: string }>
     <span><span class="bs-flag">⚑</span> Flag</span>
     <span><span class="bs-none">✗</span> None</span>
   </div>
+  {topLevelNote && <div class="bs-top-note">{topLevelNote}</div>}
 </div>
 
 <style>
@@ -176,5 +195,14 @@ const statusMeta: Record<Status, { symbol: string; label: string; cls: string }>
     display: flex;
     align-items: center;
     gap: 0.3rem;
+  }
+
+  .bs-top-note {
+    padding: 0.625rem 1.25rem;
+    border-top: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    color: var(--theme-fg-faint);
+    line-height: 1.5;
+    background: var(--theme-bg-raised);
   }
 </style>

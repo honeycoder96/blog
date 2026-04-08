@@ -1,0 +1,281 @@
+---
+title: "CSRF: How Browsers Betray You (and the Token That Stops It)"
+date: "May 2026"
+pubDate: 2026-05-05
+category: Security
+author: Honey Sharma
+summary: CSRF exploits the fact that browsers attach cookies to every cross-site request — automatically, invisibly, without asking. This post shows the attack in full, explains why CORS doesn't stop it, and builds the server-side defences that do.
+tags: [security, csrf, tokens, cookies, same-site, frontend]
+---
+import SequenceDiagram from '../../../components/mdx/SequenceDiagram.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import Callout from '../../../components/mdx/Callout.astro';
+import Lessons from '../../../components/mdx/Lessons.astro';
+import Lesson from '../../../components/mdx/Lesson.astro';
+
+A DevForum user visits a forum on a completely unrelated site. The page looks normal — a discussion thread, a few images. Hidden in the HTML is this:
+
+```html
+<!-- attacker's page — evil.com — do not ship this -->
+<form id="f" action="https://devforum.com/account/delete" method="POST">
+  <input type="hidden" name="confirm" value="true" />
+</form>
+<script>document.getElementById('f').submit();</script>
+```
+
+The form submits the moment the page loads. The user's browser sends a POST to `devforum.com/account/delete`. It attaches the DevForum session cookie automatically — the same cookie it attaches to every request to `devforum.com`. The server receives a valid session token, confirms the account deletion request, and returns 200.
+
+The user never clicked anything on DevForum. The attacker's site never received the response. The account is gone.
+
+This is Cross-Site Request Forgery. The server did exactly what it was told — by the attacker.
+
+## Why the Browser Does This
+
+Browsers were designed to attach cookies to requests unconditionally. When `devforum.com` set a session cookie, the browser committed to sending it with every future request to `devforum.com` — regardless of which page initiated the request.
+
+This behaviour is fundamental to how the web works. Without it, clicking a link from a Google search result to a site where you're already logged in would require you to log in again. Every navigation would lose session state.
+
+CSRF is not a browser bug. It is the intentional default behaviour of cookies, used against you.
+
+## Why CORS Doesn't Save You
+
+The previous post covered how CORS blocks cross-origin *response reads*. Developers often assume that same protection extends to cross-site requests. It does not.
+
+The browser still *sends* the request. The form POST to `devforum.com/account/delete` goes through. The server processes it. The state change happens. CORS only prevents `evil.com`'s JavaScript from reading the response — but the damage was done before the response arrived.
+
+<Callout type="warning" title="CORS blocks response reads — the request still fires">
+  SOP and CORS operate on responses. A cross-origin form POST reaches its target server before any CORS check runs. By the time the browser decides whether `evil.com` can read the response, the account is already deleted. CSRF protection must operate on the server side, at request validation time.
+</Callout>
+
+## Why CSRF Still Works in 2026
+
+Modern browsers defaulted `SameSite` to `Lax` starting in 2020, which blocks many CSRF vectors. (`SameSite` is a cookie attribute that controls when the browser includes cookies on cross-site requests — it's covered fully in the next post. For now: `Lax` means cookies are sent on top-level navigations but not on cross-site form POSTs or `fetch()` calls.) But the attack is not solved. It survives in several real scenarios:
+
+**Subdomain attacks.** If an attacker can run code on any subdomain of your domain, they can set cookies that scope to your apex domain — and those cookies are sent on same-site cross-origin requests that `SameSite=Lax` permits.
+
+**Top-level GET navigations.** `SameSite=Lax` permits cookies on top-level navigations using safe methods. If a state-changing action can be triggered via a GET request (search, export, confirm via link), Lax does not protect it.
+
+**Legacy browsers.** `SameSite` is not universally supported. Any user on an older browser — common in enterprise environments — receives no protection from browser-default SameSite behaviour.
+
+**Mobile WebViews.** Some WebView implementations handle cookies differently from browser behaviour. `SameSite` semantics vary.
+
+**Explicitly `SameSite=None` cookies.** Cookies set by legacy SSO systems, third-party integrations, or payment providers are often `SameSite=None` by requirement. They are fully vulnerable to CSRF.
+
+<Callout type="info" title="SameSite=Lax reduces the attack surface — it does not eliminate it">
+  SameSite is one layer of defence, not a complete solution. The right approach is defence-in-depth: synchronizer tokens or double-submit cookies on the server, SameSite on the cookie, and Fetch metadata on the request. The next post covers the cookie and browser layers in full.
+</Callout>
+
+## The Attack in Full
+
+<SequenceDiagram
+  title="CSRF Attack — How evil.com Deletes a DevForum Account"
+  actors={[
+    { id: "evil",    label: "evil.com",         variant: "malicious" },
+    { id: "browser", label: "Victim's Browser", icon: "browser" },
+    { id: "forum",   label: "devforum.com",      icon: "server", variant: "trusted" }
+  ]}
+  messages={[
+    { from: "evil",    to: "browser", label: "Serves page with hidden auto-submitting form", type: "attack" },
+    { from: "browser", to: "forum",   label: "POST /account/delete  confirm=true", sublabel: "Cookie: session=abc123 — auto-attached by browser", type: "attack", highlight: true },
+    { from: "forum",   to: "forum",   label: "Valid session — process deletion", type: "note", annotation: "server has no way to distinguish this from a legitimate request" },
+    { from: "forum",   to: "browser", label: "200 OK — account deleted", type: "response" }
+  ]}
+  caption="The browser attached the session cookie automatically. The server saw a valid session making a POST to a valid endpoint. Everything looked legitimate."
+/>
+
+The server's perspective: a POST arrived with a valid session cookie, the right `Content-Type`, and a `confirm=true` body parameter. It looked identical to a legitimate account deletion request. Without an additional check that the server itself issued, there is no way to tell the difference.
+
+That additional check is the synchronizer token.
+
+## The Synchronizer Token Pattern
+
+The synchronizer token pattern (also called the CSRF token pattern) adds a server-generated secret to every state-changing request. The server issues the token, the client includes it, and the server validates it before acting. An attacker on `evil.com` has no way to know the current token — they cannot read responses from `devforum.com` due to SOP — so they cannot include it in a forged request.
+
+### How it works
+
+1. On session creation (or per request, for stricter security), the server generates a cryptographically random token and stores it server-side, associated with the session.
+2. The token is embedded in every HTML form that performs a state-changing action.
+3. On every state-changing request (POST, PUT, PATCH, DELETE), the server reads the token from the request body or a custom header, and compares it to the stored value.
+4. If they match — the request is legitimate. If not — 403.
+
+```js
+// Express — CSRF token middleware (simplified)
+import crypto from 'crypto';
+
+function generateCsrfToken(req) {
+  const token = crypto.randomBytes(32).toString('hex');
+  req.session.csrfToken = token;
+  return token;
+}
+
+function validateCsrfToken(req, res, next) {
+  const tokenFromRequest =
+    req.body._csrf ||                     // form body
+    req.headers['x-csrf-token'] ||        // fetch with custom header
+    req.headers['x-xsrf-token'];          // Angular's default header name
+
+  if (!tokenFromRequest || tokenFromRequest !== req.session.csrfToken) {
+    return res.status(403).json({ error: 'CSRF token invalid or missing' });
+  }
+
+  next();
+}
+
+// Usage
+app.post('/account/delete',
+  validateCsrfToken,
+  deleteAccountHandler
+);
+```
+
+In a server-rendered HTML form:
+
+```html
+<form action="/account/delete" method="POST">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <button type="submit">Delete account</button>
+</form>
+```
+
+In a React/Vue app using `fetch()`:
+
+```js
+// Token delivered via a meta tag or an API endpoint
+const token = document.querySelector('meta[name="csrf-token"]').content;
+
+fetch('/api/account/delete', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-CSRF-Token': token,          // custom header — cannot be set by a cross-origin form
+  },
+  body: JSON.stringify({ confirm: true }),
+  credentials: 'include',
+});
+```
+
+<Callout type="tip" title="Custom headers are inherently CSRF-resistant for JSON APIs">
+  SOP prevents cross-origin requests from setting custom headers (like `X-CSRF-Token`) without a CORS preflight. If your API requires `Content-Type: application/json` and a custom auth header, a cross-origin form cannot replicate that — the preflight would block it. But the token remains good practice because it protects GET-state-changing endpoints and subdomain attack scenarios that CORS does not cover.
+</Callout>
+
+<SequenceDiagram
+  title="Synchronizer Token — Legitimate Request Validated"
+  actors={[
+    { id: "browser", label: "Victim's Browser", icon: "browser" },
+    { id: "forum",   label: "devforum.com",      icon: "server", variant: "trusted" }
+  ]}
+  messages={[
+    { from: "browser", to: "forum",   label: "GET /settings", type: "request" },
+    { from: "forum",   to: "browser", label: "200 OK — page with <input name='_csrf' value='t0k3n'>", sublabel: "Session stores: csrfToken = 't0k3n'", type: "response" },
+    { from: "browser", to: "forum",   label: "POST /account/email  _csrf=t0k3n", sublabel: "Cookie: session=abc123", type: "request", highlight: true },
+    { from: "forum",   to: "forum",   label: "session.csrfToken === body._csrf — match", type: "note", annotation: "token validates" },
+    { from: "forum",   to: "browser", label: "200 OK — email updated", type: "response" }
+  ]}
+  caption="The token was issued by the server, stored in the session, and included by the legitimate client. An attacker on evil.com cannot read the token from the GET /settings response — SOP blocks it."
+/>
+
+The forged request from `evil.com` arrives without `_csrf` — the attacker never loaded the settings page from DevForum's server. The `validateCsrfToken` middleware returns 403 before any business logic runs.
+
+## The Double-Submit Cookie Pattern
+
+The synchronizer token pattern requires server-side session storage to hold the token. For stateless APIs that do not maintain session state server-side, there is an alternative: the double-submit cookie.
+
+The idea: set the same random value in both a cookie *and* in each state-changing request (as a header or body field). The server checks that the two values match. It does not need to store the value itself — it just validates that cookie and request agree.
+
+```js
+// Server — set the CSRF cookie on login
+res.cookie('csrfToken', crypto.randomBytes(32).toString('hex'), {
+  httpOnly: false,   // JavaScript must be able to read this cookie to include it in headers
+  sameSite: 'strict',
+  secure: true,
+});
+
+// Client — read the cookie and include in every state-changing request
+function getCookie(name) {
+  return document.cookie
+    .split('; ')
+    .find(row => row.startsWith(name + '='))
+    ?.split('=')[1];
+}
+
+fetch('/api/account/delete', {
+  method: 'POST',
+  headers: {
+    'X-CSRF-Token': getCookie('csrfToken'),  // must match the cookie value
+  },
+  credentials: 'include',
+});
+
+// Server — validate that header and cookie values match
+function validateDoubleSubmit(req, res, next) {
+  const fromHeader = req.headers['x-csrf-token'];
+  const fromCookie = req.cookies.csrfToken;
+
+  if (!fromHeader || !fromCookie || fromHeader !== fromCookie) {
+    return res.status(403).json({ error: 'CSRF token mismatch' });
+  }
+  next();
+}
+```
+
+<Callout type="warning" title="The double-submit pattern depends on SameSite or subdomains being secure">
+  An attacker who can set cookies on your domain (e.g. via a subdomain they control) can plant a known `csrfToken` cookie value — and then forge a request with that same value in the header. The double-submit pattern is most reliable when combined with `SameSite=Strict` on the CSRF cookie and when subdomain cookie injection is not possible. The next post covers how `__Host-` prefix eliminates the subdomain attack entirely.
+</Callout>
+
+<SequenceDiagram
+  title="Double-Submit Cookie — How the Same Value Proves Same Origin"
+  actors={[
+    { id: "server",  label: "DevForum Server", icon: "server", variant: "trusted" },
+    { id: "browser", label: "Legitimate Browser", icon: "browser" },
+    { id: "evil",    label: "evil.com", variant: "malicious" }
+  ]}
+  messages={[
+    { from: "server",  to: "browser", label: "Login response: Set-Cookie: csrfToken=abc (httpOnly: false)", type: "response", annotation: "JS-readable cookie" },
+    { from: "browser", to: "browser", label: "JS reads csrfToken cookie → adds X-CSRF-Token: abc header", type: "note" },
+    { from: "browser", to: "server",  label: "POST /account/settings", sublabel: "Cookie: csrfToken=abc | X-CSRF-Token: abc", type: "request", highlight: true },
+    { from: "server",  to: "browser", label: "Header matches cookie — 200 OK", type: "response", annotation: "values match → legitimate" },
+    { from: "evil",    to: "server",  label: "POST /account/settings (forged)", sublabel: "Cookie: csrfToken=abc (auto-sent) | X-CSRF-Token: ??? (cannot read cookie)", type: "attack" },
+    { from: "server",  to: "evil",    label: "Header missing or wrong — 403 Forbidden", type: "blocked", annotation: "SOP blocks evil.com from reading the cookie" }
+  ]}
+  caption="The attacker's browser sends the csrfToken cookie automatically — but evil.com's JavaScript cannot read it (SOP). Without the cookie's value, the attacker cannot forge a matching X-CSRF-Token header. The mismatch triggers a 403."
+/>
+
+## Choosing Between the Two Patterns
+
+| | Synchronizer Token | Double-Submit Cookie |
+|--|--|--|
+| **Server state required** | Yes — token stored in session | No — stateless |
+| **Subdomain-safe by default** | Yes | Only with `__Host-` prefix on the cookie |
+| **Works with SPAs** | Yes — token delivered via API or meta tag | Yes — token read from cookie by JS |
+| **Works without JavaScript** | Yes — token in hidden form field | No — JS must read cookie and set header |
+| **Complexity** | Moderate | Low |
+
+For most server-rendered apps: synchronizer tokens. For stateless APIs where server-side session storage is not available: double-submit cookies — paired with `SameSite=Strict` and the `__Host-` prefix covered in the next post.
+
+<Callout type="warning" title="Where you store your token matters as much as which CSRF pattern you use">
+  **Cookies** (with `HttpOnly`, `Secure`, `SameSite=Strict`): protected from JavaScript reads; auto-sent by the browser but `SameSite` blocks cross-site requests. The right default for session tokens.
+
+  **`localStorage`**: readable by any JavaScript on the page — so XSS immediately yields the token. Not auto-sent, so it survives CSRF from the browser side. But XSS grants the same access anyway. Trading one attack class for another is not a gain.
+
+  The practical rule: **store session tokens in cookies, never in `localStorage`**. CSRF protection (this post) and XSS protection (Post 1) together cover both attack vectors. Storing tokens in `localStorage` to "avoid CSRF" removes the XSS barrier and leaves you defenceless against the more common threat.
+</Callout>
+
+---
+
+<Lessons title="CSRF Defence Checklist" type="recommendations">
+  <Lesson title="Protect every state-changing endpoint with a CSRF token">
+    POST, PUT, PATCH, DELETE — all of them. GET endpoints should never perform state changes. If a state change requires a GET (e.g. email confirmation links), add a single-use signed token in the URL rather than relying on a session cookie alone.
+  </Lesson>
+  <Lesson title="Use per-request tokens for sensitive actions">
+    A per-session CSRF token is adequate for most endpoints. For high-value actions — account deletion, email change, password reset — rotate the token per request. An intercepted token then has a one-request window of exposure.
+  </Lesson>
+  <Lesson title="Do not rely on CORS to prevent CSRF">
+    CORS blocks response reads. The forged request still reaches the server. Every state-changing endpoint needs explicit CSRF token validation regardless of your CORS configuration.
+  </Lesson>
+  <Lesson title="Do not rely on Content-Type alone">
+    Requiring `Content-Type: application/json` reduces but does not eliminate CSRF risk. Flash (before its deprecation) and some browser edge cases could send custom content types cross-origin. Token validation is not optional.
+  </Lesson>
+  <Lesson title="The next layer is SameSite + __Host- prefix + Fetch metadata">
+    Tokens are the primary defence. Cookie attributes and Fetch metadata request headers are the secondary layer that handles the scenarios tokens miss. Both posts in this block are required for a complete defence-in-depth posture.
+  </Lesson>
+</Lessons>

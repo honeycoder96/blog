@@ -1,0 +1,341 @@
+---
+interface SelectorScore {
+  /** The CSS selector string to display and score */
+  selector: string;
+  /** Optional human-readable label shown beneath the selector */
+  label?: string;
+  /** Inline style contributions — style="" counts as 1-0-0-0 */
+  inline: number;
+  /** ID selector count — #id counts as 0-1-0-0 */
+  ids: number;
+  /** Class / attribute / pseudo-class count — .cls, [attr], :hover each 0-0-1-0 */
+  classes: number;
+  /** Element / pseudo-element count — div, ::before each 0-0-0-1 */
+  elements: number;
+  /** Visually emphasise this row (green ring) */
+  highlight?: boolean;
+}
+
+interface Props {
+  selectors: SelectorScore[];
+  title?: string;
+  caption?: string;
+}
+
+const { selectors, title, caption } = Astro.props;
+
+// ── Winner detection when exactly two selectors are compared ────────────────
+function beats(a: SelectorScore, b: SelectorScore): boolean {
+  if (a.inline   !== b.inline)   return a.inline   > b.inline;
+  if (a.ids      !== b.ids)      return a.ids      > b.ids;
+  if (a.classes  !== b.classes)  return a.classes  > b.classes;
+  return a.elements > b.elements;
+}
+
+const isComparison = selectors.length === 2;
+let winIdx = -1;
+if (isComparison) {
+  if      (beats(selectors[0], selectors[1])) winIdx = 0;
+  else if (beats(selectors[1], selectors[0])) winIdx = 1;
+}
+
+const SEGMENTS = [
+  {
+    key:   'inline'   as const,
+    label: 'inline',
+    title: 'Inline styles: style="" — 1-0-0-0 each',
+    cls:   'sm-seg--inline',
+  },
+  {
+    key:   'ids'      as const,
+    label: 'IDs',
+    title: 'ID selectors: #id — 0-1-0-0 each',
+    cls:   'sm-seg--ids',
+  },
+  {
+    key:   'classes'  as const,
+    label: 'classes',
+    title: 'Class / attribute / pseudo-class selectors — 0-0-1-0 each',
+    cls:   'sm-seg--classes',
+  },
+  {
+    key:   'elements' as const,
+    label: 'elements',
+    title: 'Element / pseudo-element selectors — 0-0-0-1 each',
+    cls:   'sm-seg--elements',
+  },
+] as const;
+---
+
+<div class="sm-wrap">
+  {title && <div class="sm-header">{title}</div>}
+
+  <div class="sm-body">
+    {selectors.map((sel, idx) => {
+      const isWinner = isComparison && winIdx === idx;
+      const isLoser  = isComparison && winIdx !== -1 && winIdx !== idx;
+      const isTied   = isComparison && winIdx === -1;
+      const scoreStr = `${sel.inline}-${sel.ids}-${sel.classes}-${sel.elements}`;
+      return (
+        <div
+          class:list={[
+            'sm-row',
+            sel.highlight && 'sm-row--hl',
+            isWinner      && 'sm-row--winner',
+            isLoser       && 'sm-row--loser',
+          ]}
+        >
+          {/* ── Selector meta bar ─────────────────────────────── */}
+          <div class="sm-meta">
+            <div class="sm-meta-left">
+              <code class="sm-selector">{sel.selector}</code>
+              {sel.label && <span class="sm-row-label">{sel.label}</span>}
+            </div>
+            <div class="sm-meta-right">
+              <span class="sm-score-str" title="specificity score: inline-IDs-classes-elements">
+                {scoreStr}
+              </span>
+              {isWinner && <span class="sm-badge sm-badge--win">✓ Wins</span>}
+              {isLoser  && <span class="sm-badge sm-badge--lose">✗ Loses</span>}
+              {isTied   && idx === 0 && <span class="sm-badge sm-badge--tie">= Tie</span>}
+            </div>
+          </div>
+
+          {/* ── Score track ───────────────────────────────────── */}
+          <div class="sm-track">
+            {SEGMENTS.map(seg => {
+              const count = sel[seg.key];
+              return (
+                <div
+                  class:list={['sm-seg', seg.cls, count > 0 && 'sm-seg--on']}
+                  title={seg.title}
+                >
+                  <span class="sm-count">{count}</span>
+                  <span class="sm-seg-label">{seg.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+
+  {caption && <div class="sm-caption">{caption}</div>}
+</div>
+
+<style>
+  /* ── Shell ────────────────────────────────────────────────────────────── */
+  .sm-wrap {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .sm-header {
+    padding: 0.625rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-fg-faint);
+  }
+
+  .sm-body {
+    background: var(--theme-bg-inset);
+  }
+
+  .sm-caption {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--theme-fg-faint);
+    font-style: italic;
+    text-align: center;
+    border-top: 1px solid var(--theme-line);
+    background: var(--theme-bg-raised);
+  }
+
+  /* ── Row ──────────────────────────────────────────────────────────────── */
+  .sm-row {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--theme-line);
+    transition: background 0.12s;
+  }
+
+  .sm-row:last-child {
+    border-bottom: none;
+  }
+
+  .sm-row--hl {
+    background: rgba(34, 197, 94, 0.04);
+  }
+
+  .sm-row--winner {
+    background: rgba(34, 197, 94, 0.04);
+  }
+
+  .sm-row--loser {
+    opacity: 0.65;
+  }
+
+  /* ── Meta bar ─────────────────────────────────────────────────────────── */
+  .sm-meta {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.875rem;
+    flex-wrap: wrap;
+  }
+
+  .sm-meta-left {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+  }
+
+  .sm-selector {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--theme-fg-default);
+    word-break: break-all;
+  }
+
+  .sm-row-label {
+    font-size: 0.72rem;
+    color: var(--theme-fg-faint);
+  }
+
+  .sm-meta-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .sm-score-str {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--theme-fg-ghost);
+    letter-spacing: 0.04em;
+  }
+
+  .sm-badge {
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.15rem 0.55rem;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  .sm-badge--win {
+    background: rgba(34, 197, 94, 0.14);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.28);
+  }
+
+  .sm-badge--lose {
+    background: rgba(239, 68, 68, 0.11);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.22);
+  }
+
+  .sm-badge--tie {
+    background: rgba(245, 158, 11, 0.11);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.22);
+  }
+
+  /* ── Score track ──────────────────────────────────────────────────────── */
+  .sm-track {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .sm-seg {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    padding: 0.625rem 0.875rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    min-width: 72px;
+    flex: 1;
+    cursor: default;
+    /* Dimmed when score is 0 */
+    opacity: 0.28;
+    transition: opacity 0.15s, border-color 0.15s;
+  }
+
+  .sm-seg--on {
+    opacity: 1;
+  }
+
+  /* ── Per-category colours (off state) ────────────────────────────────── */
+  .sm-seg--inline {
+    background: rgba(239, 68, 68, 0.06);
+    border-color: rgba(239, 68, 68, 0.18);
+  }
+  .sm-seg--ids {
+    background: rgba(249, 115, 22, 0.06);
+    border-color: rgba(249, 115, 22, 0.18);
+  }
+  .sm-seg--classes {
+    background: rgba(99, 102, 241, 0.06);
+    border-color: rgba(99, 102, 241, 0.18);
+  }
+  .sm-seg--elements {
+    background: var(--theme-bg-raised);
+    border-color: var(--theme-line);
+  }
+
+  /* ── Per-category colours (on state) ─────────────────────────────────── */
+  .sm-seg--inline.sm-seg--on {
+    background: rgba(239, 68, 68, 0.10);
+    border-color: rgba(239, 68, 68, 0.38);
+  }
+  .sm-seg--ids.sm-seg--on {
+    background: rgba(249, 115, 22, 0.10);
+    border-color: rgba(249, 115, 22, 0.38);
+  }
+  .sm-seg--classes.sm-seg--on {
+    background: rgba(99, 102, 241, 0.10);
+    border-color: rgba(99, 102, 241, 0.38);
+  }
+  .sm-seg--elements.sm-seg--on {
+    background: var(--theme-bg-raised);
+    border-color: var(--theme-line-strong);
+  }
+
+  /* ── Score digit ──────────────────────────────────────────────────────── */
+  .sm-count {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 1.75rem;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--theme-fg-ghost);
+    transition: color 0.15s;
+  }
+
+  .sm-seg--on.sm-seg--inline   .sm-count { color: #f87171; }
+  .sm-seg--on.sm-seg--ids      .sm-count { color: #fb923c; }
+  .sm-seg--on.sm-seg--classes  .sm-count { color: #818cf8; }
+  .sm-seg--on.sm-seg--elements .sm-count { color: var(--theme-fg-muted); }
+
+  /* ── Segment label ────────────────────────────────────────────────────── */
+  .sm-seg-label {
+    font-size: 0.6rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--theme-fg-ghost);
+  }
+</style>

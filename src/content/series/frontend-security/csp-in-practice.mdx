@@ -1,0 +1,315 @@
+---
+title: "Content Security Policy: Not Just a Header"
+date: "Apr 2026"
+pubDate: 2026-04-21
+category: Security
+author: Honey Sharma
+summary: CSP is the second line of defence after XSS prevention fails. This post goes beyond "add the header" — nonce strategy, strict-dynamic, bypass patterns, and how to deploy without breaking your app.
+tags: [security, csp, xss, headers, nonce, strict-dynamic, frontend]
+---
+import PacketDiagram from '../../../components/mdx/PacketDiagram.astro';
+import DecisionFlow from '../../../components/mdx/DecisionFlow.astro';
+import SequenceDiagram from '../../../components/mdx/SequenceDiagram.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import Terminal from '../../../components/mdx/Terminal.astro';
+import Callout from '../../../components/mdx/Callout.astro';
+import Lessons from '../../../components/mdx/Lessons.astro';
+import Lesson from '../../../components/mdx/Lesson.astro';
+import StateMachine from '../../../components/mdx/StateMachine.astro';
+
+DOMPurify 3.0.8 had a mutation XSS edge case involving SVG foreign object elements. It was disclosed, patched, and fixed in 3.0.9. But DevForum was running 3.0.8, pinned, with no automated updates. A researcher found the edge case and submitted a payload through the comment form.
+
+The payload passed DOMPurify. It landed in the DOM. It tried to execute.
+
+Nothing happened.
+
+DevForum had deployed a Content Security Policy six months earlier. The CSP did not know the payload was malicious — it just knew the script didn't have a valid nonce. The browser blocked it before a single line of attacker JavaScript ran. The second line of defence caught what the first missed.
+
+---
+
+## What CSP Actually Does
+
+A `Content-Security-Policy` response header tells the browser: here is a list of what is permitted to execute, load, or connect on this page. Anything not on the list is refused, regardless of what the HTML says.
+
+The browser enforces this at execution time. Not the server, not a proxy, not a CDN — the browser. After the HTML is parsed, before any resource loads or any script runs, the browser checks the policy. No matching source → no execution.
+
+This is what makes CSP a meaningful second line of defence. Even if an attacker gets a payload into the DOM, they cannot execute it without also being able to bypass the browser's own enforcement.
+
+## Header Anatomy
+
+The policy is a single response header. Its value is a semicolon-separated list of directives, each of which is a directive name followed by a space-separated list of source values.
+
+<PacketDiagram
+  title="Content-Security-Policy Header — DevForum"
+  rows={[
+    {
+      label: "Content-Security-Policy",
+      fields: [
+        { name: "default-src 'self'",                          color: "blue",    description: "Fallback for any resource type not explicitly listed — same-origin only" },
+        { name: "script-src 'nonce-{n}' 'strict-dynamic'",    color: "green",   description: "Scripts need a matching per-request nonce; strict-dynamic lets trusted scripts load further scripts", highlight: true },
+        { name: "style-src 'self' fonts.googleapis.com",       color: "purple",  description: "Stylesheets from same-origin and Google Fonts CDN" },
+        { name: "img-src 'self' data:",                        color: "neutral", description: "Images from same-origin and data: URIs for inline avatars" },
+        { name: "connect-src 'self' api.devforum.com",         color: "blue",    description: "Destinations for fetch(), XHR, and WebSocket connections" },
+        { name: "frame-src 'none'",                            color: "green",   description: "No iframes allowed — DevForum embeds nothing" },
+        { name: "base-uri 'self'",                             color: "green",   description: "Prevents <base> tag hijacking — attackers cannot redirect relative URLs" },
+        { name: "object-src 'none'",                           color: "green",   description: "Blocks Flash, Java applets, and all plugin content entirely" },
+        { name: "form-action 'self'",                          color: "green",   description: "Forms may only POST to same-origin — blocks data exfiltration via form submission" },
+      ]
+    }
+  ]}
+  caption="Each directive controls a specific resource type. Directives not listed fall back to default-src. The script-src nonce strategy is the core of this policy."
+/>
+
+A few directives deserve extra attention:
+
+**`default-src 'self'`** is the fallback. Any resource type not explicitly covered by another directive falls back here. It's the safety net — set it conservatively.
+
+**`base-uri 'self'`** is frequently omitted and frequently exploited. An attacker who can inject `<base href="https://evil.com/">` into your page rewrites every relative URL on it. Your `/api/login` fetch now goes to `evil.com/api/login`. `base-uri 'self'` prevents this entirely.
+
+**`object-src 'none'`** eliminates the entire plugin execution context. Flash is dead, but `<object>` and `<embed>` remain valid HTML. Set this to `'none'` and forget about it.
+
+## The `'unsafe-inline'` Problem
+
+Before covering the right way to allow scripts, it's worth being explicit about the wrong way.
+
+Adding `'unsafe-inline'` to `script-src` means any inline script on the page may execute — including any inline script an attacker manages to inject. It is the equivalent of no CSP for XSS purposes.
+
+<Callout type="danger" title="'unsafe-inline' nullifies CSP for XSS defence">
+  The first thing developers add when inline scripts stop working after deploying CSP is `'unsafe-inline'`. This fully disables the protection that CSP provides against XSS. Inline scripts are the mechanism XSS uses to execute. If you allow all of them, you allow attackers' scripts too. Use nonces instead.
+</Callout>
+
+Similarly, `'unsafe-eval'` allows `eval()`, `setTimeout(string)`, and `new Function(string)`. Unless you have a bundler that requires it (some older webpack configs do), this should never appear in a production policy.
+
+## How the Browser Evaluates CSP
+
+When a script wants to execute, the browser runs this decision tree:
+
+<DecisionFlow
+  title="Browser CSP Evaluation — Does This Script Execute?"
+  nodes={[
+    { id: "start",       type: "start",    label: "Script" },
+    { id: "hasCsp",      type: "decision", label: "CSP header present?" },
+    { id: "noPolicy",    type: "result",   label: "Executes (no policy)" },
+    { id: "directive",   type: "decision", label: "script-src defined?" },
+    { id: "useDefault",  type: "action",   label: "Use default-src" },
+    { id: "sourceMatch", type: "decision", label: "Script matches a source?" },
+    { id: "blocked",     type: "end",      label: "BLOCKED" },
+    { id: "executes",    type: "result",   label: "Executes" },
+  ]}
+  edges={[
+    { from: "start",       to: "hasCsp",      },
+    { from: "hasCsp",      to: "noPolicy",    label: "no" },
+    { from: "hasCsp",      to: "directive",   label: "yes" },
+    { from: "directive",   to: "useDefault",  label: "no" },
+    { from: "directive",   to: "sourceMatch", label: "yes" },
+    { from: "useDefault",  to: "sourceMatch" },
+    { from: "sourceMatch", to: "blocked",     label: "no" },
+    { from: "sourceMatch", to: "executes",    label: "yes" },
+  ]}
+  caption="Without a CSP header, all scripts execute. With one, each script is checked against the policy before execution."
+/>
+
+The check happens at execution time, for every script — inline and external. The browser does not distinguish between "trusted" and "injected" scripts in the HTML. The policy does.
+
+## Nonce-Based CSP
+
+A nonce is a random token generated fresh for each HTTP response. It lives in two places simultaneously: the `Content-Security-Policy` header and the `nonce` attribute of every `<script>` tag the server renders. The browser only executes scripts where these two values match.
+
+The key property: an attacker who injects a `<script>` into the page cannot know the nonce. It was generated on the server for this specific request and will never be reused.
+
+<SequenceDiagram
+  title="Nonce-Based CSP — Per-Request Token Flow"
+  actors={[
+    { id: "browser", label: "Browser", icon: "browser" },
+    { id: "server",  label: "DevForum Server", icon: "server", variant: "trusted" }
+  ]}
+  messages={[
+    { from: "browser", to: "server",  label: "GET /articles/123", type: "request" },
+    { from: "server",  to: "server",  label: "nonce = crypto.randomBytes(16).toString('base64url')", type: "note" },
+    { from: "server",  to: "browser", label: "200 OK", sublabel: "CSP: script-src 'nonce-r4nd0mXYZ' 'strict-dynamic'", type: "response", highlight: true },
+    { from: "browser", to: "browser", label: "<script nonce=\"r4nd0mXYZ\"> — nonce matches, executes", type: "note", annotation: "legitimate script" },
+    { from: "browser", to: "browser", label: "<script> (injected, no nonce) — BLOCKED", type: "blocked", annotation: "XSS payload" }
+  ]}
+  caption="The nonce is different on every page load. A script injected by an attacker has no way to discover what the current nonce is."
+/>
+
+Express middleware that generates and injects the nonce:
+
+```js
+import crypto from 'crypto';
+
+function cspMiddleware(req, res, next) {
+  const nonce = crypto.randomBytes(16).toString('base64url');
+  res.locals.nonce = nonce;
+
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      `script-src 'nonce-${nonce}' 'strict-dynamic'`,
+      "style-src 'self' fonts.googleapis.com",
+      "img-src 'self' data:",
+      "connect-src 'self' api.devforum.com",
+      "base-uri 'self'",
+      "object-src 'none'",
+      "form-action 'self'",
+      "default-src 'self'",
+    ].join('; ')
+  );
+
+  next();
+}
+```
+
+Every `<script>` tag in the server-rendered HTML then includes the nonce:
+
+```html
+<script nonce="<%= nonce %>">
+  // App bootstrap code
+</script>
+```
+
+<Callout type="warning" title="A static nonce is not a nonce">
+  If the nonce is hardcoded in a config file, environment variable, or generated once at server startup, it is a permanent value — not a nonce. An attacker who observes the nonce value once can use it in every injected script. Nonces must be generated fresh per request using a cryptographically secure source.
+</Callout>
+
+---
+
+## Hash-Based CSP
+
+Instead of a per-request token, you can allowlist a specific script by its SHA-256 content hash. The browser computes the hash of the inline script and checks it against the policy.
+
+Generate the hash for a specific inline script:
+
+<Terminal
+  title="Generate SHA-256 hash for inline script content"
+  command={`printf 'console.log("DevForum v2.1 loaded")' | openssl dgst -sha256 -binary | openssl base64 -A`}
+  output="K7fGRyPFoB+5wNHikKF2gqrOaSS3OkR9N8dKuivFm4c="
+  language="openssl"
+/>
+
+If you don't have `openssl` available locally, paste the script URL into [srihash.org](https://www.srihash.org) — it fetches the file and generates the hash for you.
+
+The resulting CSP directive:
+
+```http
+Content-Security-Policy: script-src 'sha256-K7fGRyPFoB+5wNHikKF2gqrOaSS3OkR9N8dKuivFm4c='
+```
+
+The browser will only execute inline scripts whose content hashes to this exact value. Any character change — including a trailing space or newline — produces a different hash and blocks execution.
+
+<Callout type="info" title="Hash-based CSP is best for scripts that never change">
+  Use hashes for static bootstrap scripts, analytics initialisation, or feature flag snippets that are version-controlled and change infrequently. For anything that varies with user session data or personalisation, nonces are the right tool — a hash of dynamic content would need to be recalculated on every request, which is effectively a nonce.
+</Callout>
+
+## Strict CSP vs Domain Allowlists
+
+Most CSP tutorials tell you to list the domains your scripts come from:
+
+```http
+Content-Security-Policy: script-src 'self' cdn.jsdelivr.net ajax.googleapis.com
+```
+
+This is almost always bypassable. Here's why:
+
+**JSONP endpoints on allowlisted domains.** JSONP turns an arbitrary callback parameter into a script execution primitive. If any endpoint on `ajax.googleapis.com` accepts a `callback` parameter, this executes attacker-controlled code:
+
+```html
+<script src="https://ajax.googleapis.com/endpoint?callback=alert(1)"></script>
+```
+
+The domain is allowlisted. The script loads. The callback executes.
+
+**User-uploaded content on CDNs.** If `cdn.jsdelivr.net` hosts any file an attacker can upload, they control a script at an allowlisted URL.
+
+**`'strict-dynamic'`** solves this. When combined with a nonce, it means: scripts that have a valid nonce (trusted by the developer) may load further scripts dynamically. Scripts without a nonce may not execute — even from allowlisted domains. Domain allowlists are ignored when `strict-dynamic` is present.
+
+```http
+Content-Security-Policy: script-src 'nonce-r4nd0mXYZ' 'strict-dynamic'
+```
+
+Your React or Vite bundle loads via a nonce-bearing `<script>`. It dynamically imports chunks. Those chunks execute because they were loaded by a trusted script. An attacker's injected `<script>` — regardless of what domain it points to — has no nonce and is blocked.
+
+**`<base>` tag hijacking.** An injected `<base href="https://evil.com/">` rewrites all relative URLs before the script loads. `./bundle.js` becomes `https://evil.com/bundle.js`. Without `base-uri 'self'` in your policy, this bypasses `script-src 'self'` entirely. This is why `base-uri 'self'` is not optional.
+
+## CSP Strategy Comparison
+
+<Comparison
+  headers={["Strategy", "How it works", "SPA compatible?", "Bypass resistance", "Maintenance"]}
+  rows={[
+    ["Nonce",           "Per-request random token; only matching <script nonce=x> runs",  "Yes (requires SSR)", "High",                                 "Low"],
+    ["Hash",            "SHA-256 of exact content; fails if content changes",             "Yes (static only)",  "High",                                 "Medium — rehash on change"],
+    ["strict-dynamic",  "Trusted scripts can load further scripts dynamically",           "Yes",                "High — domain allowlists ignored",     "Low"],
+    ["Domain allowlist","Listed CDN origins are allowed",                                 "Yes",                "Low — JSONP and open-redirect bypasses","High — maintain list"],
+  ]}
+  caption="Nonce + strict-dynamic is the recommended posture for server-rendered apps. Pure SPAs should use hashes for the initial bundle and strict-dynamic for dynamic imports."
+/>
+
+## Report-Only Mode
+
+The right way to deploy CSP is not to enforce it immediately. Deploy it in shadow mode first, collect violations, fix what breaks, then enforce.
+
+The `Content-Security-Policy-Report-Only` header runs the full policy evaluation but does not block anything — it only sends violation reports.
+
+```http
+Content-Security-Policy-Report-Only: script-src 'nonce-r4nd0mXYZ' 'strict-dynamic'; report-to csp-endpoint
+```
+
+A violation report looks like this:
+
+```json
+{
+  "csp-report": {
+    "document-uri": "https://devforum.com/articles/123",
+    "violated-directive": "script-src-elem",
+    "effective-directive": "script-src-elem",
+    "blocked-uri": "inline",
+    "original-policy": "script-src 'nonce-r4nd0mXYZ' 'strict-dynamic'",
+    "disposition": "report"
+  }
+}
+```
+
+`disposition: "report"` means the policy is in report-only mode — nothing was blocked, this is just a notification. `blocked-uri: "inline"` means an inline script without a matching nonce would have been blocked. `violated-directive: "script-src-elem"` tells you which directive fired. `document-uri` tells you which page.
+
+Run report-only for at least one full release cycle before switching to enforcement. Aggregate reports by `violated-directive` and `blocked-uri`. Fix every inline script that lacks a nonce. Add nonces to third-party script tags. Then flip to enforcement.
+
+<Callout type="tip" title="Report-only first, always">
+  The cost of breaking a production app with an aggressive CSP is high. The cost of running report-only for two weeks is zero. The second step is never skipping the first.
+</Callout>
+
+<StateMachine
+  title="CSP Deployment Lifecycle — States and Transitions"
+  states={[
+    { id: "none",        label: "No CSP",          type: "error",    description: "No policy header set. All inline scripts execute. No violation data collected. XSS has no second line of defence." },
+    { id: "report_only", label: "Report-Only",                        description: "Content-Security-Policy-Report-Only active. Policy evaluated but nothing blocked. Violation reports collected for every would-be block." },
+    { id: "enforced",    label: "Enforced",         type: "terminal", description: "Content-Security-Policy active. Browser blocks violations before execution. Legitimate scripts must have nonces or hashes." },
+    { id: "incident",    label: "Broken in prod",   type: "error",    description: "Legitimate scripts blocked — users see broken features. Occurs when violations weren't fully resolved before switching to enforcement." },
+  ]}
+  transitions={[
+    { from: "none",        to: "report_only", label: "add CSP-Report-Only header" },
+    { from: "report_only", to: "enforced",    label: "violations resolved; switch header to CSP" },
+    { from: "report_only", to: "none",        label: "roll back (violation noise too high)" },
+    { from: "enforced",    to: "incident",    label: "unresolved violation blocks production script" },
+    { from: "incident",    to: "report_only", label: "revert to report-only; investigate" },
+  ]}
+/>
+
+---
+
+<Lessons title="CSP Deployment Checklist" type="recommendations">
+  <Lesson title="Start with Content-Security-Policy-Report-Only">
+    Never enforce a CSP before observing what it would block. Run report-only for a full release cycle, aggregate violations by directive, fix each one, then switch to enforcement.
+  </Lesson>
+  <Lesson title="Never use 'unsafe-inline' in script-src">
+    It disables CSP's XSS defence completely. Every inline script is allowed — including attacker-injected ones. If inline scripts are breaking, add nonces to them. Do not add 'unsafe-inline'.
+  </Lesson>
+  <Lesson title="Always set base-uri 'self' and object-src 'none'">
+    These two directives are almost always correct for any modern app. Omitting base-uri leaves the base-tag hijacking vector open. Omitting object-src leaves the plugin execution context open.
+  </Lesson>
+  <Lesson title="Use nonce + strict-dynamic instead of domain allowlists">
+    Domain allowlists have JSONP bypass vectors on most CDNs. Nonces do not. strict-dynamic lets your script loader work without maintaining a CDN domain list.
+  </Lesson>
+  <Lesson title="Generate nonces per-request with crypto.randomBytes">
+    A nonce generated once at server startup and reused across requests is equivalent to a static value. An attacker who observes the nonce once can bypass your policy on every subsequent request.
+  </Lesson>
+</Lessons>

@@ -1,0 +1,251 @@
+---
+title: "Frontend Security: Live Interview Simulation"
+date: "Jun 2026"
+pubDate: 2026-06-16
+category: Security
+author: Honey Sharma
+summary: Four complete interview scenarios with escalating follow-up questions — XSS/CSP, CORS, CSRF/cookies, and supply chain. See how a strong answer sounds, what a partial answer is missing, and how follow-ups test whether the reasoning is real.
+tags: [security, interview, xss, csp, cors, csrf, supply-chain, sri, frontend]
+---
+import Interview from '../../../components/mdx/Interview.astro';
+import Q from '../../../components/mdx/Q.astro';
+import A from '../../../components/mdx/A.astro';
+import Callout from '../../../components/mdx/Callout.astro';
+
+Reading about interview answers is not the same as watching a conversation unfold. A checklist tells you what to say. A simulation shows you the shape of a real answer — the framing before the detail, the tradeoff after the fix, the follow-up that tests whether the first answer was genuine understanding or a recitation.
+
+Four scenarios. Each one opens with a question you'll get. Each one has follow-ups that probe deeper. The quality badges on each answer mark what the interviewer is listening for.
+
+---
+
+## Scenario 1 — XSS and CSP
+
+<Interview
+  scenario="Walk me through how you'd audit a React app for XSS"
+  context="Senior frontend engineer, first technical round. The team has been shipping features for 18 months without a dedicated security review."
+  topic="xss"
+>
+  <Q>You've just joined a team with a mature React codebase. No one has ever done a security review. Where do you start with XSS?</Q>
+
+  <A quality="partial">
+    I'd search the codebase for `dangerouslySetInnerHTML` since that's the main XSS vector in React, and then check any places where we're using `eval()` or `document.write()`.
+  </A>
+
+  <Q>Good start. What are you missing if you only check those?</Q>
+
+  <A quality="strong">
+    The sinks are only half the picture. I also need to trace the sources — where does user-controlled data enter the system? URL parameters, query strings, `location.hash`, form inputs, `postMessage` handlers, and API response data that gets rendered. The dangerous pattern isn't `dangerouslySetInnerHTML` on its own — it's `dangerouslySetInnerHTML` where the content passed to it can be influenced by an attacker. A prop called `html` that's hardcoded in the component is different from one fed by a URL parameter three components up the tree.
+  </A>
+
+  <Q>The app has a comment section that renders markdown — users can write `**bold**`, links, that kind of thing. The markdown parser outputs HTML. What does your review look like for that specifically?</Q>
+
+  <A quality="strong">
+    Markdown-to-HTML is a classic stored XSS vector. The markdown parser itself is usually fine for standard syntax, but the link renderer is where it breaks down — `[click me](javascript:alert(1))` is valid markdown and if the parser doesn't explicitly block `javascript:` URI schemes in link hrefs, it passes the sanitiser. I'd check whether the parser is configured to sanitise href values or whether it relies on the downstream renderer.
+
+    Then there's the HTML injection problem: if the markdown parser allows raw HTML passthrough (a lot of them do by default), a user can include `<img src=x onerror=...>` or `<script>` tags directly. The fix is either to disable raw HTML in the parser config or to run the output through DOMPurify with an explicit allow-list before it touches the DOM.
+  </A>
+
+  <Q>You decide to use DOMPurify. Walk me through how you'd configure it. What mistakes do developers make with DOMPurify?</Q>
+
+  <A quality="strong">
+    The biggest mistake is calling `DOMPurify.sanitize(input)` with no config and assuming the defaults are safe for your use case. They mostly are, but not always. I'd pass an explicit `ALLOWED_TAGS` list — `['p', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'blockquote', 'img', 'br']` — rather than relying on the deny-list default. An allow-list means new attack vectors are blocked by default; a deny-list means any vector you didn't think of gets through.
+
+    For links, I'd also pass `ALLOWED_ATTR: ['href', 'src', 'alt', 'title']` and add `ADD_ATTR: ['target']` to permit the target attribute. To force `target="_blank"` and `rel="noopener noreferrer"` on every link after sanitisation, you'd use a DOMPurify hook rather than a config option — DOMPurify doesn't have a built-in "force attribute" config:
+
+    ```js
+    DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+      if (node.tagName === 'A') {
+        node.setAttribute('target', '_blank');
+        node.setAttribute('rel', 'noopener noreferrer');
+      }
+    });
+    ```
+
+    The second mistake: running DOMPurify in Node.js without a real DOM. DOMPurify requires a browser DOM to sanitise correctly — in a Node environment you need jsdom and to pass it explicitly. Server-side sanitisation with an incorrect DOM can produce output that the browser then mutates into something unsafe — mutation XSS.
+  </A>
+
+  <Q>You've fixed the DOMPurify config. Is that sufficient? What would you add as a second layer?</Q>
+
+  <A quality="strong">
+    DOMPurify has had mXSS bypasses in the past — 3.0.8 had a mutation edge case with SVG foreign object elements. The fix for those is version upgrades, but you can't guarantee the version you're running today has no undiscovered bypass. The second layer is CSP.
+
+    A nonce-based policy — `script-src 'nonce-{random}' 'strict-dynamic'` — means that even if a payload survives DOMPurify and lands in the DOM, it cannot execute unless it has a nonce that matches the per-request token. The attacker can inject a `<script>` tag; the browser blocks it because it has no nonce. DOMPurify is the first line; CSP is the line that holds when DOMPurify fails.
+  </A>
+</Interview>
+
+## Scenario 2 — CORS
+
+<Interview
+  scenario="Access-Control-Allow-Origin: * — is that a problem?"
+  context="Mid-to-senior interview. The interviewer is testing whether the candidate understands what CORS actually does versus what people assume it does."
+  topic="cors"
+>
+  <Q>Our public API returns `Access-Control-Allow-Origin: *` on all endpoints. Is that a security problem?</Q>
+
+  <A quality="partial">
+    It depends. A wildcard `Access-Control-Allow-Origin` means any origin can read the response. For truly public data — docs, public posts, open APIs — that's fine. But if any endpoint returns user-specific data or sensitive information, a wildcard means any site can read it on behalf of a logged-in user.
+  </A>
+
+  <Q>The frontend uses `credentials: 'include'` on all fetch calls. Does that change your answer?</Q>
+
+  <A quality="strong">
+    Yes, completely. `credentials: 'include'` tells the browser to attach cookies and HTTP auth headers to the cross-origin request. When that's combined with `Access-Control-Allow-Origin: *`, the browser actually rejects the response — the spec prohibits that combination. You cannot have a wildcard origin with credentialed requests; the server must respond with the specific origin, and also `Access-Control-Allow-Credentials: true`.
+
+    If the API is currently returning `*` and the frontend is using `credentials: 'include'`, the requests are failing silently. The developer has probably seen a CORS error in the console and hasn't traced the full cause. The fix is to have the server reflect the specific requesting origin after validating it against an allowlist — not to reflect any origin verbatim, which is a different misconfiguration.
+  </A>
+
+  <Q>What does CORS actually protect against? What doesn't it protect against?</Q>
+
+  <A quality="strong">
+    CORS controls whether a script on one origin can *read the response* from a cross-origin request. That's the boundary. The Same-Origin Policy restricts cross-origin response reads by default. CORS is the opt-in that relaxes that restriction for specific trusted origins.
+
+    What it doesn't protect against: whether the *request is sent*. A form on `evil.com` that POSTs to `devforum.com/account/delete` — the browser sends that request. The session cookie goes with it. The server processes it. CORS only determines whether `evil.com`'s script can read the response. The damage is done before the CORS check matters.
+
+    So CORS provides no protection against CSRF. It provides no protection against non-browser clients. It provides no protection against a server-side bug that returns sensitive data to any origin that asks. It's a browser-level mechanism for controlling response reads — and only that.
+  </A>
+
+  <Q>A colleague says "we have CORS configured so we're protected against cross-site attacks." What do you say?</Q>
+
+  <A quality="strong">
+    I'd correct it and explain the distinction carefully, because this misconception leads to real gaps. CORS is a *relaxation* of the Same-Origin Policy, not a security control in itself. The SOP already restricts cross-origin reads — CORS is what you add when you want to permit them. You cannot get more security from CORS; you can only grant more access.
+
+    For cross-site attacks that matter in practice — CSRF, clickjacking, third-party script execution — CORS does nothing. CSRF needs CSRF tokens and SameSite cookies. Clickjacking needs `X-Frame-Options` or `frame-ancestors` in CSP. Third-party script trust needs SRI and CSP `script-src`. The colleague's mental model conflates "we've configured CORS correctly" (meaning we haven't accidentally opened cross-origin reads we didn't intend) with "we've protected against cross-site attacks" (which is a much broader and different problem).
+  </A>
+</Interview>
+
+## Scenario 3 — CSRF and Cookie Security
+
+<Interview
+  scenario="CSRF mechanics and cookie defences"
+  context="Staff-level interview. The interviewer has already confirmed the candidate knows what CSRF is — now they're testing whether the candidate understands why defences work and where they fall short."
+  topic="csrf"
+>
+  <Q>Walk me through a CSRF attack — concretely, not just the definition.</Q>
+
+  <A quality="strong">
+    Concrete scenario: the attacker builds a page at `evil.com`. The page contains a hidden form:
+
+    ```html
+    <form action="https://devforum.com/account/delete" method="POST">
+      <input type="hidden" name="confirm" value="yes">
+    </form>
+    <script>document.forms[0].submit();</script>
+    ```
+
+    The victim is logged into DevForum and visits `evil.com` — maybe via a phishing link. The page loads. The JavaScript fires the form submission. The browser sends a POST to `devforum.com/account/delete`. Critically: the browser automatically attaches the victim's DevForum session cookie to that request, because cookies are scoped to the domain they were set on, and the request is going to `devforum.com`.
+
+    DevForum's server receives a POST to `/account/delete` with a valid session cookie. From the server's perspective, it looks identical to a legitimate request the user submitted themselves. There's no way to tell the difference from the cookie alone. The account is deleted.
+
+    The browser didn't do anything wrong. The cookie rules worked as designed. The failure is that the server processed a state-changing request without verifying that the request originated from its own pages.
+  </A>
+
+  <Q>We've set SameSite=Lax on the session cookie. Are we protected?</Q>
+
+  <A quality="partial">
+    Lax is better than nothing. It blocks the hidden form submission I just described — Lax cookies aren't sent on cross-site POST requests. But it doesn't cover everything.
+  </A>
+
+  <Q>What doesn't it cover?</Q>
+
+  <A quality="strong">
+    Three gaps. First: Lax allows cookies on top-level navigations using safe methods. If the state-changing operation can be triggered with a GET request — and some poorly designed APIs do this — an attacker can trigger it with a simple link or redirect. Lax doesn't block GET.
+
+    Second: subdomain attacks. If an attacker can compromise a subdomain of your domain — say `static.devforum.com` — the SameSite check considers requests from it as same-site. A compromised subdomain can forge requests that Lax would permit.
+
+    Third: browser support. `SameSite=Lax` became the Chrome default in 2020, but older browsers, some mobile browsers, and some WebView contexts don't enforce it. Applications that must support a wide browser surface can't rely on it as the sole defence.
+
+    The correct posture is SameSite as one layer, with a synchronizer CSRF token as the primary defence. The token is validated server-side regardless of where the request originated. Lax narrows the attack surface; the token closes it.
+  </A>
+
+  <Q>What are Fetch metadata headers and when do they help?</Q>
+
+  <A quality="strong">
+    Fetch metadata headers — `Sec-Fetch-Site`, `Sec-Fetch-Mode`, `Sec-Fetch-Dest` — are headers the browser attaches to every request automatically. They can't be forged by JavaScript; they're browser-set and the browser ignores any attempt to override them via `fetch()` or XHR.
+
+    `Sec-Fetch-Site` is the most useful for CSRF defence. It tells the server where the request originated relative to the resource: `same-origin`, `same-site`, `cross-site`, or `none`. A state-changing request from `evil.com` arrives with `Sec-Fetch-Site: cross-site`. A state-changing request from your own app arrives with `Sec-Fetch-Site: same-origin`.
+
+    The server can implement a Resource Isolation Policy: reject any non-safe request (POST, PUT, DELETE, PATCH) where `Sec-Fetch-Site` is `cross-site`. That's a CSRF rejection without maintaining any token state. It complements rather than replaces CSRF tokens — old browsers and non-browser clients don't send these headers, so tokens remain necessary for full coverage.
+  </A>
+
+  <Q>Design a CSRF defence for a stateless REST API — no server-side sessions, JWT in localStorage.</Q>
+
+  <A quality="strong">
+    If auth is JWT in localStorage, CSRF in the traditional sense isn't a problem — cookies aren't involved, so the browser doesn't auto-attach credentials on cross-site requests. The attack vector doesn't exist for that auth scheme.
+
+    But if the API is being called with cookies at all — even just for CSRF token purposes — you need to be careful. For a truly stateless API with cookie-based auth, the double-submit cookie pattern works without server-side state: the server sets a CSRF token as a cookie (not HttpOnly, so JS can read it), and requires that same value to appear in a request header (`X-CSRF-Token`). A cross-site attacker can't read the cookie value (SOP prevents it), so they can't set the header. The server validates that cookie value matches header value — no stored state required.
+
+    With `SameSite=Strict` on the auth cookie, the CSRF risk is substantially reduced anyway. And `Sec-Fetch-Site` verification adds a third layer at no state cost. A stateless API can stack all three: SameSite, double-submit, Fetch metadata — and cover the full browser population.
+  </A>
+</Interview>
+
+## Scenario 4 — Supply Chain and SRI
+
+<Interview
+  scenario="Reviewing a PR that adds new dependencies and CDN scripts"
+  context="Staff-level code review scenario. The interviewer wants to see whether the candidate treats dependencies and CDN scripts as trust decisions, not just implementation details."
+  topic="supply-chain"
+>
+  <Q>You're reviewing a PR. It adds three new npm packages: `marked`, `lodash-es`, and `@company/internal-utils`. What do you check?</Q>
+
+  <A quality="partial">
+    I'd check the download counts and whether they're widely used packages, and run `npm audit` to see if there are any known vulnerabilities.
+  </A>
+
+  <Q>What does npm audit not catch?</Q>
+
+  <A quality="strong">
+    `npm audit` only checks against the npm advisory database — known, published CVEs. A zero-day supply chain attack is invisible to it. The event-stream incident (2018) would have passed `npm audit` on every machine it ran on during the active compromise period, because there was no CVE yet.
+
+    What I'd actually check: for `marked` and `lodash-es`, they're well-known packages so I'd verify the version being added matches what I'd expect (no suspicious pinning to an odd version), check the recent release history and maintainer activity, and verify the package is published from the expected GitHub repo — the registry name and the source repo should correspond. For `@company/internal-utils` — that's an internal scoped package. I'd confirm that the `.npmrc` for this project points to the private registry for the `@company` scope. If it doesn't, npm will look for `@company/internal-utils` on the public registry, and if an attacker has published a package by that name there, it gets resolved instead — that's a dependency confusion attack.
+
+    I'd also check whether any of the three packages define a `postinstall` script in their `package.json`.
+  </A>
+
+  <Q>You open `marked`'s package.json and there's a postinstall script: `node scripts/postinstall.js`. The script makes a curl request to an external URL. What do you do?</Q>
+
+  <A quality="strong">
+    Block the PR and escalate. A `postinstall` script that makes an outbound network request is a serious red flag — it's exactly the pattern used in supply chain attacks to exfiltrate environment variables, SSH keys, and CI secrets. The script runs automatically on `npm install` with no user prompt, with access to the full developer environment and every environment variable in the shell.
+
+    I'd open the script and read it. If it's obviously benign — checking for updates, downloading a platform-specific binary like Puppeteer does — I'd document what it does and why it's necessary in the PR review. But a curl to an external URL that isn't the package's own infrastructure (npm, GitHub, their own domain) needs a very clear justification.
+
+    In CI, the mitigation is `npm ci --ignore-scripts`, which skips all lifecycle hooks. This is the right posture for production builds — no postinstall, preinstall, or prepare scripts run. It won't help the developer who runs `npm install` locally, but it protects the build pipeline and the production artifacts.
+  </A>
+
+  <Q>Separately, the PR adds Stripe.js from `js.stripe.com` with no integrity attribute. Is that a concern?</Q>
+
+  <A quality="strong">
+    It's a concern, yes, though Stripe.js is a case where there's a genuine operational reason for not pinning to an SRI hash. Stripe updates the content of `stripe.js` in place at the same URL without changing the path — if you pin to a hash and Stripe pushes an update, your hash no longer matches and the payment form breaks. Stripe themselves document that SRI isn't compatible with their update model for the main `stripe.js` entry point.
+
+    That said, the concern is real: `js.stripe.com` is in your trust chain. If Stripe's CDN is compromised, the script executes with full origin access on your checkout page — including access to payment form fields.
+
+    The mitigation that actually works here is defence-in-depth at the CSP layer: `script-src` should list `js.stripe.com` explicitly (not a wildcard). `connect-src` should restrict outbound connections to Stripe's API endpoints only, so a compromised Stripe script can't exfiltrate to an attacker's server. And `Permissions-Policy` should limit which APIs the payment frame can access. You can't pin the hash, but you can constrain what the script can do.
+  </A>
+
+  <Q>What's the difference between SRI and CSP script-src for this case?</Q>
+
+  <A quality="strong">
+    They protect against different things and operate at different points.
+
+    SRI validates *content* — it checks that the bytes you downloaded match the hash you expected. It fires when the file is fetched. If the CDN serves a different file (compromised, modified, BGP-hijacked), the hash doesn't match and the browser refuses to execute it. SRI is the "was this the file I approved?" check.
+
+    CSP `script-src` validates *origin* — it checks that the script came from a domain on your approved list. It fires at execution time. If you have `script-src cdn.stripe.com`, scripts from `cdn.stripe.com` are allowed to execute. It doesn't validate *which* file at that domain — a compromised file from an approved domain still executes.
+
+    For Stripe.js specifically: CSP `script-src js.stripe.com` allows execution from that domain but doesn't catch a CDN compromise serving a modified file. SRI would catch the CDN compromise but breaks on every Stripe update. Since SRI isn't viable here, CSP origin restriction plus `connect-src` exfiltration blocking is the practical layer — it doesn't prevent the script from running, but it limits what a compromised script can do.
+  </A>
+</Interview>
+
+## What Strong Answers Have in Common
+
+Across all four scenarios, the answers that read as senior-level share the same structure — regardless of the specific topic.
+
+**Attack-first framing.** Strong answers describe the attack concretely — what the attacker does, what happens at each step, what the blast radius is — before naming the defence. "We need DOMPurify" is a mid-level answer. "A user-controlled value reaching innerHTML means an attacker can inject a `<script>` tag that executes with full origin access to every other user's session" is a senior answer.
+
+**Explicit limits.** Every defence mentioned includes what it doesn't protect against. SameSite=Lax is followed by "but not GET state changes, subdomains, or older browsers." DOMPurify is followed by "but mXSS bypasses exist — CSP is the backstop." A candidate who knows the limits of a tool has actually used it.
+
+**Layers, not switches.** No answer picks one defence and declares the problem solved. The pattern is always: sanitiser → framework protection → CSP → cookie attributes → server-side validation. Each layer catches what the previous one misses.
+
+**Tradeoff acknowledgement.** SRI breaks on Stripe updates. Nonces require SSR. CSRF tokens add request complexity. Strong answers name the cost of the defence, not just the benefit. That's how you demonstrate you've deployed these things in a real system under real constraints.
+
+<Callout type="tip" title="The follow-up question is the real test">
+  In every scenario above, the opening question is solvable with series knowledge. The follow-up questions are where the interview actually happens. "What doesn't SameSite=Lax cover?" tests whether you understand the mechanism or just learned the rule. Prepare for the follow-up before the opener.
+</Callout>
