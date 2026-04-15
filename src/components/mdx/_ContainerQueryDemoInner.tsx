@@ -39,7 +39,7 @@ function buildAfterCode(breakpoints: CQBreakpoint[]): CodeLine[] {
     { text: '}' },
   ];
 
-  breakpoints.slice(1).forEach(bp => {
+  breakpoints.slice(1).forEach((bp) => {
     lines.push({ text: '' });
     lines.push({ text: `@container (min-width: ${bp.minWidth}px) {`, bp: bp.name });
     if (bp.name === 'list') {
@@ -75,7 +75,7 @@ function buildBeforeCode(breakpoints: CQBreakpoint[]): CodeLine[] {
     { text: '}' },
   ];
 
-  breakpoints.slice(1).forEach(bp => {
+  breakpoints.slice(1).forEach((bp) => {
     const vw = vpMap[bp.name] ?? bp.minWidth * 2;
     lines.push({ text: '' });
     lines.push({ text: `@media (min-width: ${vw}px) {`, bp: bp.name });
@@ -114,7 +114,13 @@ function HeadphoneIcon() {
       <circle cx="32" cy="24" r="11" fill="none" stroke="#818cf8" strokeWidth="2.5" />
       <rect x="20" y="33" width="4" height="11" rx="2" fill="#818cf8" />
       <rect x="40" y="33" width="4" height="11" rx="2" fill="#818cf8" />
-      <path d="M20 37 Q32 46 44 37" fill="none" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" />
+      <path
+        d="M20 37 Q32 46 44 37"
+        fill="none"
+        stroke="#4ade80"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
@@ -187,11 +193,11 @@ export default function ContainerQueryDemoInner({
   const [mode, setMode] = useState<'before' | 'after'>('after');
   const [isDragging, setIsDragging] = useState(false);
 
-  const wrapperRef    = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
-  const startXRef     = useRef(0);
+  const startXRef = useRef(0);
   const startWidthRef = useRef(defaultWidth);
-  const maxWidthRef   = useRef(680);
+  const maxWidthRef = useRef(680);
 
   // Track available width via ResizeObserver
   useEffect(() => {
@@ -199,10 +205,7 @@ export default function ContainerQueryDemoInner({
     const update = () => {
       if (wrapperRef.current) {
         // Leave 32px margin so the handle is never flush with the stage edge
-        maxWidthRef.current = Math.max(
-          minContainerWidth + 80,
-          wrapperRef.current.clientWidth - 32,
-        );
+        maxWidthRef.current = Math.max(minContainerWidth + 80, wrapperRef.current.clientWidth - 32);
       }
     };
     update();
@@ -213,34 +216,42 @@ export default function ContainerQueryDemoInner({
 
   // Derived: which breakpoints are currently active
   const activeBreakpoints = useMemo(
-    () => breakpoints.filter(bp => containerWidth >= bp.minWidth).map(bp => bp.name),
+    () => breakpoints.filter((bp) => containerWidth >= bp.minWidth).map((bp) => bp.name),
     [containerWidth, breakpoints],
   );
 
   const currentBreakpoint =
     activeBreakpoints[activeBreakpoints.length - 1] ?? breakpoints[0]?.name ?? '';
 
-  const afterCode  = useMemo(() => buildAfterCode(breakpoints),  [breakpoints]);
+  const afterCode = useMemo(() => buildAfterCode(breakpoints), [breakpoints]);
   const beforeCode = useMemo(() => buildBeforeCode(breakpoints), [breakpoints]);
-  const codeLines  = mode === 'after' ? afterCode : beforeCode;
+  const codeLines = mode === 'after' ? afterCode : beforeCode;
 
   // ── Drag handlers (pointer capture) ────────────────────────────────────────
-  const onPointerDown = useCallback((e: PointerEvent) => {
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    isDraggingRef.current = true;
-    setIsDragging(true);
-    startXRef.current     = e.clientX;
-    startWidthRef.current = containerWidth;
-  }, [containerWidth]);
+  const onPointerDown = useCallback(
+    (e: PointerEvent) => {
+      e.preventDefault();
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      isDraggingRef.current = true;
+      setIsDragging(true);
+      startXRef.current = e.clientX;
+      startWidthRef.current = containerWidth;
+    },
+    [containerWidth],
+  );
 
-  const onPointerMove = useCallback((e: PointerEvent) => {
-    if (!isDraggingRef.current) return;
-    const delta = e.clientX - startXRef.current;
-    setContainerWidth(
-      Math.round(Math.max(minContainerWidth, Math.min(startWidthRef.current + delta, maxWidthRef.current))),
-    );
-  }, [minContainerWidth]);
+  const onPointerMove = useCallback(
+    (e: PointerEvent) => {
+      if (!isDraggingRef.current) return;
+      const delta = e.clientX - startXRef.current;
+      setContainerWidth(
+        Math.round(
+          Math.max(minContainerWidth, Math.min(startWidthRef.current + delta, maxWidthRef.current)),
+        ),
+      );
+    },
+    [minContainerWidth],
+  );
 
   const onPointerUp = useCallback(() => {
     isDraggingRef.current = false;
@@ -252,7 +263,7 @@ export default function ContainerQueryDemoInner({
     if (preset === 'narrow') {
       setContainerWidth(minContainerWidth + 20);
     } else if (preset === 'medium') {
-      const mid = breakpoints.find(bp => bp.minWidth > 0);
+      const mid = breakpoints.find((bp) => bp.minWidth > 0);
       setContainerWidth((mid?.minWidth ?? 300) + 20);
     } else {
       setContainerWidth(maxWidthRef.current);
@@ -261,12 +272,13 @@ export default function ContainerQueryDemoInner({
 
   return (
     <div class="cqd-inner" ref={wrapperRef}>
-
       {/* ── Before/After toggle ─────────────────────────────────── */}
       {showComparison && (
         <div class="cqd-modes">
           <button
-            class={'cqd-mode-btn' + (mode === 'before' ? ' cqd-mode-btn--active cqd-mode-btn--bad' : '')}
+            class={
+              'cqd-mode-btn' + (mode === 'before' ? ' cqd-mode-btn--active cqd-mode-btn--bad' : '')
+            }
             onClick={() => setMode('before')}
           >
             <span class="cqd-mode-icon">{mode === 'before' ? '✗' : '○'}</span>
@@ -275,7 +287,9 @@ export default function ContainerQueryDemoInner({
           </button>
           <div class="cqd-mode-sep" aria-hidden="true" />
           <button
-            class={'cqd-mode-btn' + (mode === 'after' ? ' cqd-mode-btn--active cqd-mode-btn--good' : '')}
+            class={
+              'cqd-mode-btn' + (mode === 'after' ? ' cqd-mode-btn--active cqd-mode-btn--good' : '')
+            }
             onClick={() => setMode('after')}
           >
             <span class="cqd-mode-icon">{mode === 'after' ? '✓' : '○'}</span>
@@ -321,15 +335,15 @@ export default function ContainerQueryDemoInner({
         <div class="cqd-ruler-left">
           <span class="cqd-width-badge">{containerWidth}px</span>
           <div class="cqd-pills">
-            {breakpoints.map(bp => {
-              const active  = activeBreakpoints.includes(bp.name);
+            {breakpoints.map((bp) => {
+              const active = activeBreakpoints.includes(bp.name);
               const current = bp.name === currentBreakpoint;
               return (
                 <div
                   key={bp.name}
                   class={
                     'cqd-pill' +
-                    (active  ? ' cqd-pill--active'  : '') +
+                    (active ? ' cqd-pill--active' : '') +
                     (current ? ' cqd-pill--current' : '')
                   }
                   title={bp.description}
@@ -345,9 +359,15 @@ export default function ContainerQueryDemoInner({
           </div>
         </div>
         <div class="cqd-presets">
-          <button class="cqd-preset" onClick={() => setPreset('narrow')}>Narrow</button>
-          <button class="cqd-preset" onClick={() => setPreset('medium')}>Medium</button>
-          <button class="cqd-preset" onClick={() => setPreset('wide')}>Wide</button>
+          <button class="cqd-preset" onClick={() => setPreset('narrow')}>
+            Narrow
+          </button>
+          <button class="cqd-preset" onClick={() => setPreset('medium')}>
+            Medium
+          </button>
+          <button class="cqd-preset" onClick={() => setPreset('wide')}>
+            Wide
+          </button>
         </div>
       </div>
 
@@ -368,16 +388,17 @@ export default function ContainerQueryDemoInner({
           <code>
             {codeLines.map((line, i) => {
               const highlighted = !!line.bp && activeBreakpoints.includes(line.bp);
-              const showTag     = highlighted && line.text.trimStart().startsWith('@');
+              const showTag = highlighted && line.text.trimStart().startsWith('@');
               return (
-                <div
-                  key={i}
-                  class={'cqd-ln' + (highlighted ? ' cqd-ln--hl' : '')}
-                >
-                  <span class="cqd-ln-num" aria-hidden="true">{i + 1}</span>
+                <div key={i} class={'cqd-ln' + (highlighted ? ' cqd-ln--hl' : '')}>
+                  <span class="cqd-ln-num" aria-hidden="true">
+                    {i + 1}
+                  </span>
                   <span class="cqd-ln-text">{line.text || '\u00a0'}</span>
                   {showTag && (
-                    <span class="cqd-ln-tag" aria-label="currently active">active</span>
+                    <span class="cqd-ln-tag" aria-label="currently active">
+                      active
+                    </span>
                   )}
                 </div>
               );
@@ -385,7 +406,6 @@ export default function ContainerQueryDemoInner({
           </code>
         </pre>
       </div>
-
     </div>
   );
 }

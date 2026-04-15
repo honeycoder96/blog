@@ -705,10 +705,12 @@ body {
   /* Two parallel lines for grip visual */
   box-shadow:
     -3px 0 0 0 var(--theme-line-strong),
-     3px 0 0 0 var(--theme-line-strong);
+    3px 0 0 0 var(--theme-line-strong);
   background: var(--theme-line-strong);
   opacity: 0.45;
-  transition: opacity 0.15s, box-shadow 0.15s;
+  transition:
+    opacity 0.15s,
+    box-shadow 0.15s;
 }
 
 .cqd-handle:hover .cqd-grip,
@@ -716,7 +718,7 @@ body {
   opacity: 0.9;
   box-shadow:
     -3px 0 0 0 #818cf8,
-     3px 0 0 0 #818cf8;
+    3px 0 0 0 #818cf8;
   background: #818cf8;
 }
 
@@ -773,7 +775,10 @@ body {
   background: transparent;
   font-size: 0.68rem;
   color: var(--theme-fg-ghost);
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
   cursor: default;
 }
 
@@ -832,7 +837,10 @@ body {
   font-weight: 600;
   color: var(--theme-fg-muted);
   cursor: pointer;
-  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s;
 }
 
 .cqd-preset:hover {
