@@ -22,6 +22,12 @@ export interface PostDisplayItem {
   };
 }
 
+/** A single block group within a series (e.g. "Block 3 — Modern CSS Primitives"). */
+export interface SeriesBlock {
+  label: string;
+  posts: string[];
+}
+
 /** Standard shape for a parsed series — used by SeriesAccordion and the JSON API. */
 export interface SeriesItem {
   seriesSlug: string;
@@ -34,6 +40,8 @@ export interface SeriesItem {
     summary?: string;
     readingTime?: number;
   }[];
+  /** Optional block groupings. Present only when the series index.md defines a `blocks` field. */
+  blocks?: SeriesBlock[];
 }
 
 // ── Blog ───────────────────────────────────────────────────────────
@@ -161,6 +169,7 @@ export async function parseSeriesCollection(): Promise<SeriesItem[]> {
       description: index.data.description,
       category: index.data.category,
       posts,
+      blocks: index.data.blocks,
     };
   });
 }

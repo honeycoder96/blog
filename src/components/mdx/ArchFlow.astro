@@ -1,46 +1,108 @@
 ---
+type NodeVariant = 'default' | 'source' | 'accent' | 'output';
+
 interface Node {
   label: string;
   sublabel?: string;
+  /** Small monospace tags shown below the label — use for "properties that trigger this stage" lists */
+  notes?: string[];
+  /** Drives the coloured left-border accent on the node card */
+  variant?: NodeVariant;
 }
 
 interface Props {
   nodes: Node[];
+  /** Fan-out targets rendered to the right of the last node via a ├─ connector */
+  outputs?: Node[];
+  /** Optional label on the fork connector, e.g. "JS: style.setProperty()" */
+  outputsLabel?: string;
   title?: string;
+  caption?: string;
   direction?: 'horizontal' | 'vertical';
 }
 
-const { nodes, title, direction = 'horizontal' } = Astro.props;
+const {
+  nodes,
+  outputs,
+  outputsLabel,
+  title,
+  caption,
+  direction = 'horizontal',
+} = Astro.props;
+
+const hasOutputs = outputs && outputs.length > 0;
+// Vertical direction only applies to the main chain; the fork is always vertical.
+const isVert = direction === 'vertical' && !hasOutputs;
 ---
 
-<div class="arch-flow">
-  {title && <div class="arch-flow-title">{title}</div>}
-  <div class:list={['arch-flow-nodes', direction === 'vertical' ? 'arch-flow--vert' : '']}>
-    {nodes.map((node, i) => (
-      <>
-        <div class="arch-node">
-          <div class="arch-node-label">{node.label}</div>
-          {node.sublabel && <div class="arch-node-sub">{node.sublabel}</div>}
-        </div>
-        {i < nodes.length - 1 && (
-          <div class="arch-arrow" aria-hidden="true">
-            {direction === 'vertical' ? '↓' : '→'}
+<div class="af-wrap">
+  {title && <div class="af-header">{title}</div>}
+
+  <div class="af-body">
+    <div class:list={['af-chain', isVert && 'af-chain--vert']}>
+
+      {/* ── Main node chain ───────────────────────────────────── */}
+      {nodes.map((node, i) => (
+        <>
+          <div class:list={['af-node', node.variant && `af-node--${node.variant}`]}>
+            <div class="af-node-label">{node.label}</div>
+            {node.sublabel && <div class="af-node-sub">{node.sublabel}</div>}
+            {node.notes && node.notes.length > 0 && (
+              <div class="af-node-notes">
+                {node.notes.map(n => <span class="af-note">{n}</span>)}
+              </div>
+            )}
           </div>
-        )}
-      </>
-    ))}
+          {/* Arrow: between nodes, and after the last node when outputs follow */}
+          {(i < nodes.length - 1 || hasOutputs) && (
+            <div class="af-arrow" aria-hidden="true">
+              {isVert ? '↓' : '→'}
+            </div>
+          )}
+        </>
+      ))}
+
+      {/* ── Fork / fan-out outputs ────────────────────────────── */}
+      {hasOutputs && (
+        <div class="af-fork">
+          {outputsLabel && (
+            <span class="af-fork-label">{outputsLabel}</span>
+          )}
+          <div class="af-fork-group">
+            {outputs!.map(output => (
+              <div class="af-fork-item">
+                <div class="af-fork-conn" aria-hidden="true" />
+                <div class:list={['af-node', output.variant && `af-node--${output.variant}`]}>
+                  <div class="af-node-label">{output.label}</div>
+                  {output.sublabel && <div class="af-node-sub">{output.sublabel}</div>}
+                  {output.notes && output.notes.length > 0 && (
+                    <div class="af-node-notes">
+                      {output.notes.map(n => <span class="af-note">{n}</span>)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+    </div>
   </div>
+
+  {caption && <div class="af-caption">{caption}</div>}
 </div>
 
 <style>
-  .arch-flow {
+  /* ── Shell ────────────────────────────────────────────────────────────── */
+  .af-wrap {
     margin: 2rem 0;
     border: 1px solid var(--theme-line);
     border-radius: 12px;
     overflow: hidden;
   }
 
-  .arch-flow-title {
+  .af-header {
     padding: 0.625rem 1.25rem;
     background: var(--theme-bg-raised);
     border-bottom: 1px solid var(--theme-line);
@@ -51,50 +113,174 @@ const { nodes, title, direction = 'horizontal' } = Astro.props;
     color: var(--theme-fg-faint);
   }
 
-  .arch-flow-nodes {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 0;
-    padding: 1.5rem 1.25rem;
+  .af-caption {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--theme-fg-faint);
+    font-style: italic;
+    text-align: center;
+    border-top: 1px solid var(--theme-line);
+    background: var(--theme-bg-raised);
+  }
+
+  .af-body {
     background: var(--theme-bg-inset);
+    padding: 1.5rem 1.25rem;
+    overflow-x: auto;
+  }
+
+  /* ── Chain ────────────────────────────────────────────────────────────── */
+  .af-chain {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0;
     row-gap: 0.75rem;
   }
 
-  .arch-flow--vert {
-    flex-direction: column;
-  }
-
-  .arch-node {
-    display: flex;
+  .af-chain--vert {
     flex-direction: column;
     align-items: center;
+  }
+
+  /* ── Node card ────────────────────────────────────────────────────────── */
+  .af-node {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     background: var(--theme-bg-raised);
     border: 1px solid var(--theme-line-strong);
     border-radius: 8px;
-    padding: 0.625rem 1.25rem;
+    padding: 0.5rem 1rem;
     min-width: 8rem;
-    text-align: center;
+    border-left-width: 3px;
+    border-left-color: var(--theme-line-strong); /* overridden by variant */
   }
 
-  .arch-node-label {
+  /* Variant accent colours */
+  .af-node--source  { border-left-color: #818cf8; }
+  .af-node--accent  { border-left-color: #4ade80; }
+  .af-node--output  { border-left-color: #38bdf8; }
+
+  .af-node-label {
     font-size: 0.875rem;
     font-weight: 600;
     color: var(--theme-fg-default);
   }
 
-  .arch-node-sub {
+  .af-node--source .af-node-label  { color: #818cf8; }
+  .af-node--accent .af-node-label  { color: #4ade80; }
+  .af-node--output .af-node-label  { color: #38bdf8; }
+
+  .af-node-sub {
     font-size: 0.7rem;
     color: var(--theme-fg-faint);
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     margin-top: 0.2rem;
   }
 
-  .arch-arrow {
+  /* ── Notes list ───────────────────────────────────────────────────────── */
+  .af-node-notes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 0.5rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid var(--theme-line);
+    width: 100%;
+  }
+
+  .af-note {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.67rem;
+    color: var(--theme-fg-faint);
+    background: var(--theme-bg-inset);
+    border: 1px solid var(--theme-line);
+    border-radius: 3px;
+    padding: 0.05rem 0.35rem;
+    white-space: nowrap;
+  }
+
+  /* ── Arrow ────────────────────────────────────────────────────────────── */
+  .af-arrow {
     font-size: 1.1rem;
     color: var(--theme-fg-ghost);
     padding: 0 0.625rem;
     flex-shrink: 0;
+    /* vertically align with node label when nodes have notes */
+    align-self: flex-start;
+    padding-top: 0.45rem;
+  }
+
+  /* ── Fork / fan-out ───────────────────────────────────────────────────── */
+  .af-fork {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .af-fork-label {
+    font-size: 0.62rem;
+    font-weight: 600;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    color: var(--theme-fg-ghost);
+    background: var(--theme-bg-raised);
+    border: 1px solid var(--theme-line);
+    border-radius: 3px;
+    padding: 0.1rem 0.4rem;
+    align-self: center;
+    margin-bottom: 2px;
+  }
+
+  .af-fork-group {
+    display: flex;
+    flex-direction: column;
+    /* No gap — spacing comes from per-item padding so connectors align */
+    gap: 0;
+  }
+
+  /* Each output row: connector + node */
+  .af-fork-item {
+    display: flex;
+    align-items: center;
+    padding: 4px 0;
+  }
+
+  /* ── Fork branch connector (draws ├── and └──) ────────────────────────── */
+  .af-fork-conn {
+    width: 20px;
+    flex-shrink: 0;
+    align-self: stretch;
+    position: relative;
+  }
+
+  /* Vertical line running through all items */
+  .af-fork-conn::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--theme-fg-ghost);
+  }
+
+  /* Last item: vertical line only down to midpoint (└── not ├──) */
+  .af-fork-item:last-child .af-fork-conn::before {
+    bottom: 50%;
+  }
+
+  /* Horizontal arm from vertical line to node */
+  .af-fork-conn::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 100%;
+    height: 1px;
+    background: var(--theme-fg-ghost);
   }
 </style>

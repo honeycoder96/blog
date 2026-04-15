@@ -1,0 +1,36 @@
+---
+import ContainerQueryDemoInner from './_ContainerQueryDemoInner';
+import type { CQBreakpoint } from './_ContainerQueryDemoInner';
+
+interface Props {
+  title?: string;
+  caption?: string;
+  breakpoints: CQBreakpoint[];
+  defaultWidth?: number;
+  minContainerWidth?: number;
+  showComparison?: boolean;
+}
+
+const {
+  title,
+  caption,
+  breakpoints,
+  defaultWidth,
+  minContainerWidth,
+  showComparison,
+} = Astro.props;
+---
+
+<div class="cqd-wrap">
+  {title && <div class="cqd-header">{title}</div>}
+
+  <ContainerQueryDemoInner
+    client:load
+    breakpoints={breakpoints}
+    defaultWidth={defaultWidth}
+    minContainerWidth={minContainerWidth}
+    showComparison={showComparison}
+  />
+
+  {caption && <div class="cqd-caption">{caption}</div>}
+</div>

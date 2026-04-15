@@ -24,8 +24,6 @@ Inside `node_modules/build-utils/package.json`, a `postinstall` script has been 
 
 DevForum's team never installed `build-utils` directly. They never reviewed it. They didn't know it existed.
 
----
-
 ## The Scale of the Problem
 
 The average React application has between 800 and 1,200 transitive npm dependencies. A "transitive" dependency is any package that your direct dependencies depend on — recursively. You declared 40 packages in your `package.json`. Those 40 packages depend on 200 more. Those 200 depend on 600 more. And so on.

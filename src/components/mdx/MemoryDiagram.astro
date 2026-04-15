@@ -1,0 +1,517 @@
+---
+// ─── Types ────────────────────────────────────────────────────────────────────
+type BlockState = 'active' | 'detached' | 'shared';
+type ArrowStyle = 'copy' | 'move' | 'shared';
+
+interface MemoryBlock {
+  /** Unique id — referenced by MemoryArrow.from / to */
+  id: string;
+  /** Main content label, e.g. "10 MB ArrayBuffer" */
+  label: string;
+  /** Owner label shown above the content, e.g. "Main Thread", "Worker", "Shared" */
+  owner: string;
+  /**
+   * active   → indigo tint  (block is live and owned)
+   * detached → grey dashed  (ownership transferred away; buffer is zero-length)
+   * shared   → amber tint   (accessible by multiple threads simultaneously)
+   */
+  state?: BlockState;
+}
+
+interface MemoryArrow {
+  /** id of the source block */
+  from: string;
+  /** id of the destination block */
+  to: string;
+  /** Short label placed alongside the arrow midpoint */
+  label?: string;
+  /**
+   * copy   → dashed indigo (data is being duplicated; original intact)
+   * move   → solid indigo  (ownership transferred; original becomes detached)
+   * shared → solid amber   (both ends access the same memory)
+   */
+  style?: ArrowStyle;
+}
+
+interface MemoryMode {
+  /** Column heading, e.g. "Clone", "Transfer", "SharedArrayBuffer" */
+  title: string;
+  /** One-line description shown below the title in smaller text */
+  description?: string;
+  /** Blocks rendered top-to-bottom in this column */
+  blocks: MemoryBlock[];
+  /** Arrows drawn between blocks within this column */
+  arrows?: MemoryArrow[];
+}
+
+interface Props {
+  /** Each mode becomes an equal-width column. Up to 4 modes renders cleanly. */
+  modes: MemoryMode[];
+  title?: string;
+  caption?: string;
+}
+
+const { modes, title, caption } = Astro.props;
+
+const uid = `mm-${Math.random().toString(36).slice(2, 7)}`;
+
+// ─── Layout constants ──────────────────────────────────────────────────────────
+const W          = 900;
+const N          = modes.length;
+const MODE_W     = W / N;
+const BLOCK_W    = Math.min(168, MODE_W - 28);
+const BLOCK_H    = 64;
+const BLOCK_GAP  = 28;    // vertical gap between blocks in the same mode
+const ARROW_GAP  = 7;     // gap between block edge and arrow endpoint
+const HEADER_H   = 56;    // mode title + description area
+const TOP_PAD    = 20;    // space from header bottom to first block top
+const BOT_PAD    = 24;
+
+// ─── SVG height ────────────────────────────────────────────────────────────────
+const maxBlocks = Math.max(...modes.map(m => m.blocks.length), 1);
+const CONTENT_H  = maxBlocks * BLOCK_H + Math.max(0, maxBlocks - 1) * BLOCK_GAP;
+const SVG_H      = HEADER_H + TOP_PAD + CONTENT_H + BOT_PAD;
+
+// ─── Block position lookup ─────────────────────────────────────────────────────
+// NOTE: block IDs must be unique across ALL modes; duplicate IDs will overwrite.
+interface BPos { cx: number; x: number; y: number; }
+const bpos = new Map<string, BPos>();
+
+modes.forEach((mode, mi) => {
+  const cx = (mi + 0.5) * MODE_W;
+  mode.blocks.forEach((blk, bi) => {
+    bpos.set(blk.id, {
+      cx,
+      x: cx - BLOCK_W / 2,
+      y: HEADER_H + TOP_PAD + bi * (BLOCK_H + BLOCK_GAP),
+    });
+  });
+});
+
+// ─── Block state styling ────────────────────────────────────────────────────────
+interface BStyle { fill: string; stroke: string; dash?: string; }
+
+const BLK_STYLE: Record<BlockState, BStyle> = {
+  active:   { fill: 'rgba(99,102,241,0.12)',  stroke: 'rgba(99,102,241,0.48)' },
+  detached: { fill: 'rgba(107,114,128,0.07)', stroke: 'rgba(107,114,128,0.28)', dash: '5 4' },
+  shared:   { fill: 'rgba(245,158,11,0.13)',  stroke: 'rgba(245,158,11,0.52)' },
+};
+
+// ─── Arrow styling ─────────────────────────────────────────────────────────────
+const ARW_CLR: Record<ArrowStyle, string> = {
+  copy:   'rgba(99,102,241,0.52)',
+  move:   'rgba(99,102,241,0.72)',
+  shared: 'rgba(245,158,11,0.75)',
+};
+const ARW_DASH: Partial<Record<ArrowStyle, string>> = {
+  copy: '5 4',
+};
+
+// ─── Build resolved arrow data ─────────────────────────────────────────────────
+interface ArrowData {
+  x1: number; y1: number;
+  x2: number; y2: number;
+  midX: number; midY: number;
+  label?: string;
+  color: string;
+  dash?: string;
+  markerId: string;
+}
+
+const allArrows: ArrowData[] = [];
+
+modes.forEach(mode => {
+  (mode.arrows ?? []).forEach(arrow => {
+    const fp = bpos.get(arrow.from);
+    const tp = bpos.get(arrow.to);
+    if (!fp || !tp) return;
+
+    const style = arrow.style ?? 'move';
+    const color = ARW_CLR[style];
+    const dash  = ARW_DASH[style];
+
+    let x1: number, y1: number, x2: number, y2: number;
+
+    if (fp.y <= tp.y) {
+      // Arrow goes downward
+      x1 = fp.cx;  y1 = fp.y + BLOCK_H + ARROW_GAP;
+      x2 = tp.cx;  y2 = tp.y - ARROW_GAP;
+    } else {
+      // Arrow goes upward
+      x1 = fp.cx;  y1 = fp.y - ARROW_GAP;
+      x2 = tp.cx;  y2 = tp.y + BLOCK_H + ARROW_GAP;
+    }
+
+    allArrows.push({
+      x1, y1, x2, y2,
+      midX: (x1 + x2) / 2 + 10,   // slight right offset for label legibility
+      midY: (y1 + y2) / 2,
+      label: arrow.label,
+      color,
+      dash,
+      markerId: `${uid}-arw-${style}`,
+    });
+  });
+});
+
+// Unique arrow styles actually used (to generate only the needed SVG markers)
+const usedArrowStyles = [...new Set(allArrows.map(a => a.markerId.split('-').pop() as ArrowStyle))];
+---
+
+<div class="mm-wrap">
+  {title && <div class="mm-header">{title}</div>}
+  <div class="mm-body">
+    <svg
+      viewBox={`0 0 ${W} ${SVG_H}`}
+      xmlns="http://www.w3.org/2000/svg"
+      class="mm-svg"
+      role="img"
+      aria-label={title ?? 'Memory ownership diagram'}
+    >
+      <defs>
+        {usedArrowStyles.map(style => (
+          <marker
+            id={`${uid}-arw-${style}`}
+            markerWidth="9" markerHeight="9"
+            refX="9" refY="4.5"
+            orient="auto"
+          >
+            <polygon points="0 0, 9 4.5, 0 9" fill={ARW_CLR[style]} />
+          </marker>
+        ))}
+      </defs>
+
+      {/* ── Column dividers ───────────────────────────────────────────────── */}
+      {modes.slice(0, -1).map((_, mi) => (
+        <line
+          x1={(mi + 1) * MODE_W} y1={0}
+          x2={(mi + 1) * MODE_W} y2={SVG_H}
+          class="mm-col-divider"
+        />
+      ))}
+
+      {/* ── Mode headers ──────────────────────────────────────────────────── */}
+      {modes.map((mode, mi) => {
+        const cx = (mi + 0.5) * MODE_W;
+        return (
+          <>
+            <text
+              x={cx} y={24}
+              text-anchor="middle"
+              class="mm-mode-title"
+            >{mode.title}</text>
+            {mode.description && (
+              <text
+                x={cx} y={42}
+                text-anchor="middle"
+                class="mm-mode-desc"
+              >{mode.description}</text>
+            )}
+          </>
+        );
+      })}
+
+      {/* ── Header separator ─────────────────────────────────────────────── */}
+      <line x1={0} y1={HEADER_H} x2={W} y2={HEADER_H} class="mm-header-sep" />
+
+      {/* ── Arrows (rendered behind blocks) ──────────────────────────────── */}
+      {allArrows.map(a => (
+        <>
+          <line
+            x1={a.x1} y1={a.y1}
+            x2={a.x2} y2={a.y2}
+            stroke={a.color}
+            stroke-width="1.75"
+            stroke-dasharray={a.dash}
+            marker-end={`url(#${a.markerId})`}
+          />
+          {a.label && (
+            <text
+              x={a.midX}
+              y={a.midY + 4}
+              class="mm-arrow-label"
+              fill={a.color}
+            >{a.label}</text>
+          )}
+        </>
+      ))}
+
+      {/* ── Blocks ───────────────────────────────────────────────────────── */}
+      {modes.map(mode =>
+        mode.blocks.map(blk => {
+          const p          = bpos.get(blk.id);
+          if (!p) return null;
+          const state      = blk.state ?? 'active';
+          const s          = BLK_STYLE[state];
+          const isDetached = state === 'detached';
+          const isShared   = state === 'shared';
+          const ownerY     = p.y + 21;
+          const labelY     = p.y + 43;
+
+          return (
+            <g opacity={isDetached ? 0.48 : 1}>
+              {/* Outer rect */}
+              <rect
+                x={p.x} y={p.y}
+                width={BLOCK_W} height={BLOCK_H}
+                rx="8"
+                fill={s.fill}
+                stroke={s.stroke}
+                stroke-width="1.5"
+                stroke-dasharray={s.dash}
+              />
+              {/* Shared: inner accent ring */}
+              {isShared && (
+                <rect
+                  x={p.x + 3} y={p.y + 3}
+                  width={BLOCK_W - 6} height={BLOCK_H - 6}
+                  rx="6"
+                  fill="none"
+                  stroke="rgba(245,158,11,0.28)"
+                  stroke-width="1"
+                />
+              )}
+              {/* Owner label (small, faint — top half) */}
+              <text
+                x={p.cx} y={ownerY}
+                text-anchor="middle"
+                class="mm-block-owner"
+              >{blk.owner}</text>
+              {/* Content label (bold — bottom half) */}
+              <text
+                x={p.cx} y={labelY}
+                text-anchor="middle"
+                class={isDetached ? 'mm-block-label mm-block-label--detached' : 'mm-block-label'}
+              >{blk.label}</text>
+              {/* Strikethrough line on detached blocks */}
+              {isDetached && (
+                <line
+                  x1={p.x + 14} y1={labelY - 1}
+                  x2={p.x + BLOCK_W - 14} y2={labelY - 1}
+                  stroke="rgba(107,114,128,0.55)"
+                  stroke-width="1.5"
+                />
+              )}
+            </g>
+          );
+        })
+      )}
+
+    </svg>
+  </div>
+
+  {/* ── State legend ──────────────────────────────────────────────────────── */}
+  <div class="mm-legend">
+    <span class="mm-legend-item">
+      <span class="mm-legend-swatch mm-legend-swatch--active"></span>
+      Active
+    </span>
+    <span class="mm-legend-item">
+      <span class="mm-legend-swatch mm-legend-swatch--detached"></span>
+      Detached
+    </span>
+    <span class="mm-legend-item">
+      <span class="mm-legend-swatch mm-legend-swatch--shared"></span>
+      Shared
+    </span>
+    <span class="mm-legend-sep" aria-hidden="true">·</span>
+    <span class="mm-legend-item">
+      <span class="mm-legend-arrow mm-legend-arrow--copy"></span>
+      Copy
+    </span>
+    <span class="mm-legend-item">
+      <span class="mm-legend-arrow mm-legend-arrow--move"></span>
+      Transfer
+    </span>
+    <span class="mm-legend-item">
+      <span class="mm-legend-arrow mm-legend-arrow--shared"></span>
+      Shared access
+    </span>
+  </div>
+
+  {caption && <div class="mm-caption">{caption}</div>}
+</div>
+
+<style>
+  /* ── Shell ───────────────────────────────────────────────────────────────── */
+  .mm-wrap {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .mm-header {
+    padding: 0.625rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-fg-faint);
+  }
+
+  .mm-body {
+    background: var(--theme-bg-inset);
+    overflow-x: auto;
+    padding: 0.75rem 1rem;
+  }
+
+  .mm-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-width: 360px;
+  }
+
+  /* ── Column dividers & header sep ────────────────────────────────────────── */
+  .mm-col-divider {
+    stroke: var(--theme-line);
+    stroke-width: 1;
+  }
+
+  .mm-header-sep {
+    stroke: var(--theme-line);
+    stroke-width: 1;
+  }
+
+  /* ── Mode headers ────────────────────────────────────────────────────────── */
+  .mm-mode-title {
+    font-family: "Clash Display", ui-sans-serif, system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    fill: var(--theme-fg-default);
+  }
+
+  .mm-mode-desc {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 10px;
+    fill: var(--theme-fg-faint);
+  }
+
+  /* ── Block text ──────────────────────────────────────────────────────────── */
+  .mm-block-owner {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 10px;
+    font-weight: 500;
+    fill: var(--theme-fg-faint);
+  }
+
+  .mm-block-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 11.5px;
+    font-weight: 700;
+    fill: var(--theme-fg-default);
+  }
+
+  .mm-block-label--detached {
+    fill: var(--theme-fg-ghost);
+  }
+
+  /* ── Arrow labels ────────────────────────────────────────────────────────── */
+  .mm-arrow-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 10px;
+    font-style: italic;
+  }
+
+  /* ── Legend ──────────────────────────────────────────────────────────────── */
+  .mm-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 1.1rem;
+    padding: 0.5rem 1rem;
+    background: var(--theme-bg-raised);
+    border-top: 1px solid var(--theme-line);
+  }
+
+  .mm-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    color: var(--theme-fg-faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .mm-legend-sep {
+    color: var(--theme-fg-ghost);
+    font-size: 0.85rem;
+    line-height: 1;
+    padding: 0 0.1rem;
+  }
+
+  /* State swatches */
+  .mm-legend-swatch {
+    display: inline-block;
+    width: 22px;
+    height: 12px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  .mm-legend-swatch--active {
+    background: rgba(99,102,241,0.18);
+    border: 1.5px solid rgba(99,102,241,0.50);
+  }
+
+  .mm-legend-swatch--detached {
+    background: rgba(107,114,128,0.07);
+    border: 1.5px dashed rgba(107,114,128,0.35);
+    opacity: 0.6;
+  }
+
+  .mm-legend-swatch--shared {
+    background: rgba(245,158,11,0.15);
+    border: 1.5px solid rgba(245,158,11,0.52);
+  }
+
+  /* Arrow swatches */
+  .mm-legend-arrow {
+    display: inline-block;
+    width: 28px;
+    height: 2px;
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .mm-legend-arrow::after {
+    content: '';
+    position: absolute;
+    right: -1px;
+    top: -3px;
+    border-left: 6px solid currentColor;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+  }
+
+  .mm-legend-arrow--copy {
+    background: rgba(99,102,241,0.52);
+    border-top: 2px dashed rgba(99,102,241,0.52);
+    background: transparent;
+    color: rgba(99,102,241,0.52);
+  }
+
+  .mm-legend-arrow--move {
+    background: rgba(99,102,241,0.72);
+    color: rgba(99,102,241,0.72);
+  }
+
+  .mm-legend-arrow--shared {
+    background: rgba(245,158,11,0.75);
+    color: rgba(245,158,11,0.75);
+  }
+
+  /* ── Caption ─────────────────────────────────────────────────────────────── */
+  .mm-caption {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--theme-fg-faint);
+    font-style: italic;
+    text-align: center;
+    border-top: 1px solid var(--theme-line);
+    background: var(--theme-bg-raised);
+  }
+</style>

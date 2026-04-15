@@ -1,0 +1,202 @@
+---
+interface Swatch {
+  /**
+   * Any valid CSS color string. Rendered directly as a background-color value,
+   * so hsl(), oklch(), color-mix(), #hex, rgb() — all work without escaping.
+   * Example: "hsl(220 70% 50%)"  |  "oklch(0.5 0.15 250)"  |  "#0057d9"
+   */
+  color: string;
+  /** Short label shown below the swatch — e.g. "50%" or "0.5" */
+  label?: string;
+}
+
+interface Row {
+  /** Row heading — e.g. "HSL  hsl(220 70% L%)" */
+  label: string;
+  swatches: Swatch[];
+  /**
+   * Optional verdict badge shown to the right of the row label.
+   * 'pass' = green "Perceptually uniform"
+   * 'fail' = red  "Perceptually uneven"
+   */
+  verdict?: 'pass' | 'fail';
+  /** Override the default verdict text. */
+  verdictLabel?: string;
+}
+
+interface Props {
+  rows: Row[];
+  /** Optional header bar text. */
+  title?: string;
+  /** Optional italic caption below the swatches. */
+  caption?: string;
+}
+
+const { rows, title, caption } = Astro.props;
+
+const VERDICT_DEFAULTS: Record<'pass' | 'fail', string> = {
+  pass: 'Perceptually uniform',
+  fail: 'Perceptually uneven',
+};
+---
+
+<div class="sr-wrap">
+  {title && <div class="sr-header">{title}</div>}
+
+  <div class="sr-body">
+    {rows.map((row) => (
+      <div class="sr-row">
+        <div class="sr-row-meta">
+          <span class="sr-row-label">{row.label}</span>
+          {row.verdict && (
+            <span class:list={['sr-verdict', `sr-verdict--${row.verdict}`]}>
+              {row.verdict === 'pass' ? '✓' : '✗'}
+              {row.verdictLabel ?? VERDICT_DEFAULTS[row.verdict]}
+            </span>
+          )}
+        </div>
+
+        <div class="sr-swatches">
+          {row.swatches.map((s) => (
+            <div class="sr-swatch-cell">
+              <div
+                class="sr-swatch"
+                style={`background-color: ${s.color};`}
+                aria-label={s.label ? `${s.label} — ${s.color}` : s.color}
+              />
+              {s.label && <span class="sr-swatch-label">{s.label}</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+    ))}
+  </div>
+
+  {caption && <div class="sr-caption">{caption}</div>}
+</div>
+
+<style>
+  /* ── Shell ──────────────────────────────────────────────────────────────── */
+  .sr-wrap {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────────────── */
+  .sr-header {
+    padding: 0.625rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-fg-faint);
+  }
+
+  /* ── Body ───────────────────────────────────────────────────────────────── */
+  .sr-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    background: var(--theme-bg-inset);
+    padding: 1.25rem 1.25rem 1rem;
+  }
+
+  /* ── Row ────────────────────────────────────────────────────────────────── */
+  .sr-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .sr-row + .sr-row {
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--theme-line);
+  }
+
+  /* ── Row meta (label + verdict) ─────────────────────────────────────────── */
+  .sr-row-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+  }
+
+  .sr-row-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--theme-fg-muted);
+  }
+
+  /* ── Verdict badge ──────────────────────────────────────────────────────── */
+  .sr-verdict {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    letter-spacing: 0.02em;
+  }
+
+  .sr-verdict--pass {
+    color: #16a34a;
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.25);
+  }
+
+  .sr-verdict--fail {
+    color: #dc2626;
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+
+  /* ── Swatch strip ───────────────────────────────────────────────────────── */
+  .sr-swatches {
+    display: flex;
+    gap: 3px;
+  }
+
+  .sr-swatch-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .sr-swatch {
+    width: 100%;
+    height: 52px;
+    border-radius: 5px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  .sr-swatch-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.625rem;
+    color: var(--theme-fg-ghost);
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  /* ── Caption ────────────────────────────────────────────────────────────── */
+  .sr-caption {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--theme-fg-faint);
+    font-style: italic;
+    text-align: center;
+    border-top: 1px solid var(--theme-line);
+    background: var(--theme-bg-raised);
+    line-height: 1.5;
+  }
+</style>

@@ -1,0 +1,104 @@
+---
+/**
+ * LensQ — one interview question + reasoning-path item inside InterviewLens.
+ *
+ * Props:
+ *   q  — the interview question shown in bold at the top
+ * Slot — the reasoning path: how to think through the answer (not a canned answer)
+ */
+
+interface Props {
+  q: string;
+}
+
+const { q } = Astro.props;
+---
+
+<div class="lq-item">
+  <p class="lq-question">{q}</p>
+  <div class="lq-reasoning">
+    <span class="lq-path-label" aria-hidden="true">Reasoning path</span>
+    <div class="lq-body">
+      <slot />
+    </div>
+  </div>
+</div>
+
+<style is:global>
+  /* ── Item shell ──────────────────────────────────────────────────────────── */
+  .lq-item {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--theme-line);
+  }
+
+  .lq-item:last-child {
+    border-bottom: none;
+  }
+
+  /* ── Question ────────────────────────────────────────────────────────────── */
+  .lq-question {
+    margin: 0 0 0.75rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--theme-fg-default);
+    line-height: 1.5;
+  }
+
+  /* ── Reasoning section ───────────────────────────────────────────────────── */
+  .lq-reasoning {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding-left: 0.875rem;
+    border-left: 2px solid color-mix(in oklch, var(--il-badge, var(--theme-fg-muted)) 35%, transparent);
+  }
+
+  .lq-path-label {
+    font-size: 0.67rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--il-badge, var(--theme-fg-muted));
+    opacity: 0.8;
+  }
+
+  /* ── Prose inside reasoning ──────────────────────────────────────────────── */
+  .lq-body {
+    font-size: 0.875rem;
+    color: var(--theme-fg-muted);
+    line-height: 1.7;
+  }
+
+  .lq-body p {
+    margin: 0 0 0.4rem;
+    font-size: 0.875rem;
+    color: var(--theme-fg-muted);
+    line-height: 1.7;
+  }
+
+  .lq-body p:last-child {
+    margin-bottom: 0;
+  }
+
+  .lq-body code {
+    font-size: 0.8em;
+  }
+
+  .lq-body ul,
+  .lq-body ol {
+    margin: 0.2rem 0 0.4rem;
+    padding-left: 1.4em;
+    font-size: 0.875rem;
+    color: var(--theme-fg-muted);
+    line-height: 1.7;
+  }
+
+  .lq-body li {
+    margin: 0.15rem 0;
+  }
+
+  .lq-body strong {
+    color: var(--theme-fg-default);
+    font-weight: 600;
+  }
+</style>

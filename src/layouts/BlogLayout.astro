@@ -6,6 +6,7 @@ import { TableOfContents } from '../components/react/blog/TableOfContents';
 import { MobileSidebar } from '../components/react/blog/MobileSidebar';
 import CategoryBadge from '../components/astro/CategoryBadge.astro';
 import AuthorBio from '../components/astro/AuthorBio.astro';
+import SeriesBlockMap from '../components/astro/SeriesBlockMap.astro';
 import { siteConfig } from '../config/site';
 
 interface PostLink {
@@ -27,6 +28,11 @@ interface SeriesContext {
   total: number;
 }
 
+interface BlockContext {
+  blocks: { label: string; posts: string[] }[];
+  currentSlug: string;
+}
+
 interface Props {
   title: string;
   description?: string;
@@ -42,13 +48,14 @@ interface Props {
   nextPost?: PostLink;
   relatedPosts?: RelatedPost[];
   seriesContext?: SeriesContext;
+  blockContext?: BlockContext;
   ogImage?: string;
 }
 
 const {
   title, description, date, pubDate, category, author, readingTime,
   tags = [], isVisible = true, headings, prevPost, nextPost,
-  relatedPosts = [], seriesContext, ogImage,
+  relatedPosts = [], seriesContext, blockContext, ogImage,
 } = Astro.props;
 const hasPostNav = prevPost || nextPost;
 const { themeDark, themeLight } = siteConfig.comments.giscus;
@@ -114,20 +121,25 @@ const jsonLd = JSON.stringify({
     <!-- Article header -->
     <header class="max-w-3xl mb-16">
       {seriesContext && (
-        <div class="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 mb-4 font-mono text-xs text-fg-faint uppercase tracking-widest">
-          <div class="flex items-center gap-3 min-w-0">
-            <a href="/series" class="hover:text-fg transition-colors shrink-0">Series</a>
-            <span class="shrink-0">/</span>
-            <a href={`/series/${seriesContext.seriesSlug}`} class="hover:text-fg transition-colors truncate">
-              {seriesContext.seriesTitle}
-            </a>
+        <div class="mb-4">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 font-mono text-xs text-fg-faint uppercase tracking-widest">
+            <div class="flex items-center gap-3 min-w-0">
+              <a href="/series" class="hover:text-fg transition-colors shrink-0">Series</a>
+              <span class="shrink-0">/</span>
+              <a href={`/series/${seriesContext.seriesSlug}`} class="hover:text-fg transition-colors truncate">
+                {seriesContext.seriesTitle}
+              </a>
+            </div>
+            <span class="flex gap-1.5 items-center shrink-0 sm:ml-2">
+              {Array.from({ length: seriesContext.total }, (_, i) => (
+                <span class={`w-1.5 h-1.5 rounded-full ${i + 1 === seriesContext.part ? 'bg-fg' : 'bg-line-strong'}`} />
+              ))}
+              <span class="ml-1">Part {seriesContext.part} of {seriesContext.total}</span>
+            </span>
           </div>
-          <span class="flex gap-1.5 items-center shrink-0 sm:ml-2">
-            {Array.from({ length: seriesContext.total }, (_, i) => (
-              <span class={`w-1.5 h-1.5 rounded-full ${i + 1 === seriesContext.part ? 'bg-fg' : 'bg-line-strong'}`} />
-            ))}
-            <span class="ml-1">Part {seriesContext.part} of {seriesContext.total}</span>
-          </span>
+          {blockContext && (
+            <SeriesBlockMap blocks={blockContext.blocks} currentSlug={blockContext.currentSlug} />
+          )}
         </div>
       )}
       <div class="flex items-center gap-4 mb-6">

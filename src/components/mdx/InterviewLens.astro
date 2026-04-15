@@ -1,0 +1,178 @@
+---
+/**
+ * InterviewLens — per-post interview-prep wrapper for the Web Workers series.
+ *
+ * Visually distinct from Lessons (takeaways) and Interview (capstone dialogue).
+ * Use LensQ inside for each question + reasoning-path pair.
+ *
+ * Topic keys extend the Interview.astro set with worker-series additions.
+ */
+
+type LensTopic =
+  | 'general'
+  | 'dedicated-worker'
+  | 'shared-worker'
+  | 'broadcast'
+  | 'sab'
+  | 'atomics'
+  | 'wasm'
+  | 'service-worker'
+  | 'node-threads'
+  // security-series topics (reuse existing Interview.astro tokens)
+  | 'xss' | 'csp' | 'cors' | 'csrf' | 'cookies' | 'supply-chain' | 'sri';
+
+interface Props {
+  topic?: LensTopic;
+  title?: string;
+}
+
+const { topic = 'general', title = 'Interview Lens' } = Astro.props;
+
+const topicTokens: Record<string, { bg: string; badge: string }> = {
+  // worker-series topics — defined locally so this component works standalone
+  'dedicated-worker': { bg: 'var(--il-dedicated-bg)', badge: 'var(--il-dedicated-badge)' },
+  'shared-worker':    { bg: 'var(--il-shared-bg)',    badge: 'var(--il-shared-badge)' },
+  'broadcast':        { bg: 'var(--il-broadcast-bg)', badge: 'var(--il-broadcast-badge)' },
+  'sab':              { bg: 'var(--il-sab-bg)',        badge: 'var(--il-sab-badge)' },
+  'atomics':          { bg: 'var(--il-atomics-bg)',    badge: 'var(--il-atomics-badge)' },
+  'wasm':             { bg: 'var(--il-wasm-bg)',       badge: 'var(--il-wasm-badge)' },
+  'service-worker':   { bg: 'var(--il-sw-bg)',         badge: 'var(--il-sw-badge)' },
+  'node-threads':     { bg: 'var(--il-node-bg)',       badge: 'var(--il-node-badge)' },
+  // fall through to existing Interview.astro tokens for security-series posts
+  'xss':              { bg: 'var(--iv-xss-bg)',        badge: 'var(--iv-xss-badge)' },
+  'csp':              { bg: 'var(--iv-csp-bg)',        badge: 'var(--iv-csp-badge)' },
+  'cors':             { bg: 'var(--iv-cors-bg)',       badge: 'var(--iv-cors-badge)' },
+  'csrf':             { bg: 'var(--iv-csrf-bg)',       badge: 'var(--iv-csrf-badge)' },
+  'cookies':          { bg: 'var(--iv-cookies-bg)',    badge: 'var(--iv-cookies-badge)' },
+  'supply-chain':     { bg: 'var(--iv-sc-bg)',         badge: 'var(--iv-sc-badge)' },
+  'sri':              { bg: 'var(--iv-sri-bg)',        badge: 'var(--iv-sri-badge)' },
+  'general':          { bg: 'var(--theme-bg-raised)',  badge: 'var(--theme-fg-muted)' },
+};
+
+const colors = topicTokens[topic] ?? topicTokens['general'];
+---
+
+<div
+  class="il-wrap"
+  style={`--il-bg: ${colors.bg}; --il-badge: ${colors.badge};`}
+>
+  <div class="il-header">
+    {/* Briefcase icon — signals "interview prep", distinct from Lessons' info-circle */}
+    <svg
+      class="il-icon"
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+      <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+      <line x1="12" y1="12" x2="12" y2="12"/>
+    </svg>
+    <span class="il-title">{title}</span>
+    <span class="il-topic-badge">{topic === 'supply-chain' ? 'supply chain' : topic === 'general' ? 'interview prep' : topic.replace('-', ' ')}</span>
+  </div>
+  <div class="il-questions">
+    <slot />
+  </div>
+</div>
+
+<style is:global>
+  /* ── Worker-series topic tokens ──────────────────────────────────────────── */
+  :root {
+    --il-dedicated-bg:    oklch(97% 0.01 260);
+    --il-dedicated-badge: oklch(45% 0.18 260);
+    --il-shared-bg:       oklch(97% 0.01 280);
+    --il-shared-badge:    oklch(45% 0.17 280);
+    --il-broadcast-bg:    oklch(97% 0.01 200);
+    --il-broadcast-badge: oklch(42% 0.16 200);
+    --il-sab-bg:          oklch(97% 0.01 190);
+    --il-sab-badge:       oklch(42% 0.16 190);
+    --il-atomics-bg:      oklch(97% 0.01 170);
+    --il-atomics-badge:   oklch(40% 0.15 170);
+    --il-wasm-bg:         oklch(97% 0.01 150);
+    --il-wasm-badge:      oklch(40% 0.15 150);
+    --il-sw-bg:           oklch(97% 0.01 30);
+    --il-sw-badge:        oklch(43% 0.17 30);
+    --il-node-bg:         oklch(97% 0.01 130);
+    --il-node-badge:      oklch(41% 0.16 130);
+  }
+
+  [data-theme="dark"] {
+    --il-dedicated-bg:    oklch(20% 0.04 260);
+    --il-dedicated-badge: oklch(72% 0.14 260);
+    --il-shared-bg:       oklch(20% 0.04 280);
+    --il-shared-badge:    oklch(72% 0.14 280);
+    --il-broadcast-bg:    oklch(20% 0.04 200);
+    --il-broadcast-badge: oklch(72% 0.14 200);
+    --il-sab-bg:          oklch(20% 0.04 190);
+    --il-sab-badge:       oklch(72% 0.14 190);
+    --il-atomics-bg:      oklch(20% 0.04 170);
+    --il-atomics-badge:   oklch(72% 0.14 170);
+    --il-wasm-bg:         oklch(20% 0.04 150);
+    --il-wasm-badge:      oklch(72% 0.14 150);
+    --il-sw-bg:           oklch(20% 0.04 30);
+    --il-sw-badge:        oklch(72% 0.14 30);
+    --il-node-bg:         oklch(20% 0.04 130);
+    --il-node-badge:      oklch(72% 0.14 130);
+  }
+
+  /* ── Shell ───────────────────────────────────────────────────────────────── */
+  .il-wrap {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-left: 3px solid var(--il-badge);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--il-bg);
+  }
+
+  /* ── Header ──────────────────────────────────────────────────────────────── */
+  .il-header {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.625rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+  }
+
+  .il-icon {
+    color: var(--il-badge);
+    flex-shrink: 0;
+  }
+
+  .il-title {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--theme-fg-default);
+    font-family: "Clash Display", sans-serif;
+    letter-spacing: 0.01em;
+    flex: 1;
+  }
+
+  .il-topic-badge {
+    font-size: 0.67rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--il-badge);
+    background: color-mix(in oklch, var(--il-badge) 10%, transparent);
+    border: 1px solid color-mix(in oklch, var(--il-badge) 28%, transparent);
+    padding: 0.2em 0.6em;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  /* ── Questions list ──────────────────────────────────────────────────────── */
+  .il-questions {
+    display: flex;
+    flex-direction: column;
+  }
+</style>

@@ -1,0 +1,394 @@
+---
+// ─── Types ────────────────────────────────────────────────────────────────────
+type TaskVariant = 'normal' | 'long-task' | 'offloaded' | 'blocked' | 'idle';
+type LaneVariant = 'main' | 'worker' | 'compositor' | 'node-main' | 'node-worker';
+
+interface Task {
+  /** Start time in ms from the beginning of the timeline */
+  start: number;
+  /** Duration in ms */
+  duration: number;
+  /** Label shown inside the bar (only rendered when bar is wide enough) */
+  label?: string;
+  /**
+   * normal     → indigo  (default JS task)
+   * long-task  → red     (>50ms — causes jank)
+   * offloaded  → green   (work moved to a worker)
+   * blocked    → amber   (waiting, stalled)
+   * idle       → grey dashed (no work)
+   */
+  variant?: TaskVariant;
+}
+
+interface Lane {
+  id: string;
+  /** Display label shown in the left column */
+  label: string;
+  /**
+   * main / node-main   → indigo dot
+   * worker / node-worker → green dot
+   * compositor          → amber dot + renders frame-tick marks instead of task bars
+   */
+  variant?: LaneVariant;
+  tasks: Task[];
+}
+
+interface Props {
+  lanes: Lane[];
+  /** Total x-axis range in milliseconds */
+  totalMs: number;
+  /** Interval for frame-budget grid lines. Default 16.67 (60fps) */
+  frameBudgetMs?: number;
+  /** Show the vertical frame-budget grid lines. Default true */
+  showFrameGrid?: boolean;
+  title?: string;
+  caption?: string;
+}
+
+const {
+  lanes,
+  totalMs,
+  frameBudgetMs = 16.67,
+  showFrameGrid = true,
+  title,
+  caption,
+} = Astro.props;
+
+// ─── SVG coordinate system ────────────────────────────────────────────────────
+const W          = 900;
+const LABEL_W    = 114;   // left label column
+const PAD_R      = 14;    // right padding
+const TL_X0      = LABEL_W;
+const TL_W       = W - LABEL_W - PAD_R;
+const LANE_H     = 54;    // height of each row
+const TASK_H     = 26;    // height of task bar
+const TASK_V_OFF = (LANE_H - TASK_H) / 2;   // vertical offset to center bar in lane
+const PAD_TOP    = 6;
+const AXIS_H     = 30;    // x-axis area at bottom
+const SVG_H      = PAD_TOP + lanes.length * LANE_H + AXIS_H;
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function msToX(ms: number): number {
+  return TL_X0 + (Math.max(0, Math.min(ms, totalMs)) / totalMs) * TL_W;
+}
+function laneTop(i: number): number {
+  return PAD_TOP + i * LANE_H;
+}
+
+// ─── Task variant styling (hardcoded hex — valid in both light & dark themes) ──
+interface TStyle { fill: string; stroke: string; textFill: string; dash?: string; }
+
+const TASK_STYLE: Record<TaskVariant, TStyle> = {
+  'normal':    { fill: 'rgba(99,102,241,0.18)',  stroke: 'rgba(99,102,241,0.60)',  textFill: '#818cf8' },
+  'long-task': { fill: 'rgba(239,68,68,0.22)',   stroke: 'rgba(239,68,68,0.72)',   textFill: '#f87171' },
+  'offloaded': { fill: 'rgba(34,197,94,0.18)',   stroke: 'rgba(34,197,94,0.62)',   textFill: '#4ade80' },
+  'blocked':   { fill: 'rgba(245,158,11,0.20)',  stroke: 'rgba(245,158,11,0.68)',  textFill: '#fbbf24' },
+  'idle':      { fill: 'rgba(107,114,128,0.06)', stroke: 'rgba(107,114,128,0.28)', textFill: '#9ca3af', dash: '4 3' },
+};
+
+// ─── Lane variant accent colour ────────────────────────────────────────────────
+const LANE_CLR: Record<LaneVariant, string> = {
+  'main':        '#6366f1',
+  'worker':      '#22c55e',
+  'compositor':  '#f59e0b',
+  'node-main':   '#6366f1',
+  'node-worker': '#22c55e',
+};
+const laneClr = (v?: LaneVariant): string => (v && LANE_CLR[v]) ?? '#6b7280';
+
+// ─── Frame budget grid line positions ─────────────────────────────────────────
+const frameLines: number[] = [];
+if (showFrameGrid && frameBudgetMs > 0) {
+  for (let ms = frameBudgetMs; ms < totalMs - 1; ms += frameBudgetMs) {
+    frameLines.push(ms);
+  }
+}
+
+// ─── X-axis ticks at 0 / 25 / 50 / 75 / 100 % ───────────────────────────────
+const axisTicks = [0, 0.25, 0.5, 0.75, 1].map(f => ({
+  x:     msToX(f * totalMs),
+  label: `${Math.round(f * totalMs)}ms`,
+}));
+
+const axisLineY = PAD_TOP + lanes.length * LANE_H;
+---
+
+<div class="tt-wrap">
+  {title && <div class="tt-header">{title}</div>}
+  <div class="tt-body">
+    <svg
+      viewBox={`0 0 ${W} ${SVG_H}`}
+      xmlns="http://www.w3.org/2000/svg"
+      class="tt-svg"
+      role="img"
+      aria-label={title ?? 'Thread timeline diagram'}
+    >
+
+      {/* ── Label column background ──────────────────────────────────────── */}
+      <rect x={0} y={0} width={LABEL_W} height={axisLineY} class="tt-label-bg" />
+
+      {/* ── Frame budget grid lines (behind task bars) ───────────────────── */}
+      {showFrameGrid && frameLines.map(ms => (
+        <line
+          x1={msToX(ms)} y1={PAD_TOP}
+          x2={msToX(ms)} y2={axisLineY}
+          class="tt-frame-line"
+        />
+      ))}
+
+      {/* ── Lanes ────────────────────────────────────────────────────────── */}
+      {lanes.map((lane, i) => {
+        const topY   = laneTop(i);
+        const midY   = topY + LANE_H / 2;
+        const clr    = laneClr(lane.variant);
+        const isComp = lane.variant === 'compositor';
+
+        return (
+          <>
+            {/* Row top border */}
+            <line x1={0} y1={topY} x2={W} y2={topY} class="tt-row-sep" />
+
+            {/* Accent dot */}
+            <circle cx={13} cy={midY} r={3.5} fill={clr} />
+
+            {/* Lane label */}
+            <text
+              x={23} y={midY + 1}
+              dominant-baseline="middle"
+              class="tt-lane-label"
+            >{lane.label}</text>
+
+            {/* Compositor lane: tick marks at each frame boundary */}
+            {isComp && frameLines.map(ms => (
+              <line
+                x1={msToX(ms)} y1={topY + LANE_H * 0.28}
+                x2={msToX(ms)} y2={topY + LANE_H * 0.72}
+                stroke={clr}
+                stroke-width="1.5"
+                stroke-opacity="0.55"
+              />
+            ))}
+
+            {/* Task bars */}
+            {!isComp && lane.tasks.map(task => {
+              const v   = task.variant ?? 'normal';
+              const s   = TASK_STYLE[v];
+              const tx  = msToX(task.start);
+              const tw  = Math.max(msToX(task.start + task.duration) - tx, 3);
+              const ty  = topY + TASK_V_OFF;
+
+              return (
+                <>
+                  <rect
+                    x={tx} y={ty}
+                    width={tw} height={TASK_H}
+                    rx="4"
+                    fill={s.fill}
+                    stroke={s.stroke}
+                    stroke-width="1.5"
+                    stroke-dasharray={s.dash}
+                  />
+                  {/* Label inside bar — only when bar is wide enough */}
+                  {task.label && tw >= 52 && (
+                    <text
+                      x={tx + tw / 2}
+                      y={ty + TASK_H / 2 + 1}
+                      text-anchor="middle"
+                      dominant-baseline="middle"
+                      class="tt-task-label"
+                      fill={s.textFill}
+                    >{task.label}</text>
+                  )}
+                </>
+              );
+            })}
+          </>
+        );
+      })}
+
+      {/* ── Bottom border ────────────────────────────────────────────────── */}
+      <line x1={0} y1={axisLineY} x2={W} y2={axisLineY} class="tt-row-sep" />
+
+      {/* ── Label / timeline divider ─────────────────────────────────────── */}
+      <line
+        x1={LABEL_W} y1={PAD_TOP}
+        x2={LABEL_W} y2={axisLineY}
+        class="tt-divider"
+      />
+
+      {/* ── X-axis ticks + ms labels ─────────────────────────────────────── */}
+      {axisTicks.map(tick => (
+        <>
+          <line
+            x1={tick.x} y1={axisLineY}
+            x2={tick.x} y2={axisLineY + 5}
+            class="tt-axis-tick"
+          />
+          <text
+            x={tick.x} y={axisLineY + 19}
+            text-anchor="middle"
+            class="tt-axis-label"
+          >{tick.label}</text>
+        </>
+      ))}
+
+    </svg>
+  </div>
+
+  {/* ── Variant legend ───────────────────────────────────────────────────── */}
+  <div class="tt-legend">
+    <span class="tt-legend-item">
+      <span class="tt-legend-swatch" style="background:rgba(99,102,241,0.55)"></span>
+      Normal
+    </span>
+    <span class="tt-legend-item">
+      <span class="tt-legend-swatch" style="background:rgba(239,68,68,0.72)"></span>
+      Long Task
+    </span>
+    <span class="tt-legend-item">
+      <span class="tt-legend-swatch" style="background:rgba(34,197,94,0.62)"></span>
+      Offloaded
+    </span>
+    <span class="tt-legend-item">
+      <span class="tt-legend-swatch" style="background:rgba(245,158,11,0.68)"></span>
+      Blocked
+    </span>
+    <span class="tt-legend-item">
+      <span class="tt-legend-swatch tt-legend-swatch--dashed"></span>
+      Idle
+    </span>
+  </div>
+
+  {caption && <div class="tt-caption">{caption}</div>}
+</div>
+
+<style>
+  /* ── Shell ──────────────────────────────────────────────────────────────── */
+  .tt-wrap {
+    margin: 2rem 0;
+    border: 1px solid var(--theme-line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .tt-header {
+    padding: 0.625rem 1.25rem;
+    background: var(--theme-bg-raised);
+    border-bottom: 1px solid var(--theme-line);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-fg-faint);
+  }
+
+  .tt-body {
+    background: var(--theme-bg-inset);
+    overflow-x: auto;
+    padding: 0.75rem;
+  }
+
+  .tt-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-width: 420px;
+  }
+
+  /* ── Label column ────────────────────────────────────────────────────────── */
+  .tt-label-bg {
+    fill: var(--theme-bg-raised);
+    opacity: 0.45;
+  }
+
+  .tt-lane-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 11px;
+    font-weight: 600;
+    fill: var(--theme-fg-muted);
+  }
+
+  /* ── Grid & separators ───────────────────────────────────────────────────── */
+  .tt-frame-line {
+    stroke: var(--theme-line-strong);
+    stroke-width: 1;
+    stroke-dasharray: 2 6;
+    stroke-opacity: 0.28;
+  }
+
+  .tt-row-sep {
+    stroke: var(--theme-line);
+    stroke-width: 1;
+  }
+
+  .tt-divider {
+    stroke: var(--theme-line-strong);
+    stroke-width: 1;
+    stroke-opacity: 0.4;
+  }
+
+  /* ── Task labels ─────────────────────────────────────────────────────────── */
+  .tt-task-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 10px;
+    font-weight: 600;
+    pointer-events: none;
+  }
+
+  /* ── X-axis ──────────────────────────────────────────────────────────────── */
+  .tt-axis-tick {
+    stroke: var(--theme-line-strong);
+    stroke-width: 1;
+    stroke-opacity: 0.45;
+  }
+
+  .tt-axis-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 10px;
+    fill: var(--theme-fg-ghost);
+  }
+
+  /* ── Legend ──────────────────────────────────────────────────────────────── */
+  .tt-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1.25rem;
+    padding: 0.5rem 1rem;
+    background: var(--theme-bg-raised);
+    border-top: 1px solid var(--theme-line);
+  }
+
+  .tt-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    color: var(--theme-fg-faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .tt-legend-swatch {
+    display: inline-block;
+    width: 22px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .tt-legend-swatch--dashed {
+    background: transparent;
+    border: 1.5px dashed rgba(107,114,128,0.45);
+  }
+
+  /* ── Caption ─────────────────────────────────────────────────────────────── */
+  .tt-caption {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--theme-fg-faint);
+    font-style: italic;
+    text-align: center;
+    border-top: 1px solid var(--theme-line);
+    background: var(--theme-bg-raised);
+  }
+</style>

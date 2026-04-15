@@ -1,0 +1,179 @@
+---
+interface Block {
+  label: string;
+  posts: string[];
+}
+
+interface Props {
+  blocks: Block[];
+  currentSlug: string;
+}
+
+const { blocks, currentSlug } = Astro.props;
+
+const activeIdx = blocks.findIndex((b) => b.posts.includes(currentSlug));
+
+// Post not found in any block (e.g. overview post) — render nothing.
+if (activeIdx === -1) return;
+
+const activeBlock = blocks[activeIdx];
+const posInBlock  = activeBlock.posts.indexOf(currentSlug) + 1;
+const totalInBlock = activeBlock.posts.length;
+
+// Extract the theme name after the em-dash: "Block 3 — Modern CSS Primitives" → "Modern CSS Primitives"
+const themeName = activeBlock.label.split(' — ')[1] ?? activeBlock.label;
+---
+
+<div class="sbm" aria-label="Series progress">
+
+  {/* ── Mobile: compact single line ─────────────────────────────── */}
+  <div class="sbm-mobile">
+    <span class="sbm-mobile-pos">Block {activeIdx + 1} of {blocks.length}</span>
+    <span class="sbm-mobile-sep" aria-hidden="true">·</span>
+    <span class="sbm-mobile-name">{themeName}</span>
+    {posInBlock > 0 && (
+      <span class="sbm-mobile-part">
+        <span class="sbm-mobile-sep" aria-hidden="true">·</span>
+        Post {posInBlock} of {totalInBlock}
+      </span>
+    )}
+  </div>
+
+  {/* ── Desktop: full block track ────────────────────────────────── */}
+  <div class="sbm-track" role="list">
+    {blocks.map((block, i) => {
+      const isDone   = i < activeIdx;
+      const isActive = i === activeIdx;
+      return (
+        <div class="sbm-item" role="listitem">
+          <div class:list={[
+            'sbm-block',
+            isDone   && 'sbm-block--done',
+            isActive && 'sbm-block--active',
+            !isDone && !isActive && 'sbm-block--upcoming',
+          ]}>
+            <span class="sbm-icon" aria-hidden="true">
+              {isDone ? '✓' : isActive ? '●' : '○'}
+            </span>
+            <span class="sbm-label">
+              {isActive ? activeBlock.label : `Block ${i + 1}`}
+            </span>
+            {isActive && posInBlock > 0 && (
+              <span class="sbm-fraction" aria-label={`Post ${posInBlock} of ${totalInBlock}`}>
+                {posInBlock}/{totalInBlock}
+              </span>
+            )}
+          </div>
+          {i < blocks.length - 1 && (
+            <span class="sbm-sep" aria-hidden="true">·</span>
+          )}
+        </div>
+      );
+    })}
+  </div>
+
+</div>
+
+<style>
+  /* ── Wrapper ─────────────────────────────────────────────────────── */
+  .sbm {
+    margin-top: 0.5rem;
+  }
+
+  /* ── Mobile view (hidden on sm+) ─────────────────────────────────── */
+  .sbm-mobile {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+
+  .sbm-mobile-pos  { color: var(--theme-fg-muted); font-weight: 600; }
+  .sbm-mobile-sep  { color: var(--theme-fg-ghost); }
+  .sbm-mobile-name { color: var(--theme-fg-faint); }
+  .sbm-mobile-part { display: flex; align-items: center; gap: 0.4rem; color: var(--theme-fg-ghost); }
+
+  /* ── Desktop track (hidden on < sm) ─────────────────────────────── */
+  .sbm-track {
+    display: none;
+  }
+
+  /* ── Individual item wrapper (block + separator) ─────────────────── */
+  .sbm-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* ── Block pill ──────────────────────────────────────────────────── */
+  .sbm-block {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+
+  .sbm-icon   { font-size: 0.6rem; }
+  .sbm-label  { white-space: nowrap; }
+
+  .sbm-fraction {
+    font-size: 0.6rem;
+    padding: 0.1rem 0.35rem;
+    border-radius: 999px;
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    color: #818cf8;
+    white-space: nowrap;
+  }
+
+  /* ── Block states ────────────────────────────────────────────────── */
+  .sbm-block--done {
+    color: var(--theme-fg-ghost);
+  }
+  .sbm-block--done .sbm-icon {
+    color: #22c55e;
+  }
+
+  .sbm-block--active {
+    color: var(--theme-fg-muted);
+    font-weight: 600;
+  }
+  .sbm-block--active .sbm-icon {
+    color: #818cf8;
+  }
+
+  .sbm-block--upcoming {
+    color: var(--theme-fg-ghost);
+    opacity: 0.6;
+  }
+
+  /* ── Separator dot ───────────────────────────────────────────────── */
+  .sbm-sep {
+    color: var(--theme-fg-ghost);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.65rem;
+    opacity: 0.5;
+    user-select: none;
+  }
+
+  /* ── Breakpoint: show desktop track, hide mobile ─────────────────── */
+  @media (min-width: 640px) {
+    .sbm-mobile {
+      display: none;
+    }
+    .sbm-track {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+  }
+</style>

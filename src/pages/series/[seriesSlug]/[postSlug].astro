@@ -20,6 +20,11 @@ export async function getStaticPaths() {
       const prevEntry = prevSlug ? postEntries.find(e => e.slug === `${seriesSlug}/${prevSlug}`) : undefined;
       const nextEntry = nextSlug ? postEntries.find(e => e.slug === `${seriesSlug}/${nextSlug}`) : undefined;
 
+      const rawBlocks = index.data.blocks ?? [];
+      const blockContext = rawBlocks.length > 0
+        ? { blocks: rawBlocks, currentSlug: postSlug }
+        : undefined;
+
       return [{
         params: { seriesSlug, postSlug },
         props: {
@@ -33,13 +38,14 @@ export async function getStaticPaths() {
           nextPost: nextEntry
             ? { slug: nextSlug, title: nextEntry.data.title, href: `/series/${seriesSlug}/${nextSlug}` }
             : undefined,
+          blockContext,
         },
       }];
     });
   });
 }
 
-const { entry, seriesTitle, part, total, prevPost, nextPost } = Astro.props;
+const { entry, seriesTitle, part, total, prevPost, nextPost, blockContext } = Astro.props;
 const { seriesSlug } = Astro.params;
 const { Content, headings } = await render(entry);
 
@@ -59,6 +65,7 @@ const readingTime = resolveReadingTime(entry.data.readingTime, entry.body);
   prevPost={prevPost}
   nextPost={nextPost}
   seriesContext={{ seriesSlug, seriesTitle, part, total }}
+  blockContext={blockContext}
   ogImage={`/og/series/${seriesSlug}/${Astro.params.postSlug}.png`}
 >
   <Content components={{ img: MdxImage }} />

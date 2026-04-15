@@ -1,18 +1,33 @@
 ---
-type NodeType = 'start' | 'end' | 'decision' | 'action' | 'result';
+// ─── Types ────────────────────────────────────────────────────────────────────
+type NodeType    = 'decision' | 'action' | 'terminal';
+type NodeVariant = 'positive' | 'negative' | 'neutral' | 'warning';
 
 interface FlowNode {
+  /** Unique id — referenced by FlowEdge.from / to */
   id: string;
-  type: NodeType;
+  /** Display text; long labels are word-wrapped automatically */
   label: string;
-  sublabel?: string;
+  /**
+   * decision  = rounded rect + ◆ indicator (default) — use for questions
+   * action    = rounded rect + coloured left bar     — use for intermediate steps
+   * terminal  = pill shape                           — use for final recommendations
+   */
+  type?: NodeType;
+  /**
+   * Drives the accent colour on action / terminal nodes.
+   * Has no visual effect on decision nodes.
+   *   positive → green   negative → red
+   *   neutral  → grey    warning  → amber
+   */
+  variant?: NodeVariant;
 }
 
 interface FlowEdge {
   from: string;
   to: string;
+  /** "yes" → green  |  "no" → muted  |  anything else → default grey */
   label?: string;
-  style?: 'solid' | 'dashed';
 }
 
 interface Props {
@@ -24,255 +39,329 @@ interface Props {
 
 const { nodes, edges, title, caption } = Astro.props;
 
-const uid = `df-${Math.random().toString(36).slice(2, 7)}`;
+// ─── Layout constants ─────────────────────────────────────────────────────────
+const NODE_W    = 160;   // node width (px)
+const NODE_GAP  = 16;    // horizontal gap between adjacent sibling subtrees (px)
+const LEVEL_GAP = 54;    // vertical gap: bottom of tallest node in parent level → top of child level (px)
+const PAD_V     = 10;    // top / bottom padding inside every node (px)
+const LINE_H    = 15;    // SVG line-height for wrapped text (px)
+const SVG_PAD   = 24;    // outer canvas breathing room (px)
+const CPL       = 20;    // approximate characters per wrapped line
 
-// ── Layout constants ────────────────────────────────────────────────────────
-const W          = 780;
-const COL_0_X    = 240;  // x-centre of primary column
-const COL_1_X    = 570;  // x-centre of branch column
-const ROW_H      = 96;   // vertical distance between row centres
-const TOP_PAD    = 24;
-const BOT_PAD    = 36;
+// Horizontal text-start x-offset from node's left edge, per node type.
+// Decision: clears the 10 px ◆ indicator + gap.
+// Action:   clears the 3 px accent bar + gap.
+// Terminal: centred (TX_TERMINAL is the centre x, not left offset).
+const TX_DEC = 22;
+const TX_ACT = 14;
 
-// Node shape half-sizes
-const RECT_W = 170; const RECT_H = 40; const RECT_RX = 7;
-const DIA_H  = 30;  // diamond half-height (tip to centre)
-const DIA_W  = 88;  // diamond half-width
-const CIRC_R = 18;
+// ─── Text wrapping ────────────────────────────────────────────────────────────
+function wrap(text: string): string[] {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of words) {
+    if (!cur)                              { cur = w; continue; }
+    if (cur.length + 1 + w.length <= CPL) { cur += ' ' + w;   }
+    else                                  { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [''];
+}
 
-// ── BFS layout ─────────────────────────────────────────────────────────────
-const rowOf = new Map<string, number>();
-const colOf = new Map<string, number>();
+const nodeLines = (n: FlowNode): string[] => wrap(n.label);
+const nodeH     = (n: FlowNode): number   => PAD_V * 2 + nodeLines(n).length * LINE_H;
 
-const startNode = nodes.find(n => n.type === 'start') ?? nodes[0];
-const queue: Array<{ id: string; row: number; col: number }> = [
-  { id: startNode.id, row: 0, col: 0 },
-];
-const seen = new Set<string>();
+// ─── Build adjacency / parent maps ───────────────────────────────────────────
+const kidsOf   = new Map<string, string[]>();
+const parentOf = new Map<string, string>();
 
-while (queue.length > 0) {
-  const item = queue.shift()!;
-  if (seen.has(item.id)) continue;
-  seen.add(item.id);
-  rowOf.set(item.id, item.row);
-  colOf.set(item.id, item.col);
+for (const n of nodes) kidsOf.set(n.id, []);
+for (const e of edges) {
+  kidsOf.get(e.from)?.push(e.to);
+  parentOf.set(e.to, e.from);
+}
 
-  const out = edges.filter(e => e.from === item.id);
-  out.forEach((edge, i) => {
-    if (!seen.has(edge.to) && !queue.some(q => q.id === edge.to)) {
-      queue.push({ id: edge.to, row: item.row + 1, col: item.col + i });
+// ─── Root: first node with no incoming edge ───────────────────────────────────
+const rootId = (nodes.find(n => !parentOf.has(n.id)) ?? nodes[0])?.id;
+
+// ─── BFS level assignment ─────────────────────────────────────────────────────
+const lvlOf = new Map<string, number>();
+if (rootId) {
+  const q = [rootId];
+  lvlOf.set(rootId, 0);
+  while (q.length) {
+    const id = q.shift()!;
+    const l  = lvlOf.get(id)!;
+    for (const c of kidsOf.get(id) ?? []) {
+      if (!lvlOf.has(c)) { lvlOf.set(c, l + 1); q.push(c); }
     }
+  }
+}
+const maxLvl = lvlOf.size ? Math.max(...lvlOf.values()) : 0;
+
+// ─── Max node height at each level ────────────────────────────────────────────
+// All siblings in a level share the same y-offset; we use the tallest node.
+const maxHAt = new Array<number>(maxLvl + 1).fill(0);
+for (const n of nodes) {
+  const l = lvlOf.get(n.id) ?? 0;
+  maxHAt[l] = Math.max(maxHAt[l], nodeH(n));
+}
+
+// ─── Cumulative Y offset per level ────────────────────────────────────────────
+const yAt: number[] = [SVG_PAD];
+for (let i = 1; i <= maxLvl; i++) yAt[i] = yAt[i - 1] + maxHAt[i - 1] + LEVEL_GAP;
+
+// ─── Subtree widths (recursive) ───────────────────────────────────────────────
+// A leaf occupies exactly NODE_W + NODE_GAP.
+// An interior node occupies the sum of its children's subtree widths.
+const subW = new Map<string, number>();
+function csw(id: string): number {
+  const ch = kidsOf.get(id) ?? [];
+  const w  = ch.length ? ch.reduce((acc, c) => acc + csw(c), 0) : NODE_W + NODE_GAP;
+  subW.set(id, w);
+  return w;
+}
+if (rootId) csw(rootId);
+
+// ─── Assign cx / y / h to every node ─────────────────────────────────────────
+interface Pos { cx: number; y: number; h: number; lines: string[] }
+const pmap = new Map<string, Pos>();
+
+function assign(id: string, left: number): void {
+  const sw   = subW.get(id) ?? NODE_W + NODE_GAP;
+  const node = nodes.find(n => n.id === id)!;
+  pmap.set(id, {
+    cx:    left + sw / 2,
+    y:     yAt[lvlOf.get(id) ?? 0],
+    h:     nodeH(node),
+    lines: nodeLines(node),
   });
-}
-
-// Determine if two-column layout is needed
-const maxCol = Math.max(0, ...Array.from(colOf.values()));
-const singleCol = maxCol === 0;
-
-function nodeX(id: string): number {
-  const col = colOf.get(id) ?? 0;
-  if (singleCol) return W / 2;
-  return col === 0 ? COL_0_X : COL_1_X;
-}
-
-function nodeY(id: string): number {
-  return TOP_PAD + (rowOf.get(id) ?? 0) * ROW_H + ROW_H / 2;
-}
-
-// Bottom / top / left / right connection points
-function bottom(id: string): [number, number] {
-  const t = nodes.find(n => n.id === id)!.type;
-  const x = nodeX(id); const y = nodeY(id);
-  if (t === 'start' || t === 'end') return [x, y + CIRC_R];
-  if (t === 'decision') return [x, y + DIA_H];
-  return [x, y + RECT_H / 2];
-}
-function top(id: string): [number, number] {
-  const t = nodes.find(n => n.id === id)!.type;
-  const x = nodeX(id); const y = nodeY(id);
-  if (t === 'start' || t === 'end') return [x, y - CIRC_R];
-  if (t === 'decision') return [x, y - DIA_H];
-  return [x, y - RECT_H / 2];
-}
-function right(id: string): [number, number] {
-  const t = nodes.find(n => n.id === id)!.type;
-  const x = nodeX(id); const y = nodeY(id);
-  if (t === 'start' || t === 'end') return [x + CIRC_R, y];
-  if (t === 'decision') return [x + DIA_W, y];
-  return [x + RECT_W / 2, y];
-}
-
-// Compute SVG height
-const maxRow = Math.max(0, ...Array.from(rowOf.values()));
-const SVG_H = TOP_PAD + (maxRow + 1) * ROW_H + BOT_PAD;
-
-// ── Edge path builder ───────────────────────────────────────────────────────
-function edgePath(edge: FlowEdge): string {
-  const fromCol = colOf.get(edge.from) ?? 0;
-  const toCol   = colOf.get(edge.to)   ?? 0;
-
-  if (fromCol === toCol) {
-    // Straight vertical: bottom of `from` to top of `to`
-    const [x1, y1] = bottom(edge.from);
-    const [x2, y2] = top(edge.to);
-    return `M ${x1} ${y1} L ${x2} ${y2}`;
+  let cl = left;
+  for (const c of kidsOf.get(id) ?? []) {
+    assign(c, cl);
+    cl += subW.get(c) ?? NODE_W + NODE_GAP;
   }
-
-  // Cross-column: exit from right side of `from`, travel horizontally, enter top of `to`
-  const [rx, ry] = right(edge.from);
-  const [tx, ty] = top(edge.to);
-  const midY = (ry + ty) / 2;
-  return `M ${rx} ${ry} L ${tx} ${ry} L ${tx} ${ty}`;
 }
+if (rootId) assign(rootId, SVG_PAD);
 
-// ── Label midpoint ──────────────────────────────────────────────────────────
-function edgeLabelPos(edge: FlowEdge): [number, number] {
-  const fromCol = colOf.get(edge.from) ?? 0;
-  const toCol   = colOf.get(edge.to)   ?? 0;
-  if (fromCol === toCol) {
-    const [x1, y1] = bottom(edge.from);
-    const [, y2]   = top(edge.to);
-    return [x1 + 8, (y1 + y2) / 2];
-  }
-  const [rx, ry] = right(edge.from);
-  const [tx]     = top(edge.to);
-  return [(rx + tx) / 2, ry - 8];
+// ─── SVG canvas dimensions ────────────────────────────────────────────────────
+const totalW = subW.get(rootId ?? '') ?? NODE_W + NODE_GAP;
+const SVG_W  = totalW + SVG_PAD * 2;
+const SVG_H  = pmap.size
+  ? Math.max(...Array.from(pmap.values()).map(p => p.y + p.h)) + SVG_PAD
+  : 100;
+
+// ─── Colour helpers (variant-keyed) ──────────────────────────────────────────
+//
+// Terminal node fill / stroke are set via inline style="" — not SVG presentation
+// attributes — because SVG presentation attributes don't expand CSS custom
+// properties in all targeted browsers. Neutral falls back to a CSS class
+// that can safely reference --theme-* vars.
+//
+type VMap = Record<NodeVariant, string | null>;
+
+const TERM_FILL: VMap = {
+  positive: 'rgba(34,197,94,0.11)',
+  negative: 'rgba(239,68,68,0.11)',
+  neutral:  null,                      // → .df-terminal-rect--neutral class
+  warning:  'rgba(245,158,11,0.11)',
+};
+const TERM_STROKE: VMap = {
+  positive: 'rgba(34,197,94,0.5)',
+  negative: 'rgba(239,68,68,0.5)',
+  neutral:  null,
+  warning:  'rgba(245,158,11,0.5)',
+};
+const TERM_TEXT: VMap = {
+  positive: '#4ade80',
+  negative: '#f87171',
+  neutral:  null,                      // inherits .df-node-text fill from CSS
+  warning:  '#fbbf24',
+};
+const ACCENT: Record<NodeVariant, string> = {
+  positive: '#22c55e',
+  negative: '#ef4444',
+  neutral:  '#6b7280',
+  warning:  '#f59e0b',
+};
+
+// Edge stroke colour and weight
+function eColor(label?: string): string {
+  if (label === 'yes') return '#4ade80';
+  if (label === 'no')  return 'rgba(156,163,175,0.75)';
+  return 'rgba(156,163,175,0.55)';
 }
-
-// ── Edge colours ────────────────────────────────────────────────────────────
-const EDGE_YES = '#22c55e';
-const EDGE_NO  = '#ef4444';
-const EDGE_DEF = 'var(--theme-line-strong)';
-
-function edgeColor(label?: string): string {
-  if (!label) return EDGE_DEF;
-  const l = label.toLowerCase();
-  if (l === 'yes' || l === 'hit' || l === 'true' || l === 'valid') return EDGE_YES;
-  if (l === 'no'  || l === 'miss'|| l === 'false'|| l === 'invalid') return EDGE_NO;
-  return EDGE_DEF;
-}
+function eWidth(label?: string): number { return label === 'yes' ? 2 : 1.5; }
 ---
 
 <div class="df-wrap">
   {title && <div class="df-header">{title}</div>}
+
   <div class="df-body">
     <svg
-      viewBox={`0 0 ${W} ${SVG_H}`}
+      viewBox={`0 0 ${SVG_W} ${SVG_H}`}
       xmlns="http://www.w3.org/2000/svg"
       class="df-svg"
       role="img"
       aria-label={title ?? 'Decision flow diagram'}
     >
-      <defs>
-        <marker id={`${uid}-yes`} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <polygon points="0 0, 8 4, 0 8" fill={EDGE_YES} />
-        </marker>
-        <marker id={`${uid}-no`} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <polygon points="0 0, 8 4, 0 8" fill={EDGE_NO} />
-        </marker>
-        <marker id={`${uid}-def`} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <polygon points="0 0, 8 4, 0 8" fill="var(--theme-fg-ghost)" />
-        </marker>
-      </defs>
 
-      {/* ── Edges (drawn first, behind nodes) ─────────────────────── */}
-      {edges.map(edge => {
-        const color = edgeColor(edge.label);
-        const label = edge.label;
-        const isYes = label?.toLowerCase() === 'yes' || label?.toLowerCase() === 'hit' || label?.toLowerCase() === 'true' || label?.toLowerCase() === 'valid';
-        const isNo  = label?.toLowerCase() === 'no'  || label?.toLowerCase() === 'miss'|| label?.toLowerCase() === 'false'|| label?.toLowerCase() === 'invalid';
-        const mId   = isYes ? `${uid}-yes` : isNo ? `${uid}-no` : `${uid}-def`;
-        const dash  = edge.style === 'dashed' ? '5 3' : undefined;
-        const [lx, ly] = edgeLabelPos(edge);
+      {/* ── Edges (rendered behind nodes) ──────────────────────────────── */}
+      {edges.map(e => {
+        const fr = pmap.get(e.from);
+        const to = pmap.get(e.to);
+        if (!fr || !to) return null;
+
+        // Bezier: exits bottom-centre of parent, enters top-centre of child.
+        const x1  = fr.cx;
+        const y1  = fr.y + fr.h;              // bottom-centre of parent
+        const x2  = to.cx;
+        const y2  = to.y;                     // top-centre of child
+        const gap = y2 - y1;
+        const cp  = Math.max(gap * 0.45, 18); // bezier control-point offset
+        const ARW = 8;                         // arrowhead height reserved at path end
+
+        // Path ends ARW px above child top so the arrowhead tip lands exactly at y2.
+        const d = `M ${x1} ${y1} C ${x1} ${y1 + cp}, ${x2} ${y2 - cp}, ${x2} ${y2 - ARW}`;
+
+        // Edge label: placed near the start of the curve, offset away from the line.
+        const goLeft  = x2 < x1 - 4;
+        const goRight = x2 > x1 + 4;
+        const lx      = x1 * 0.82 + x2 * 0.18;
+        const ly      = y1 + gap * 0.14;
+        const lxOff   = goLeft ? lx - 6 : lx + 6;
+        const anchor: 'start' | 'end' = goLeft ? 'end' : 'start';
+
+        const ec = eColor(e.label);
+        const ew = eWidth(e.label);
 
         return (
           <>
             <path
-              d={edgePath(edge)}
+              d={d}
               fill="none"
-              stroke={color}
-              stroke-width="1.75"
-              stroke-dasharray={dash}
-              marker-end={`url(#${mId})`}
+              stroke={ec}
+              stroke-width={ew}
+              stroke-linecap="round"
             />
-            {label && (
+            {/* Downward-pointing triangle arrowhead, tip at y2 */}
+            <polygon
+              points={`${x2 - 4},${y2 - ARW} ${x2 + 4},${y2 - ARW} ${x2},${y2 - 1}`}
+              fill={ec}
+            />
+            {e.label && (
               <text
-                x={lx} y={ly}
-                class="df-edge-label"
-                fill={color}
-              >{label}</text>
+                x={lxOff}
+                y={ly}
+                text-anchor={anchor}
+                class:list={[
+                  'df-edge-label',
+                  e.label === 'yes' && 'df-edge-label--yes',
+                  e.label === 'no'  && 'df-edge-label--no',
+                ]}
+              >
+                {e.label}
+              </text>
             )}
           </>
         );
       })}
 
-      {/* ── Nodes ─────────────────────────────────────────────────── */}
+      {/* ── Nodes ──────────────────────────────────────────────────────────── */}
       {nodes.map(node => {
-        const x = nodeX(node.id);
-        const y = nodeY(node.id);
+        const p    = pmap.get(node.id);
+        if (!p) return null;
 
-        if (node.type === 'start' || node.type === 'end') {
+        const type = node.type    ?? 'decision';
+        const v    = node.variant ?? 'neutral';
+        const nx   = p.cx - NODE_W / 2;    // left edge of node rect
+
+        // ── terminal ── pill shape ─────────────────────────────────────────
+        if (type === 'terminal') {
+          const isNeutral = v === 'neutral';
+          const rx        = Math.min(p.h / 2, 22);
+          const termStyle = !isNeutral
+            ? `fill:${TERM_FILL[v]};stroke:${TERM_STROKE[v]};stroke-width:1.5`
+            : undefined;
+          const textStyle = TERM_TEXT[v] ? `fill:${TERM_TEXT[v]}` : undefined;
+
           return (
             <>
-              {node.type === 'end' && (
-                <circle cx={x} cy={y} r={CIRC_R + 5} class="df-end-ring" />
-              )}
-              <circle
-                cx={x} cy={y} r={CIRC_R}
-                class={node.type === 'start' ? 'df-start-circle' : 'df-end-circle'}
+              <rect
+                x={nx} y={p.y} width={NODE_W} height={p.h} rx={rx}
+                class:list={['df-terminal-rect', isNeutral && 'df-terminal-rect--neutral']}
+                style={termStyle}
               />
-              <text x={x} y={y} class="df-node-label df-circle-label" text-anchor="middle" dominant-baseline="middle">
-                {node.label}
-              </text>
+              {p.lines.map((line, i) => (
+                <text
+                  x={p.cx}
+                  y={p.y + PAD_V + (i + 0.82) * LINE_H}
+                  text-anchor="middle"
+                  class="df-node-text df-node-text--terminal"
+                  style={textStyle}
+                >
+                  {line}
+                </text>
+              ))}
             </>
           );
         }
 
-        if (node.type === 'decision') {
-          const pts = `${x},${y - DIA_H} ${x + DIA_W},${y} ${x},${y + DIA_H} ${x - DIA_W},${y}`;
+        // ── action ── rect + left accent bar ──────────────────────────────
+        if (type === 'action') {
           return (
             <>
-              <polygon points={pts} class="df-decision" />
-              <text x={x} y={node.sublabel ? y - 6 : y} class="df-node-label" text-anchor="middle" dominant-baseline="middle">
-                {node.label}
-              </text>
-              {node.sublabel && (
-                <text x={x} y={y + 10} class="df-node-sub" text-anchor="middle" dominant-baseline="middle">
-                  {node.sublabel}
+              <rect x={nx} y={p.y} width={NODE_W} height={p.h} rx="7" class="df-node-rect" />
+              <rect x={nx} y={p.y} width={3} height={p.h} rx="2" style={`fill:${ACCENT[v]}`} />
+              {p.lines.map((line, i) => (
+                <text
+                  x={nx + TX_ACT}
+                  y={p.y + PAD_V + (i + 0.82) * LINE_H}
+                  class="df-node-text"
+                >
+                  {line}
                 </text>
-              )}
+              ))}
             </>
           );
         }
 
-        // action / result
-        const bx = x - RECT_W / 2;
-        const by = y - RECT_H / 2;
+        // ── decision (default) ── rect + ◆ indicator ──────────────────────
+        // Diamond centred vertically in the node, 10 px from the left edge.
+        const dcy = p.y + p.h / 2;
         return (
           <>
             <rect
-              x={bx} y={by}
-              width={RECT_W} height={RECT_H}
-              rx={RECT_RX}
-              class={node.type === 'result' ? 'df-result-rect' : 'df-action-rect'}
+              x={nx} y={p.y} width={NODE_W} height={p.h} rx="7"
+              class="df-node-rect df-node-rect--decision"
             />
-            <text x={x} y={node.sublabel ? y - 6 : y} class="df-node-label" text-anchor="middle" dominant-baseline="middle">
-              {node.label}
-            </text>
-            {node.sublabel && (
-              <text x={x} y={y + 10} class="df-node-sub" text-anchor="middle" dominant-baseline="middle">
-                {node.sublabel}
+            {/* ◆ 10×10 diamond indicator */}
+            <polygon
+              points={`${nx + 5},${dcy} ${nx + 10},${dcy - 5} ${nx + 15},${dcy} ${nx + 10},${dcy + 5}`}
+              class="df-diamond"
+            />
+            {p.lines.map((line, i) => (
+              <text
+                x={nx + TX_DEC}
+                y={p.y + PAD_V + (i + 0.82) * LINE_H}
+                class="df-node-text"
+              >
+                {line}
               </text>
-            )}
+            ))}
           </>
         );
       })}
+
     </svg>
   </div>
+
   {caption && <div class="df-caption">{caption}</div>}
 </div>
 
 <style>
+  /* ── Shell ─────────────────────────────────────────────────────────────── */
   .df-wrap {
     margin: 2rem 0;
     border: 1px solid var(--theme-line);
@@ -294,77 +383,7 @@ function edgeColor(label?: string): string {
   .df-body {
     background: var(--theme-bg-inset);
     overflow-x: auto;
-    padding: 0.5rem;
-  }
-
-  .df-svg {
-    display: block;
-    width: 100%;
-    height: auto;
-    min-width: 320px;
-  }
-
-  /* Start node */
-  .df-start-circle {
-    fill: #6366f1;
-    stroke: none;
-  }
-
-  /* End node */
-  .df-end-circle {
-    fill: #6366f1;
-  }
-
-  .df-end-ring {
-    fill: none;
-    stroke: #6366f1;
-    stroke-width: 2;
-  }
-
-  /* Decision diamond */
-  .df-decision {
-    fill: rgba(245, 158, 11, 0.1);
-    stroke: #f59e0b;
-    stroke-width: 1.75;
-  }
-
-  /* Action rectangle */
-  .df-action-rect {
-    fill: var(--theme-bg-raised);
-    stroke: var(--theme-line-strong);
-    stroke-width: 1.5;
-  }
-
-  /* Result rectangle */
-  .df-result-rect {
-    fill: rgba(34, 197, 94, 0.08);
-    stroke: rgba(34, 197, 94, 0.35);
-    stroke-width: 1.5;
-  }
-
-  /* Text */
-  .df-node-label {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 12px;
-    font-weight: 600;
-    fill: var(--theme-fg-default);
-  }
-
-  .df-circle-label {
-    fill: #ffffff;
-    font-size: 11px;
-  }
-
-  .df-node-sub {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 10px;
-    fill: var(--theme-fg-faint);
-  }
-
-  .df-edge-label {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 10px;
-    font-weight: 600;
+    padding: 0.75rem;
   }
 
   .df-caption {
@@ -376,4 +395,71 @@ function edgeColor(label?: string): string {
     border-top: 1px solid var(--theme-line);
     background: var(--theme-bg-raised);
   }
+
+  /* ── SVG canvas ─────────────────────────────────────────────────────────── */
+  .df-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    /* Horizontally scrollable on narrow viewports (same pattern as TokenTree) */
+    min-width: 520px;
+  }
+
+  /* ── Decision node rect ─────────────────────────────────────────────────── */
+  .df-node-rect {
+    fill: var(--theme-bg-raised);
+    stroke: var(--theme-line-strong);
+    stroke-width: 1.5;
+  }
+
+  /* Decision nodes get a subtle indigo tint to signal "this is a question" */
+  .df-node-rect--decision {
+    fill: rgba(99, 102, 241, 0.05);
+    stroke: rgba(99, 102, 241, 0.28);
+  }
+
+  /* ── Terminal (pill) node rect ──────────────────────────────────────────── */
+  .df-terminal-rect {
+    stroke-width: 1.5;
+    /* Non-neutral variants override fill + stroke via inline style */
+  }
+
+  /* Neutral terminal — must use CSS class because SVG attributes can't
+     interpolate CSS custom properties in all target browsers */
+  .df-terminal-rect--neutral {
+    fill: var(--theme-bg-raised);
+    stroke: var(--theme-line-strong);
+  }
+
+  /* ── Diamond indicator (decision nodes) ─────────────────────────────────── */
+  .df-diamond {
+    fill: rgba(99, 102, 241, 0.45);
+  }
+
+  /* ── Node label text ────────────────────────────────────────────────────── */
+  .df-node-text {
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+      'Segoe UI', Roboto, sans-serif;
+    font-size: 11.5px;
+    fill: var(--theme-fg-default);
+  }
+
+  .df-node-text--terminal {
+    font-weight: 600;
+    /* Non-neutral text colour set via inline style; neutral inherits fill above */
+  }
+
+  /* ── Edge labels ────────────────────────────────────────────────────────── */
+  .df-edge-label {
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+      'Segoe UI', Roboto, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    fill: var(--theme-fg-ghost);
+  }
+
+  .df-edge-label--yes { fill: #4ade80; }
+  .df-edge-label--no  { fill: var(--theme-fg-ghost); }
 </style>
