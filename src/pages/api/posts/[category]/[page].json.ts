@@ -16,7 +16,7 @@ import type { GetStaticPaths, APIRoute } from 'astro';
 import { slugifyCategory } from '../../../../config/categories';
 import { getPublishedPosts, mapPostToDisplay } from '../../../../lib/content';
 import type { PostDisplayItem } from '../../../../lib/content';
-import { IMMUTABLE_CACHE_HEADERS } from '../../../../lib/http';
+import { API_CACHE_HEADERS } from '../../../../lib/http';
 
 const PAGE_SIZE = 10;
 
@@ -68,6 +68,6 @@ export const getStaticPaths: GetStaticPaths = async () => {
 
 export const GET: APIRoute = ({ props }) => {
   return new Response(JSON.stringify(props as PostsPagePayload), {
-    headers: { 'Content-Type': 'application/json', ...IMMUTABLE_CACHE_HEADERS },
+    headers: { 'Content-Type': 'application/json', ...API_CACHE_HEADERS },
   });
 };

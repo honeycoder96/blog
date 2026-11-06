@@ -53,23 +53,25 @@ export default defineConfig({
         // Don't precache OG images (large, not needed offline)
         globIgnores: ['og/**'],
         runtimeCaching: [
-          // Paginated JSON API — cache-first (immutable, 1 year)
+          // Paginated JSON API — network-first so new content is always fresh.
+          // Falls back to cache for offline support.
           {
             urlPattern: /^\/api\/posts\/.+\.json$/,
-            handler: 'CacheFirst',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'posts-api',
-              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 7 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },
-          // Series JSON API — cache-first (immutable, 1 year)
+          // Series JSON API — network-first so adding a new series is immediately
+          // visible without having to clear the service worker cache.
           {
             urlPattern: /^\/api\/series\/.+\.json$/,
-            handler: 'CacheFirst',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'series-api',
-              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 7 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

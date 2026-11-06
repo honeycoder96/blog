@@ -1,0 +1,338 @@
+---
+title: "Web Workers: Getting JavaScript Off the Main Thread"
+date: "Apr 2026"
+pubDate: 2026-04-15
+category: JavaScript
+author: Honey Sharma
+summary: The map for the whole series — why main-thread jank happens, where workers fit, which post you actually need, and how TaskFlow evolves from a frozen dashboard into a multi-threaded frontend.
+tags: [javascript, web-workers, performance, browser, vite, concurrency, frontend]
+---
+import Callout from '../../../components/mdx/Callout.astro';
+import Steps from '../../../components/mdx/Steps.astro';
+import Step from '../../../components/mdx/Step.astro';
+import ThreadTimeline from '../../../components/mdx/ThreadTimeline.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import ArchFlow from '../../../components/mdx/ArchFlow.astro';
+import InterviewLens from '../../../components/mdx/InterviewLens.astro';
+import LensQ from '../../../components/mdx/LensQ.astro';
+
+You click "Import". Choose a large CSV. The button stays pressed. The cursor keeps spinning. The loading state you wrote — the one that was definitely supposed to appear — never gets a chance to render.
+
+Nothing crashed. No error in the console. The browser tab is right there, technically alive. But the interface has stopped responding, because the only thread that can update it is buried inside a `for` loop parsing five thousand rows.
+
+That is the problem. Not some edge case. Not a contrived benchmark. A real user action, on real data, producing a broken-feeling UI in a perfectly functional application.
+
+This series starts from that freeze, explains precisely why it happens, and then fixes the app one architectural decision at a time — using a single demo codebase called **TaskFlow** that evolves across every post.
+
+## Before We Go Deep, Here's the Smallest Possible Win
+
+Theory without a payoff is hard to care about. Before the event loop, before worker types, before anything else — here is the simplest thing a Web Worker can do:
+
+```js
+// main.js
+const worker = new Worker(new URL('./echo-worker.js', import.meta.url), {
+  type: 'module',
+});
+
+worker.onmessage = (event) => {
+  console.log(event.data); // "Hello from worker: world"
+};
+
+worker.postMessage('world');
+```
+
+```js
+// echo-worker.js
+self.onmessage = (event) => {
+  self.postMessage(`Hello from worker: ${event.data}`);
+};
+```
+
+Two files. One message out, one message back. The main thread stays free the entire time.
+
+The rest of the series is the long answer to four questions that naturally follow from those fourteen lines:
+
+1. Why does the main thread freeze in the first place?
+2. What exactly happens when data crosses a worker boundary?
+3. When is a worker worth the added complexity?
+4. Which worker-shaped tool fits which real-world problem?
+
+<Callout type="tip" title="What this first win is actually doing">
+  It is not trying to teach the full API. It is there to make one thing emotionally real before the theory begins: work that leaves the main thread stops competing with your UI. Every post after this is a more precise version of that same idea.
+</Callout>
+
+## What You Are Reading Now
+
+This post is the series map. It covers:
+
+- **The problem in one picture** — a thread timeline showing the freeze and what changes with a worker
+- **The four worker types** — side-by-side, so you know what exists before picking one
+- **The demo app** — what TaskFlow does, how to run it, what "jank" looks like before any fix
+- **Your reading path** — where you can stop and still walk away with a complete answer
+- **The vocabulary** — seven terms that repeat across every post, defined once here
+
+**Difficulty:** Foundational — no worker experience assumed  
+**Estimated time:** 10–12 minutes  
+**Prerequisites:** Comfortable reading JavaScript and opening DevTools
+
+---
+
+## The Problem in One Picture
+
+The 400 milliseconds it takes to parse a large CSV export do not disappear when you use a worker. The work still happens. The browser still has to do it. But *which thread pays the cost* changes everything about the user experience.
+
+<ThreadTimeline
+  title="The Same 400ms of Work, Two Different User Experiences"
+  totalMs={400}
+  lanes={[
+    {
+      id: 'main-before',
+      label: 'Main Thread (before)',
+      variant: 'main',
+      tasks: [
+        { start: 18, duration: 310, label: 'Parse 5k tasks', variant: 'long-task' },
+      ],
+    },
+    {
+      id: 'worker-after',
+      label: 'Worker',
+      variant: 'worker',
+      tasks: [
+        { start: 70, duration: 240, label: 'Parse off-thread', variant: 'offloaded' },
+      ],
+    },
+    {
+      id: 'main-after',
+      label: 'Main Thread (after)',
+      variant: 'main',
+      tasks: [
+        { start: 18, duration: 32, label: 'UI update', variant: 'normal' },
+        { start: 324, duration: 34, label: 'Render rows', variant: 'normal' },
+      ],
+    },
+    {
+      id: 'compositor',
+      label: 'Frames',
+      variant: 'compositor',
+      tasks: [],
+    },
+  ]}
+  caption="Same app. Same job. Same browser. The only real change is which thread pays the cost — and whether the UI has room to breathe while the work happens."
+/>
+
+Top row: the main thread is occupied for 310ms. Frames are dropped. User input is ignored. The UI looks frozen.
+
+Bottom two rows: the main thread hands the work off immediately, does two small tasks of its own, and stays responsive throughout. The UI never freezes.
+
+That timeline is the whole series in miniature.
+
+---
+
+## The Four Worker Types You Need to Keep Straight
+
+The browser ships four tools that use the word "worker" or live conceptually nearby. They do not solve the same problem.
+
+<Comparison
+  headers={['Type', 'Best For', 'Scope', 'Keeps Shared State?', 'The Trap']}
+  rows={[
+    ['Dedicated Worker', 'CPU-heavy work for one page', 'One tab only', 'No — each page gets its own instance', 'The right default for most app offloading'],
+    ['SharedWorker', 'One worker shared across tabs', 'Same-origin tabs', 'Yes — one shared execution context', 'Browser support is narrower than Dedicated'],
+    ['BroadcastChannel', 'Cross-tab signals', 'Same-origin contexts', 'No — messaging only', 'Not a compute tool; sends events, not threads'],
+    ['Service Worker', 'Network caching and request interception', 'URL scope', 'Not this kind of state', 'Frequently confused with Web Workers; completely different job'],
+  ]}
+  caption="The series starts with Dedicated Workers because that is where almost every real frontend performance problem begins."
+/>
+
+The last row deserves a sentence. Service Workers intercept network requests. Web Workers offload CPU work. Both sit in a separate thread; neither can access the DOM. But they solve fundamentally different problems, and treating them as interchangeable is the most common confusion this series is designed to permanently fix.
+
+---
+
+## The Demo App: TaskFlow
+
+Every post in this series uses the same codebase. Not a collection of isolated demos — one real app that gets progressively less broken.
+
+**TaskFlow** is a lightweight project management dashboard with three panels:
+
+1. **Import panel** — accepts a CSV export from Jira or Linear. With a 5,000-task file, parsing freezes the UI for 300–500ms. This is the first thing we fix.
+2. **Gantt panel** — a canvas-rendered chart for the current sprint. Computing task positions and painting the result drops frames noticeably on larger projects.
+3. **Activity feed** — shows unread updates from teammates. Clicking "Mark all read" in one tab should sync to every other open tab. In `main`, it does not.
+
+The starting branch is intentionally broken. That is not a bug — it is the starting point the whole series is designed from.
+
+```bash
+git clone https://github.com/honeycoder96/Taskflow-blogdemo
+cd Taskflow-blogdemo
+npm install && npm run dev
+```
+
+Every post names its branch explicitly. The mental model for following along is simple:
+
+```bash
+# start from the frozen baseline
+git checkout main
+
+# move to the next cumulative milestone when the post tells you to
+git checkout post/03-first-worker
+```
+
+Each branch is a complete, working state of the app — not an isolated snippet. You never have to reconstruct context from scratch.
+
+<Callout type="info" title="Why one app, not many demos">
+  Every extra demo costs the reader context. When the app changes between examples, you spend cognitive budget relearning the setup instead of focusing on what changed. TaskFlow stays fixed as the anchor — the only thing changing post to post is the threading model.
+</Callout>
+
+---
+
+## Where You Should Stop Reading
+
+This series is cumulative, but it is not all-or-nothing. Most readers have a specific problem. Read to the point where your problem is solved, then stop.
+
+<Comparison
+  headers={['Your Goal', 'Read Through', 'Safe to Stop?', 'Why']}
+  rows={[
+    ['Fix a janky import, filter, or sort flow', 'Block 2', 'Yes', 'Dedicated workers, transferables, and pools cover almost every day-to-day frontend offloading case'],
+    ['Keep activity or auth state in sync across tabs', 'Block 3', 'Yes', 'SharedWorker and BroadcastChannel are the practical cross-tab tools'],
+    ['Understand true shared memory in the browser', 'Block 4', 'Maybe', 'Continue only if you need high-frequency shared state or care about deeper systems mental models'],
+    ['Use workers correctly inside React or Vite', 'Post 5.2', 'Yes', 'That post is a framework integration branch — self-contained, not a new conceptual prerequisite'],
+    ['Apply the same thinking in Node.js', 'Post 5.3', 'Yes', 'Same CPU-bound problem, different runtime — can be read independently of the React post'],
+  ]}
+  caption="Stopping early is not failure. The series is designed so readers can leave with a complete answer to the problem they actually have."
+/>
+
+---
+
+## The Shape of the Series
+
+<ArchFlow
+  title="The Learning Path"
+  direction="horizontal"
+  nodes={[
+    { label: 'Block 1', sublabel: 'Why the UI freezes', variant: 'source' },
+    { label: 'Block 2', sublabel: 'Dedicated workers', variant: 'accent' },
+    { label: 'Block 3', sublabel: 'Cross-tab sync' },
+    { label: 'Block 4', sublabel: 'Shared memory', variant: 'accent' },
+    { label: 'Block 5', sublabel: 'Power users' },
+    { label: 'Block 6', sublabel: 'Clear the confusion' },
+    { label: 'Interview', sublabel: 'Reasoning practice', variant: 'output' },
+    { label: 'Final', sublabel: 'TaskFlow architecture', variant: 'output' },
+  ]}
+  caption="The path is cumulative but not compulsory. Several readers should stop before the end and still feel finished."
+/>
+
+<Steps>
+  <Step title="Block 1 — Why Workers Exist">
+    We start with the observable problem: long tasks, frame budgets, the event loop, and the full map of worker types. Nothing is fixed yet. The goal of this block is to make the freeze *legible* — to give you a precise vocabulary for what you are seeing before you reach for any solution.
+  </Step>
+
+  <Step title="Block 2 — Dedicated Workers">
+    The practical core of the series. `postMessage`, the structured clone algorithm, transferable objects, `OffscreenCanvas`, inline workers, module workers, and worker pools. If your only goal is mainstream application offloading, Block 2 is your finish line.
+  </Step>
+
+  <Step title="Block 3 — Cross-Tab Sync">
+    The problem changes shape here. It is no longer "how do I free one tab's main thread?" It becomes "what if multiple tabs need to coordinate?" SharedWorker and BroadcastChannel live in this block, and TaskFlow's broken activity feed finally gets fixed.
+  </Step>
+
+  <Step title="Block 4 — Shared Memory">
+    This block is advanced on purpose. `SharedArrayBuffer` and `Atomics` let two threads read and write the same bytes without copying them — which is fast, powerful, and genuinely dangerous if you get it wrong. Race conditions, mutex patterns, and the COOP/COEP deployment requirements are all here.
+  </Step>
+
+  <Step title="Block 5 — Power Users">
+    Three optional branches: WebAssembly inside workers, React and Vite integration, and Node.js `worker_threads`. Read the one that matches your environment. You do not need all three — they are written to stand alone.
+  </Step>
+
+  <Step title="Block 6 + Wrap-up">
+    We close by permanently resolving the Service Worker vs Web Worker confusion, then switch to interview reasoning mode and finish with a full architectural retrospective of TaskFlow — every worker boundary, every tradeoff, the final performance delta from broken baseline to production-ready app.
+  </Step>
+</Steps>
+
+---
+
+## Seven Terms That Appear Everywhere
+
+These words repeat across every post. The overview defines them once so every post after this can move faster.
+
+**`main thread`** — the browser thread that runs your JavaScript, processes user input, and coordinates rendering. There is only one. When it is busy, everything waits.
+
+**`long task`** — any main-thread task that runs for more than 50ms. This is the threshold where jank becomes measurable and visible. The Lighthouse metric that captures it is Total Blocking Time.
+
+**`clone`** — when data crosses a worker boundary, the default behaviour is a structured clone: the value is serialised and a new copy is created on the receiving side. Both sides own independent copies.
+
+**`transfer`** — an alternative to cloning where ownership of the underlying buffer moves to the receiving context. The sending side can no longer access it. Transfer is zero-copy — no allocation, no serialisation cost.
+
+**`shared memory`** — a `SharedArrayBuffer` that two threads can read and write simultaneously, with no copy at all. Fast, but requires careful coordination — otherwise two threads clobber each other's writes.
+
+**`port`** — a message endpoint. `SharedWorker` and `MessageChannel` both use ports to route messages between specific senders and receivers. A port is a connection, not a value.
+
+**`cross-origin isolation`** — the deployment configuration (`COOP`/`COEP` headers) that browsers require before they will hand out a `SharedArrayBuffer`. Without it, the API is disabled, full stop. Post 4.1 covers the headers and why they exist.
+
+---
+
+## The Planned Post Map
+
+*Posts are added as they go live. The roadmap is fixed; links appear incrementally.*
+
+### Block 1 — Why Workers Exist
+
+| # | Post | What you'll learn |
+|---|------|-------------------|
+| 1 | The Main Thread: Why JavaScript Freezes Your UI | Frame budgets, long tasks, DevTools Performance, why a frozen UI feels broken even when nothing crashed |
+| 2 | The Event Loop: How the Browser Actually Executes JavaScript | Macrotasks, microtasks, render timing, and why synchronous work starves paint |
+| 3 | Web Worker Types: A Map Before You Build | Dedicated workers, SharedWorker, BroadcastChannel, Service Worker — what each one is actually for |
+
+### Block 2 — Dedicated Workers
+
+| # | Post | What you'll learn |
+|---|------|-------------------|
+| 4 | Your First Dedicated Worker: `postMessage` and the Structured Clone Algorithm | The basic messaging model, worker lifecycle, clone semantics, and what you can and cannot send |
+| 5 | Transferable Objects: Moving Data Without Copying It | Ownership transfer, detached buffers, `OffscreenCanvas`, the image blur demo |
+| 6 | Inline Workers, Module Workers, and Worker Pools | When one worker is not enough, and how to manage a pool without reinventing infrastructure |
+
+### Block 3 — Cross-Tab Sync
+
+| # | Post | What you'll learn |
+|---|------|-------------------|
+| 7 | Shared Workers: One Worker, Multiple Tabs | Shared execution contexts, shared WebSocket connections, the `MessagePort` mental model |
+| 8 | BroadcastChannel: Cross-Tab Messaging Without a Worker | Lightweight same-origin tab coordination — events, not threads |
+
+### Block 4 — Shared Memory
+
+| # | Post | What you'll learn |
+|---|------|-------------------|
+| 9 | SharedArrayBuffer: True Shared Memory Between Threads | Shared bytes, observable race conditions, COOP/COEP, why the deployment story matters as much as the API |
+| 10 | Atomics: Lock-Free Coordination Across Threads | Atomic reads and writes, wait/notify patterns, and the cost of getting concurrency wrong in the browser |
+
+### Block 5 — Power Users
+
+| # | Post | What you'll learn |
+|---|------|-------------------|
+| 11 | WebAssembly and Workers: Near-Native Performance in the Browser | Binary compute inside workers, JS/WASM boundary costs, and when WASM is genuinely faster |
+| 12 | Workers in React and Vite: Practical Integration | Framework-safe worker setup, lifecycle management, and why the underlying mental model does not change |
+| 13 | Worker Threads in Node.js: The Same Problem, Different Runtime | CPU-bound work on the server, `piscina` pools, and the direct analogy to everything covered in Block 2 |
+
+### Block 6 + Wrap-up
+
+| # | Post | What you'll learn |
+|---|------|-------------------|
+| 14 | Service Workers vs Web Workers: Clearing Up the Confusion | The network-proxy vs compute-thread split, once and permanently |
+| 15 | The Web Workers Interview Playbook | Tradeoff questions, diagnosis walkthroughs, code-review red flags, and the decision flowchart |
+| 16 | TaskFlow: From Jank to Multi-Threaded — The Full Architecture | The finished app, every worker boundary annotated, the complete performance delta from baseline to production |
+
+<Callout type="tip" title="The benchmark you're building toward">
+  By the end of the series, you should be able to point at any expensive operation in your own codebase and answer four questions quickly: what thread runs it, why it runs there, how data crosses the boundary, and what would break if you picked the wrong tool. That is the mental model. Everything else is application.
+</Callout>
+
+---
+
+<InterviewLens>
+  <LensQ q="What problem are Web Workers actually solving?">
+    They solve a **main-thread scheduling problem**. The browser UI becomes unresponsive when expensive CPU work runs on the same thread that needs to respond to input and paint frames. A strong answer starts with user experience and frame budgets — not with API names. The API is only interesting once the problem is visible.
+  </LensQ>
+
+  <LensQ q="How would you decide whether a worker is worth introducing?">
+    Measure first. Find the long task, confirm the work is CPU-bound rather than I/O-bound, and ask whether moving it off-thread will produce a meaningfully better experience than the message-passing overhead costs. Workers are a tradeoff, not a default upgrade. The answer is always "it depends" — but a good engineer can explain exactly what it depends on.
+  </LensQ>
+
+  <LensQ q="What is the difference between a Web Worker and a Service Worker?">
+    A Web Worker is a compute offload tool — it runs your JavaScript on a separate thread to keep the main thread free. A Service Worker is a network proxy — it intercepts requests, manages a cache, and enables offline behaviour. If an answer conflates them because both contain the word "worker", it is missing the architectural distinction that this entire series is designed to make permanent.
+  </LensQ>
+</InterviewLens>
