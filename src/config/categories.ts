@@ -65,6 +65,16 @@ export const CATEGORY_CONFIG: CategoryConfig[] = [
     showOnHomepage: true,
   },
   {
+    name: 'Security',
+    color: 'text-red-400 border-red-800',
+    description:
+      'Real incidents, hardening checklists, and the security habits that keep small systems safe.',
+    border: 'border-line-strong',
+    borderHover: 'hover:border-fg-muted',
+    accent: 'text-fg-muted',
+    showOnHomepage: true,
+  },
+  {
     name: 'JavaScript',
     color: 'text-yellow-400 border-yellow-800',
     description: 'Deep dives into JavaScript internals, async patterns, and the ecosystem.',
