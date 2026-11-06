@@ -1,0 +1,360 @@
+---
+title: "My Firewall Was On. My Database Was Still Exposed."
+date: "Nov 2026"
+pubDate: 2026-11-07
+category: Security
+author: Honey Sharma
+summary: "A ransom note in my MongoDB, how a routine pre-launch check found it, and why a host firewall did nothing to protect a database running in Docker. What happened, how I fixed it, and a 10-minute checklist for anyone who runs their own server."
+featured: false
+isVisible: true
+draft: false
+tags: [security, docker, mongodb, redis, firewall, vps, incident-response, self-hosting]
+relatedPosts: []
+---
+
+import Callout from '../../../components/mdx/Callout.astro';
+import Steps from '../../../components/mdx/Steps.astro';
+import Step from '../../../components/mdx/Step.astro';
+import Terminal from '../../../components/mdx/Terminal.astro';
+import Comparison from '../../../components/mdx/Comparison.astro';
+import ArchFlow from '../../../components/mdx/ArchFlow.astro';
+import SequenceDiagram from '../../../components/mdx/SequenceDiagram.astro';
+import DecisionFlow from '../../../components/mdx/DecisionFlow.astro';
+import Lessons from '../../../components/mdx/Lessons.astro';
+import Lesson from '../../../components/mdx/Lesson.astro';
+
+One command, run from my laptop, took about a second. It printed `succeeded`.
+
+It should have timed out.
+
+<Terminal
+  title="From my laptop, not from the server"
+  command="nc -zv 203.0.113.10 27017"
+  language="plain"
+  output="Connection to 203.0.113.10 27017 port [tcp/*] succeeded!"
+/>
+
+Port 27017 is where MongoDB listens. That answer meant anyone on the internet could open a connection to my database. I was about to deploy a new app to the same server, and I had been going through the setup with an AI coding assistant as a pre-launch review. This was supposed to be the boring part of the checklist, the "confirm nothing is exposed" box.
+
+A few minutes later I was looking at a database I had never created. Its name was `READ_ME_TO_RECOVER_YOUR_DATA`.
+
+This post is about what that was, how it got there while my firewall was switched on, and what I changed. If you run a VPS, a home server, or a box under your desk, it ends with a checklist you can work through in about ten minutes. You don't need a security background for any of it.
+
+---
+
+## The Setup I Thought Was Safe
+
+Nothing about my server was unusual. It is a small VPS running a handful of side projects, each in its own Docker containers. To avoid running a database per project, I had one shared MongoDB and one shared Redis, defined once in a Docker Compose file and deployed through a self-hosted deploy tool (Dokploy). Web traffic comes in through Cloudflare.
+
+And I had a firewall. UFW, the default-deny kind: everything incoming is blocked unless I allow it. I had even tightened it so the web ports, 80 and 443, only accepted traffic from Cloudflare's address ranges.
+
+<ArchFlow
+  title="What I believed"
+  nodes={[
+    { label: "Internet" },
+    { label: "Cloudflare", sublabel: "web traffic only" },
+    { label: "UFW firewall", sublabel: "default deny" },
+    { label: "Apps", sublabel: "Docker containers" },
+    { label: "MongoDB + Redis", sublabel: "shared, internal" },
+  ]}
+/>
+
+If you had asked me whether my databases were reachable from the internet, I would have said no. I would have said it with confidence, and I would have been wrong.
+
+---
+
+## How I Found It
+
+The review itself was dull. We read the Compose file for the shared services, and two lines stood out:
+
+```yaml
+mongo:
+  image: mongo:7
+  ports:
+    - "27017:27017"
+
+redis:
+  image: redis:7-alpine
+  ports:
+    - "6379:6379"
+```
+
+That `ports:` section does not mean "let my other containers talk to this". It means "open this port on the server itself, to everyone". My apps never needed it, since containers on the same Docker network reach each other by name. I don't remember exactly why those lines were there. Most likely they were a convenience, a way to reach the databases from my laptop while developing, and nobody had taken them out.
+
+Reading a config file only tells you what you asked for. The real question is what the internet can actually reach, so I tested it directly, from my laptop, on a different network from the server. That is the command at the top of this post. It worked for Mongo. It worked for Redis too.
+
+<Callout type="tip" title="Always test from outside">
+A check run on the server itself proves nothing, because a server can always reach its own ports. Test from a different network: your laptop at home, or a laptop on a phone hotspot. If you can only run one check from this post, make it this one.
+</Callout>
+
+Then we looked inside. In the Mongo shell, I listed the databases:
+
+<Terminal
+  title="Inside the MongoDB container"
+  command="mongosh --eval 'db.adminCommand({listDatabases:1}).databases.forEach(d => print(d.name, d.sizeOnDisk))'"
+  language="plain"
+  output={`READ_ME_TO_RECOVER_YOUR_DATA 40960
+admin                        40960
+config                       73728
+local                        40960`}
+/>
+
+Four databases, and three of them are Mongo's own housekeeping (`admin`, `config`, `local`). My apps' databases were gone. The one that remained had a single document:
+
+> All your data was backed up by us. You must pay a small amount of Bitcoin to the wallet below within 48 hours, or your data will be publicly disclosed and deleted. Send us an email after payment and we will provide a download link. Your ID is: (a short code).
+
+That was it. No break-in in the Hollywood sense, no clever exploit. Something had simply walked up to a database with no password on it, helped itself, and left a note.
+
+---
+
+## What Had Actually Happened
+
+This particular attack is so common that it has a recognisable shape. Bots continuously scan the whole internet for open database ports. When one finds MongoDB with no authentication, it connects, lists the databases, copies or drops them, and creates a new database with a ransom note. The whole thing is automated. Nobody chose my server. It was reachable, so it was found.
+
+<SequenceDiagram
+  title="How a database with no password gets ransomed"
+  actors={[
+    { id: 'bot', label: 'Scanner bot', sublabel: 'sweeps the internet', icon: 'attacker', variant: 'malicious' },
+    { id: 'fw', label: 'Host firewall', sublabel: 'UFW, default deny', icon: 'router' },
+    { id: 'db', label: 'MongoDB', sublabel: 'port 27017 published', icon: 'database' },
+  ]}
+  messages={[
+    { from: 'bot', to: 'db', label: 'open a connection to port 27017', type: 'attack' },
+    { from: 'fw', to: 'fw', label: 'never consulted for this port', type: 'note', annotation: 'Docker routes around it' },
+    { from: 'db', to: 'bot', label: 'accepted, no password asked', type: 'response', highlight: true },
+    { from: 'bot', to: 'db', label: 'list databases, copy, drop', type: 'attack' },
+    { from: 'bot', to: 'db', label: 'create ransom-note database', type: 'attack' },
+  ]}
+  caption="The firewall sits beside the path, not on it."
+/>
+
+Redis was open on the same terms. Its configuration looked untouched, but it held about 100,000 keys that none of my apps had written. I can't tell you what those were for. I deleted them.
+
+### What I know and what I don't
+
+I want to be straightforward about this, because incident write-ups often sound more certain than the people who wrote them were.
+
+- **I know** the databases were reachable from the internet, had no authentication, and that my own databases were dropped and a ransom note left in their place.
+- **I don't know** when it happened. The connection logs I would have wanted were not there, and my own redeploys recreate containers, which resets their logs. Either way, there was no record of who connected and when.
+- **I don't know** whether data was copied. The note says it was. These notes often claim a backup that doesn't exist, but I can't prove either way.
+
+I got lucky in one respect. The data was not important, and nothing in either database was personal or a secret. I decided not to pay, since paying funds the next attack and rarely gets anything back, and not to try to recover anything. If I had been running a real service, the next sections would have been a very different, much worse day.
+
+---
+
+## Why My Firewall Didn't Help
+
+Three separate, individually reasonable defaults stacked up.
+
+**1. The ports were published to every network interface.** In Compose, `"27017:27017"` means "listen on all addresses of this machine". The address `0.0.0.0` means "everyone". The address `127.0.0.1` means "only this machine". My databases were on the first one.
+
+**2. MongoDB and Redis start without a password.** That makes sense for a database that is only reachable from inside a private network, and it is a disaster the moment the network boundary is wrong. Nothing in my setup asked a visitor to prove who they were, because I had counted on the network doing that job.
+
+**3. Docker bypasses the firewall most people use.** This is the one that surprised me. When Docker publishes a port, it writes its own routing rules, and traffic to that port is forwarded straight to the container. It never passes through the rules that UFW manages. My default-deny firewall was on, active and correct, and it had no say in the matter.
+
+I could see the same thing happen to my own deliberate rules. I had set the web ports to accept only Cloudflare. When I scanned from an ordinary home connection, ports 80 and 443 were open to me too. A rule I had written on purpose was being ignored.
+
+<Comparison
+  headers={["", "What I assumed", "What was true"]}
+  rows={[
+    ["**Firewall**", "Default deny protects every port", "UFW does not see traffic to Docker-published ports"],
+    ["**Database ports**", "Only my own apps can reach them", "Anyone on the internet could connect"],
+    ["**Passwords**", "Not needed behind a firewall", "Nothing asked for one"],
+    ["**Web ports**", "Only Cloudflare can reach them", "A normal laptop reached them directly"],
+    ["**Recovery**", "I would notice, and I could restore", "No backups, and logs reset on every redeploy"],
+  ]}
+  highlight={2}
+  caption="Every row on the left was reasonable. Every row on the right was what the server actually did."
+/>
+
+<Callout type="danger" title="A firewall rule is not proof">
+`ufw status` tells you what you configured. It does not tell you what is reachable. If you use Docker, those can be two different answers. Only a test from outside tells you which one you have.
+</Callout>
+
+---
+
+## How I Fixed It
+
+The order matters. Close the door first, then look at what happened.
+
+<Steps>
+  <Step title="Stop publishing the database ports">
+    I changed the Compose file so the ports are bound to the loopback address. They are still usable from the server itself and through an SSH tunnel, but not from the internet. My apps connect over the Docker network by name, so none of them noticed.
+  </Step>
+  <Step title="Redeploy and check from inside">
+    On the server, the list of listening ports now showed `127.0.0.1` for both databases instead of `0.0.0.0`.
+  </Step>
+  <Step title="Check again from outside">
+    From my laptop, the same command that had printed `succeeded` now timed out, for both ports.
+  </Step>
+  <Step title="Look for damage">
+    Redis configuration, keys and connected clients. Mongo databases, users and logs. More on what to look for in the checklist below.
+  </Step>
+  <Step title="Scan everything, not just the two ports">
+    A scan of all 65,535 ports from outside showed only SSH, HTTP and HTTPS reachable, plus two oddities I'll come back to in a moment.
+  </Step>
+  <Step title="Make the next mistake survivable">
+    I turned on authentication for Mongo with a separate user per application, each limited to its own database, and updated the connection strings. I also set up scheduled backups and restored one into a scratch database to prove it works. Either of these would have turned a bad day into a minor one.
+  </Step>
+</Steps>
+
+Here is the whole change to the Compose file:
+
+```yaml
+mongo:
+  image: mongo:7
+  ports:
+    - "127.0.0.1:27017:27017"   # was "27017:27017"
+
+redis:
+  image: redis:7-alpine
+  ports:
+    - "127.0.0.1:6379:6379"     # was "6379:6379"
+```
+
+One short prefix on two lines. That is how big the mistake was.
+
+<Terminal
+  title="From my laptop, after the fix"
+  command="nc -zv -w 3 203.0.113.10 27017"
+  language="plain"
+  output="nc: connect to 203.0.113.10 port 27017 (tcp) timed out"
+/>
+
+### The scan result that wasn't
+
+The full port scan flagged two ports as open that I did not recognise: 2000 and 5060. Nothing on my server was listening on either. I checked the list of listening ports, the Docker containers, the routing rules. All clean. Having just been bitten by "everything is fine", I did not want to wave this away.
+
+My first guess was my own router or ISP, so I scanned an unrelated server from the same laptop. Those ports showed closed there. That seemed to rule my network out, and it turned out to prove nothing, since equipment like that can behave differently for different destinations. What settled it was looking at the replies themselves:
+
+<Terminal
+  title="Comparing the replies, from my laptop"
+  command="sudo nmap -Pn -p 22,80,2000,5060 --reason 203.0.113.10"
+  language="plain"
+  output={`PORT     STATE SERVICE    REASON
+22/tcp   open  ssh        syn-ack ttl 45
+80/tcp   open  http       syn-ack ttl 47
+2000/tcp open  cisco-sccp syn-ack ttl 62
+5060/tcp open  sip        syn-ack ttl 62`}
+/>
+
+The real ports answered with a time-to-live (TTL) of 45 to 47, and the two odd ones with 62. Different numbers mean the replies came from a different machine, and they also arrived in about 3 milliseconds instead of the roughly 180 a round trip to a server on another continent takes. Something near me was answering on the server's behalf. It was not the server.
+
+<Callout type="info" title="Reading scan results">
+When a scan shows something you cannot explain, compare latency and TTL between the odd results and the ones you trust, and confirm on the server with the list of listening ports. Evidence about the specific connection beats an analogy with a different one. And only ever scan servers you own.
+</Callout>
+
+---
+
+## The 10-Minute Server Check
+
+This is the part to keep. It works for any server, not only Docker ones, and every step comes from something that went wrong above. Do it in order.
+
+### 1. See what is listening
+
+On the server:
+
+```bash
+sudo ss -tlnp
+```
+
+Look at the address column. `127.0.0.1` means "this machine only". `0.0.0.0`, `*` and `[::]` mean "everyone". Anything beyond the few ports you meant to expose (usually SSH, HTTP and HTTPS) needs a reason you can state out loud.
+
+### 2. Look from the outside
+
+From a different network, such as a phone hotspot, scan your own server:
+
+```bash
+nmap -Pn -p- 203.0.113.10
+```
+
+This takes a few minutes. The result is the truth about your server. The result of the step above is only what the server thinks about itself. If the two disagree, believe this one.
+
+### 3. Never publish a database port
+
+If a database only serves your own apps, it does not need a `ports:` entry at all, because containers on the same network reach it by service name. If you want access from your laptop, bind to loopback and use an SSH tunnel:
+
+```bash
+ssh -L 27017:localhost:27017 you@your-server
+```
+
+### 4. Turn on authentication anyway
+
+Even with the port closed. The next mistake, whether a new line in a config file or a change in how your platform routes traffic, will not announce itself. For MongoDB, create a user per application and start the server with `--auth`. For Redis, set a password. Assume that someday the network boundary will fail, and make sure the database still says no.
+
+### 5. Don't rely on the host firewall for container ports
+
+If you run Docker, assume your firewall does not cover published ports. The reliable fixes are to not publish them (step 3), to put a firewall at your provider's network level, which sits in front of the server and is independent of Docker, or to add rules in Docker's own `DOCKER-USER` chain. Verify with step 2, not with `ufw status`.
+
+### 6. Have backups, and restore one
+
+A backup is a dump of each database on a schedule, plus a copy somewhere other than the server itself. The part everybody skips: restore one into a scratch database at least once. A backup you have never restored is a hope, not a backup.
+
+### 7. Know what tampering looks like
+
+After you find something exposed, assume it was visited. What to check:
+
+- **Redis:** `CONFIG GET dir` and `CONFIG GET dbfilename`. The defaults are `/data` and `dump.rdb`. Changed values are a classic sign, because attackers use them to write files such as scheduled tasks or SSH keys. Also look for keys your apps never create.
+- **MongoDB:** list your databases and look for names like `READ_ME_TO_RECOVER_YOUR_DATA`. List the users and look for any you did not create.
+- **Both:** look for connections from addresses that are not your own containers. If Redis settings were changed, also check the server's scheduled tasks and the SSH authorized keys file.
+
+### 8. Keep logs that outlive a restart
+
+The evidence I most wanted, who connected and when, was not there. My own redeploys recreate containers, and a container's logs go with it. If logs live inside the container, they die with it. Send them to a volume or a log service, and keep a few weeks.
+
+### 9. If you do find an open database
+
+<DecisionFlow
+  title="You found an exposed database"
+  nodes={[
+    { id: 'start', type: 'start', label: 'Port reachable from outside' },
+    { id: 'close', type: 'action', label: 'Close it now', sublabel: 'bind to 127.0.0.1 or remove ports' },
+    { id: 'verify', type: 'action', label: 'Test again from outside', sublabel: 'it must time out' },
+    { id: 'tamper', type: 'decision', label: 'Signs of tampering?', sublabel: 'odd databases, users, keys, config' },
+    { id: 'clean', type: 'result', label: 'Add auth and backups', sublabel: 'assume it was scanned' },
+    { id: 'data', type: 'decision', label: 'Data you cannot lose?', sublabel: 'or personal data' },
+    { id: 'restore', type: 'result', label: 'Restore, then rotate', sublabel: 'every secret it held' },
+    { id: 'accept', type: 'result', label: 'Accept the loss', sublabel: 'rotate secrets, never pay' },
+  ]}
+  edges={[
+    { from: 'start', to: 'close' },
+    { from: 'close', to: 'verify' },
+    { from: 'verify', to: 'tamper' },
+    { from: 'tamper', to: 'clean', label: 'No' },
+    { from: 'tamper', to: 'data', label: 'Yes' },
+    { from: 'data', to: 'restore', label: 'Yes' },
+    { from: 'data', to: 'accept', label: 'No' },
+  ]}
+  caption="Close first, investigate second. If personal data was involved, you may also have legal duties to tell the people affected."
+/>
+
+---
+
+## The Same Question, Different Doors
+
+This post covers one door. The question behind it applies to all of them: what can someone on the internet reach, and who decided that? Admin dashboards on a raw port, SSH that accepts passwords, credentials committed to a repository, software nobody has updated. Each is the same mistake in a different place. Ask the question about each of them, and answer it by testing from outside.
+
+---
+
+<Lessons title="What I Took Away" type="learned">
+  <Lesson title="Test from outside, every time">
+    Configuration files, firewall status pages and dashboards describe intent. A scan from another network describes reality. When they disagree, reality wins. Make the outside check a routine, like backups, instead of something you do after an incident.
+  </Lesson>
+  <Lesson title="Defaults are not on your side">
+    Published ports, databases without passwords and containers that route around your firewall are all sensible defaults for a quick start. None of them is safe as a final state, and none of them warns you.
+  </Lesson>
+  <Lesson title="Boring protections beat incident response">
+    A password on the database and a tested backup would have made this an anecdote instead of an incident. I had neither. Both cost less than the time I spent on the aftermath.
+  </Lesson>
+  <Lesson title="Nothing detected this, and that is the real finding">
+    I had no monitoring that could have told me. I found it because I happened to review the server before a launch. The next one should not depend on luck. Check what is reachable on a schedule, and be alerted when it changes.
+  </Lesson>
+</Lessons>
+
+The ransom note never mattered, because there was nothing in the database worth buying back. The part that stays with me is how ordinary the mistake was. One line in a file, a tool doing exactly what it is documented to do, and a firewall that I trusted and never verified.
+
+If you run a server, set aside ten minutes this week and run the checklist above. It is much less interesting than the story, and much cheaper.
+
+---
+
+*Found something similar on your own server, or a step I should add to the list? I'd like to hear about it.*
